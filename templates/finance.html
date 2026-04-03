@@ -1,0 +1,319 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Finance</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+
+  <style>
+    /* Finance page ONLY (scoped) */
+    #financeRightPanel .row{
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #financeRightPanel .inlineLabel{
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+      white-space: nowrap;
+    }
+
+    #financeRightPanel .smallSelect{
+      width: 140px;
+      min-width: 120px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+    }
+
+    #financeRightPanel #monthPick{
+      width: 110px;
+      min-width: 110px;
+    }
+
+    #financeRightPanel .btn{
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px){
+      #financeRightPanel .row{
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      #financeRightPanel .smallSelect,
+      #financeRightPanel #monthPick,
+      #financeRightPanel .btn{
+        width: 100%;
+        min-width: 0;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <div>
+      <h2>Finance</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+      <p class="sub small">Selected Bank: <b id="bankLabel">Loading...</b></p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page">
+
+    <!-- LEFT: FORM -->
+    <div class="panel">
+      <h3>Add / Edit Finance Record</h3>
+
+      <form id="financeForm" class="form">
+        <label>Bank Account</label>
+        <select id="bankSelect" required></select>
+
+        <!-- Admin only -->
+        <div id="adminBankAdd" style="display:none; margin-top:10px;">
+          <label class="small muted">Add New Bank Account (Admin)</label>
+          <div class="row">
+            <input id="newBankName" placeholder="Example: HNB-LKR-107010008865" style="flex:1;" />
+            <button id="addBankBtn" type="button" class="btn ghost">＋ Add</button>
+          </div>
+          <p id="bankMsg" class="msg"></p>
+
+          <div class="hr"></div>
+
+          <label class="small muted">Manage Bank Accounts (Admin)</label>
+          <div id="adminBankList" style="margin-top:10px;"></div>
+
+          <p class="hint">
+            Rename changes the bank name. Delete will disable the bank (safe) so old finance records stay.
+          </p>
+        </div>
+
+        <div class="hr"></div>
+
+        <label>Type</label>
+        <select id="type" required>
+          <option value="INCOME">INCOME</option>
+          <option value="OUTCOME">OUTCOME</option>
+        </select>
+
+        <label>Client / Company Name</label>
+        <input id="clientName" required />
+
+        <label>Category</label>
+        <input id="category" required />
+
+        <label>Description</label>
+        <textarea id="description" rows="3"></textarea>
+
+        <div class="grid2">
+          <div>
+            <label>Currency</label>
+            <select id="currency" required>
+              <option value="LKR">LKR</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="AUD">AUD</option>
+            </select>
+          </div>
+          <div>
+            <label>Amount</label>
+            <input id="amount" type="number" step="0.01" required />
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label>Payment Type</label>
+            <select id="paymentType" required>
+              <option value="BANK_TRANSFER">BANK_TRANSFER</option>
+              <option value="CHEQUE">CHEQUE</option>
+              <option value="CASH">CASH</option>
+              <option value="CARD">CARD</option>
+              <option value="OTHER">OTHER</option>
+            </select>
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="status" required>
+              <option value="RECEIVED">RECEIVED</option>
+              <option value="PAID">PAID</option>
+              <option value="PENDING">PENDING</option>
+              <option value="NOT_RECEIVED">NOT_RECEIVED</option>
+            </select>
+          </div>
+        </div>
+
+        <label>Proof of Payment</label>
+        <select id="proofOfPayment" required>
+          <option value="HAS">HAS</option>
+          <option value="NO">NO</option>
+        </select>
+
+        <label>Invoice No / Reference No</label>
+        <input id="invoiceRef" />
+
+        <div class="grid2">
+          <div>
+            <label>PO Number</label>
+            <input id="poNumber" />
+          </div>
+          <div>
+            <label>Quotation Number</label>
+            <input id="quotationNumber" />
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label>Paid Date</label>
+            <input id="paidDate" type="date" />
+          </div>
+          <div>
+            <label>Created By (Auto)</label>
+            <input id="createdBy" disabled />
+          </div>
+        </div>
+
+        <h4 class="miniTitle">Drive Links</h4>
+        <label>Client Folder Link (Drive)</label>
+        <input id="folderLink" placeholder="drive.google.com/..." />
+        <label>Proof Link (Drive)</label>
+        <input id="proofLink" placeholder="drive.google.com/..." />
+        <label>Invoice Link (Drive)</label>
+        <input id="invoiceLink" placeholder="drive.google.com/..." />
+        <label>Quotation Link (Drive)</label>
+        <input id="quotationLink" placeholder="drive.google.com/..." />
+
+        <button class="btn" type="submit">Save Record</button>
+        <p id="msg" class="msg"></p>
+      </form>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="panel wide" id="financeRightPanel">
+      <div class="block">
+        <h3>Summary & Records</h3>
+        <p class="sub small">Finance page shows only active records. Deleted items are managed inside Admin Dashboard → Trash.</p>
+        <div class="hr"></div>
+
+        <div class="row">
+          <label class="inlineLabel" for="bankFilter">Bank</label>
+          <select id="bankFilter" class="smallSelect"></select>
+
+          <label class="inlineLabel">Type</label>
+          <select id="typeFilter" class="smallSelect">
+            <option value="ALL">ALL</option>
+            <option value="INCOME">INCOME</option>
+            <option value="OUTCOME">OUTCOME</option>
+          </select>
+
+          <label class="inlineLabel">Month</label>
+          <input id="monthPick" class="smallSelect" placeholder="YYYY-MM" />
+
+          <button class="btn ghost" id="viewMonthBtn" type="button">View</button>
+          <button class="btn ghost" id="exportBtn" type="button">Export CSV</button>
+          <button class="btn ghost" id="refreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="split">
+        <div class="miniPanel">
+          <div class="block">
+            <h4 class="miniTitle">Summary</h4>
+            <div class="hr"></div>
+            <div class="tableWrap smallWrap">
+              <table class="table">
+                <thead>
+                  <tr><th>Key</th><th>Currency</th><th>Total</th><th>Count</th></tr>
+                </thead>
+                <tbody id="summaryBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="hr"></div>
+
+          <div class="block">
+            <h4 class="miniTitle">Month Closing Balance (Manual)</h4>
+            <p class="sub small">Closing balance is per-bank. If you select ALL, this section will show an error.</p>
+            <div class="hr"></div>
+
+            <div class="form compact">
+              <div class="grid2">
+                <div>
+                  <label>Month</label>
+                  <input id="balMonth" placeholder="YYYY-MM" />
+                </div>
+                <div>
+                  <label>Currency</label>
+                  <select id="balCurrency">
+                    <option value="LKR">LKR</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="AUD">AUD</option>
+                  </select>
+                </div>
+              </div>
+
+              <label>Closing Balance</label>
+              <input id="balAmount" type="number" step="0.01" placeholder="End of month bank closing balance" />
+
+              <label>Note</label>
+              <input id="balNote" placeholder="Example: HNB LKR 1 statement closing" />
+
+              <div class="grid2">
+                <button class="btn ghost" id="loadBalanceBtn" type="button">Load</button>
+                <button class="btn" id="saveBalanceBtn" type="button">Save (Admin)</button>
+              </div>
+
+              <p id="balMsg" class="msg"></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="miniPanel">
+          <div class="block">
+            <h4 class="miniTitle">Records</h4>
+            <div class="hr"></div>
+
+            <div class="tableWrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Bank</th>
+                    <th>Type</th><th>Client</th><th>Category</th><th>Description</th>
+                    <th>Amount</th><th>Payment</th><th>Status</th><th>Proof</th><th>Invoice</th>
+                    <th>PO</th><th>Quotation</th><th>Paid Date</th>
+                    <th>Created At</th><th>Created By</th>
+                    <th>Edited At</th><th>Edited By</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="financeTableBody"></tbody>
+              </table>
+            </div>
+
+            <div class="hr"></div>
+            <p class="hint">Links without https:// will auto-fix.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/finance.js') }}"></script>
+</body>
+</html>

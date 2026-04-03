@@ -1,0 +1,170 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Document Storage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h2>Document Storage</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+      <p class="sub small">Professional company document explorer with permissions, sharing, trash bin, and admin lock.</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/google-drive/connect">Connect / Refresh Google Drive</a>
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page doc-page">
+    <div class="panel doc-left">
+      <div class="doc-section">
+        <h3>Explorer</h3>
+        <div class="row">
+          <button id="myFoldersBtn" class="btn mini" type="button">My Folders</button>
+          <button id="sharedBtn" class="btn ghost mini" type="button">Shared With Me</button>
+          {% if role == "ADMIN" %}
+          <button id="trashBtn" class="btn ghost mini" type="button">Trash Bin</button>
+          {% endif %}
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <button id="goRootBtn" class="btn ghost mini" type="button">Root</button>
+          <button id="goUpBtn" class="btn ghost mini" type="button">Up</button>
+          <button id="refreshDocsBtn" class="btn ghost mini" type="button">Refresh</button>
+        </div>
+
+        <p id="pathText" class="hint">Root</p>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="doc-section">
+        <h3>Create Folder</h3>
+
+        <label>Folder Name</label>
+        <input id="folderName" placeholder="Example: Kamal / Shipment 001 / VAT" />
+
+        <label>Notes</label>
+        <textarea id="folderNotes" rows="3" placeholder="Optional note"></textarea>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Who Can Access</h4>
+        <p class="sub small">Creator and admins are auto-added with edit access.</p>
+        <input id="shareSearch" placeholder="Search users..." />
+        <div id="shareUserBox" class="doc-share-box"></div>
+
+        <button id="createFolderBtn" class="btn" type="button">Create Folder</button>
+        <p id="folderMsg" class="msg"></p>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="doc-section">
+        <h3>Upload Document</h3>
+
+        <label>Display Name (optional)</label>
+        <input id="uploadDisplayName" placeholder="Leave blank to use file name" />
+
+        <label>Choose File</label>
+        <input id="uploadFile" type="file" />
+
+        <label>Notes</label>
+        <textarea id="uploadNotes" rows="3" placeholder="Optional note"></textarea>
+
+        <button id="uploadBtn" class="btn" type="button">Upload Document</button>
+        <p id="uploadMsg" class="msg"></p>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="doc-section">
+        <h3>Selected Item</h3>
+        <p id="selectedItemText" class="sub small">No item selected.</p>
+
+        <label>Name</label>
+        <input id="editName" placeholder="Select an item first" />
+
+        <label>Notes</label>
+        <textarea id="editNotes" rows="3" placeholder="Edit notes"></textarea>
+
+        <label>Drive Link</label>
+        <input id="editDriveLink" readonly />
+
+        <div class="row">
+          <button id="copyLinkBtn" class="btn ghost mini" type="button">Copy Link</button>
+          <a id="openLinkBtn" class="btn ghost mini" href="#" target="_blank" rel="noopener">Open</a>
+          {% if role == "ADMIN" %}
+          <button id="toggleLockBtn" class="btn ghost mini" type="button">Lock / Unlock</button>
+          {% endif %}
+        </div>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Permissions</h4>
+        <p class="sub small">Other users are also shared in Google Drive using their personal Google email.</p>
+        <div id="editPermUserBox" class="doc-share-box"></div>
+
+        <div class="row" style="margin-top:12px;">
+          <button id="saveEditBtn" class="btn" type="button">Save Changes</button>
+          <button id="deleteItemBtn" class="btn danger" type="button">Move to Trash</button>
+          <button id="restoreItemBtn" class="btn ghost" type="button" style="display:none;">Restore</button>
+          <button id="deleteForeverBtn" class="btn danger" type="button" style="display:none;">Delete Forever</button>
+          <button id="clearSelectionBtn" class="btn ghost" type="button">Clear</button>
+        </div>
+
+        <p id="editMsg" class="msg"></p>
+      </div>
+    </div>
+
+    <div class="panel wide doc-right">
+      <div class="doc-header">
+        <div>
+          <h3>Company Document Storage</h3>
+          <p class="sub small">Double click folders to open. Use action buttons or selection panel.</p>
+        </div>
+
+        <div class="row">
+          <input id="listSearch" placeholder="Search current view..." class="doc-search" />
+          {% if role == "ADMIN" %}
+          <button id="trashSelectAllBtn" class="btn ghost mini" type="button" style="display:none;">Select All</button>
+          <button id="trashClearAllBtn" class="btn ghost mini" type="button" style="display:none;">Clear</button>
+          <button id="trashRestoreSelectedBtn" class="btn ghost mini" type="button" style="display:none;">Restore Selected</button>
+          <button id="trashDeleteSelectedBtn" class="btn danger mini" type="button" style="display:none;">Delete Selected Forever</button>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="tableWrap doc-table-wrap">
+        <table class="table doc-table">
+          <thead>
+            <tr>
+              <th id="trashCheckHead" style="display:none;">Select</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Owner</th>
+              <th>Locked</th>
+              <th>Created</th>
+              <th>Deleted</th>
+              <th>Link</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="docsBody"></tbody>
+        </table>
+      </div>
+
+      <p id="listMsg" class="msg"></p>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/document_storage.js') }}"></script>
+</body>
+</html>

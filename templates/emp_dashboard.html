@@ -1,0 +1,196 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Employee Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h2>Employee Dashboard</h2>
+      <p class="sub">Welcome, <b>{{ user }}</b> • Role: <b>{{ role }}</b></p>
+    </div>
+    <a class="btn ghost" href="/logout">Logout</a>
+  </div>
+
+  <div class="page">
+    <div class="panel wide">
+      <h3>Modules</h3>
+
+      <div class="cards" id="moduleCards" style="display:none;">
+
+        <a class="card" href="/finance" data-mod="FINANCE">
+          <h4>Finance</h4>
+          <p>View finance records. If you have edit permission, you can also add and update records.</p>
+        </a>
+
+        <a class="card" href="/cash-advances" data-mod="CASH_ADVANCES">
+          <h4>Cash Advances</h4>
+          <p>Track company-given money, add expense breakdowns, and see remaining balances.</p>
+        </a>
+
+        <a class="card" href="/document-storage" data-mod="DOCUMENT_STORAGE">
+          <h4>Document Storage</h4>
+          <p>Open allowed folders, upload documents, create subfolders, and copy Drive links.</p>
+        </a>
+
+        <a class="card disabled" href="javascript:void(0)" data-mod="CLIENTS" data-inactive="1">
+          <h4>Clients</h4>
+          <p>Client and company list with related business folders and records.</p>
+        </a>
+
+        <a class="card" href="/invoices" data-mod="INVOICES">
+          <h4>Invoices</h4>
+          <p>Use invoice, PO, quotation, and reverse number tools based on access given by admin.</p>
+        </a>
+
+        <a class="card" href="/messages" data-mod="MESSAGES" style="position:relative;">
+          <h4>Messages</h4>
+          <p>Send and receive internal ERP messages, group messages, and notification-based updates.</p>
+          <span id="msgBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
+        </a>
+
+        <a class="card" href="/calendar" data-mod="CALENDAR" style="position:relative;">
+          <h4>Calendar</h4>
+          <p>View and manage shared work schedules, active calendar updates, reminders, and holidays.</p>
+          <span id="calendarBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
+        </a>
+
+        <a class="card" href="/worksheet" data-mod="WORKSHEET">
+          <h4>Worksheet</h4>
+          <p>Submit daily work details, progress notes, and completed task summaries.</p>
+        </a>
+
+        <a class="card" href="/attendance" data-mod="ATTENDANCE">
+          <h4>Attendance</h4>
+          <p>View attendance details, availability, and absence records if access is allowed.</p>
+        </a>
+        
+        <a class="card" href="/hs-codes" data-mod="HS_CODES">
+          <h4>HS Codes</h4>
+          <p>Search product HS codes, view proof links, and use saved code references.</p>
+        </a>
+
+        <a class="card" href="/marketing-emails" data-mod="MARKETING_EMAILS">
+          <h4>Marketing Emails</h4>
+          <p>Store and use saved buyer emails and outreach lists without repeating work.</p>
+        </a>
+
+        <a class="card disabled" href="javascript:void(0)" data-mod="REPORTS" data-inactive="1">
+          <h4>Reports</h4>
+          <p>Profit, monthly totals, and summary reports when this module becomes active.</p>
+        </a>
+
+        <a class="card" href="/finance-trash" data-mod="FINANCE_TRASH">
+          <h4>Finance Trash</h4>
+          <p>View deleted finance records and restore them if your access allows it.</p>
+        </a>
+
+      </div>
+
+      <div class="alert" id="noAccessMsg" style="display:none;">
+        You currently have no module access. Please contact admin.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function safeJson(res){
+      try { return await res.json(); }
+      catch { return {}; }
+    }
+
+    async function loadMe(){
+      const res = await fetch("/api/me", { credentials: "same-origin" });
+      return await safeJson(res);
+    }
+
+    function hasAccess(me, moduleKey){
+      if(!me) return false;
+      if(me.role === "ADMIN") return true;
+
+      const p = (me.permissions || {})[moduleKey];
+      return p && Number(p.can_access) === 1;
+    }
+
+    async function loadMessageBadge(me){
+      try{
+        if(!hasAccess(me, "MESSAGES")) return;
+
+        const res = await fetch("/api/messages/unread-count", { credentials: "same-origin" });
+        const out = await res.json();
+        const count = Number(out?.data?.unread_count || 0);
+        const badge = document.getElementById("msgBadge");
+        if(!badge) return;
+
+        if(count > 0){
+          badge.style.display = "inline-flex";
+          badge.textContent = count > 99 ? "99+" : String(count);
+        }else{
+          badge.style.display = "none";
+          badge.textContent = "0";
+        }
+      }catch(e){}
+    }
+
+    async function loadCalendarBadge(me){
+      try{
+        if(!hasAccess(me, "CALENDAR")) return;
+
+        const res = await fetch("/api/messages/calendar-badge", { credentials: "same-origin" });
+        const out = await safeJson(res);
+        const count = Array.isArray(out?.data) ? out.data.length : 0;
+        const badge = document.getElementById("calendarBadge");
+        if(!badge) return;
+
+        if(count > 0){
+          badge.style.display = "inline-flex";
+          badge.textContent = count > 99 ? "99+" : String(count);
+        }else{
+          badge.style.display = "none";
+          badge.textContent = "0";
+        }
+      }catch(e){}
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      const me = await loadMe();
+
+      const cardsWrap = document.getElementById("moduleCards");
+      const noAccessMsg = document.getElementById("noAccessMsg");
+
+      const cards = Array.from(document.querySelectorAll("[data-mod]"));
+      let shown = 0;
+
+      cards.forEach(card => {
+        const key = card.getAttribute("data-mod");
+
+        if(hasAccess(me, key)){
+          card.style.display = "";
+          shown++;
+
+          if(card.getAttribute("data-inactive") === "1"){
+            card.addEventListener("click", (e) => {
+              e.preventDefault();
+              alert("This module is allowed, but not active yet.");
+            });
+          }
+        } else {
+          card.style.display = "none";
+        }
+      });
+
+      cardsWrap.style.display = "";
+      noAccessMsg.style.display = (shown === 0) ? "block" : "none";
+
+      await loadMessageBadge(me);
+      await loadCalendarBadge(me);
+
+      setInterval(() => loadMessageBadge(me), 5000);
+      setInterval(() => loadCalendarBadge(me), 15000);
+    });
+  </script>
+</body>
+</html>

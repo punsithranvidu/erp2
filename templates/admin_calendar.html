@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin Calendar</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <style>
+    .cal-wrap{display:grid;grid-template-columns:1.35fr .95fr;gap:16px}
+    .cal-toolbar,.cal-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:12px}
+    .cal-week{font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;padding:4px 6px}
+    .cal-day{background:#fff;border:1px solid #e5e7eb;border-radius:14px;min-height:130px;padding:8px;cursor:pointer}
+    .cal-day.active{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.10)}
+    .cal-day-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+    .cal-day-num{font-weight:800}
+    .cal-pill{display:inline-flex;padding:2px 7px;border-radius:999px;font-size:11px;border:1px solid #e5e7eb;background:#f8fafc;margin:2px 4px 0 0}
+    .cal-pill.work{background:#ecfdf5;color:#166534;border-color:#bbf7d0}
+    .cal-pill.pending{background:#fff7ed;color:#9a3412;border-color:#fed7aa}
+    .cal-pill.approved{background:#fee2e2;color:#991b1b;border-color:#fecaca}
+    .cal-pill.event{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+    .cal-side-block{border:1px solid #e5e7eb;border-radius:14px;padding:12px;background:#fff;margin-bottom:12px}
+    .cal-side-block h4{margin:0 0 10px}
+    .cal-list{max-height:210px;overflow:auto}
+    .cal-item{border-bottom:1px solid #eef2f7;padding:8px 0}
+    .cal-item:last-child{border-bottom:none}
+    .cal-lock{font-size:12px;color:#64748b}
+    .cal-user-select{min-width:220px}
+    .cal-mini{font-size:12px;color:#64748b}
+    .reminder-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .pending-box{position:fixed;right:18px;top:78px;z-index:999;display:flex;flex-direction:column;gap:10px;max-width:340px}
+    .pending-card{background:#fff;border:1px solid #fecaca;border-left:5px solid #dc2626;border-radius:14px;padding:12px;box-shadow:0 12px 24px rgba(15,23,42,.12)}
+    @media (max-width: 1100px){.cal-wrap{grid-template-columns:1fr}.cal-grid{grid-template-columns:repeat(2,1fr)}}
+    @media (max-width: 700px){.cal-grid{grid-template-columns:1fr}.reminder-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body data-calendar-scope="ADMIN">
+  <div class="topbar">
+    <div>
+      <h2>Admin Calendar</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+  <div id="pendingReminders" class="pending-box"></div>
+  <div class="page" style="grid-template-columns:1fr;">
+    <div class="panel wide">
+      <div class="cal-wrap">
+        <div>
+          <div class="cal-toolbar">
+            <button id="prevMonthBtn" class="btn ghost mini" type="button">←</button>
+            <h3 id="monthTitle" style="margin:0 6px 0 0;">Calendar</h3>
+            <button id="nextMonthBtn" class="btn ghost mini" type="button">→</button>
+            <button id="todayBtn" class="btn mini" type="button">Today</button>
+            <select id="viewUserSelect" class="cal-user-select"></select>
+          </div>
+          <div class="cal-grid" id="weekHead"></div>
+          <div class="cal-grid" id="monthGrid"></div>
+        </div>
+        <div>
+          <div class="cal-side-block">
+            <h4>Selected Day</h4>
+            <div id="selectedDateText" class="cal-mini">Choose a date</div>
+            <div id="selectedDateList" class="cal-list"></div>
+          </div>
+
+          <div class="cal-side-block">
+            <h4>Weekly Work Schedule</h4>
+            <div id="scheduleEditor"></div>
+            <div class="row" style="margin-top:10px;">
+              <button id="saveScheduleBtn" class="btn mini" type="button">Save Schedule</button>
+            </div>
+            <p id="scheduleMsg" class="msg"></p>
+          </div>
+
+          <div class="cal-side-block">
+            <h4>Unavailable / Break Request</h4>
+            <label>Start Date</label>
+            <input id="unStartDate" type="date" />
+            <label>End Date</label>
+            <input id="unEndDate" type="date" />
+            <label class="row"><input id="unAllDay" type="checkbox" checked /> All day</label>
+            <div class="grid2">
+              <div><label>Start Time</label><input id="unStartTime" type="time" /></div>
+              <div><label>End Time</label><input id="unEndTime" type="time" /></div>
+            </div>
+            <label>Reason</label>
+            <textarea id="unReason" rows="3" placeholder="Explain the break / unavailable reason"></textarea>
+            <div class="row" style="margin-top:10px;">
+              <button id="saveUnBtn" class="btn mini" type="button">Submit Request</button>
+            </div>
+            <p id="unMsg" class="msg"></p>
+          </div>
+
+          <div class="cal-side-block">
+            <h4>Create Reminder / Event</h4>
+            <label>Title</label><input id="evTitle" />
+            <label>Date</label><input id="evDate" type="date" />
+            <label class="row"><input id="evAllDay" type="checkbox" checked /> All day</label>
+            <div class="grid2">
+              <div><label>Start Time</label><input id="evStart" type="time" /></div>
+              <div><label>End Time</label><input id="evEnd" type="time" /></div>
+            </div>
+            <label>Reminder Times (up to 3)</label>
+            <div class="reminder-grid">
+              <input id="rem1" type="time" />
+              <input id="rem2" type="time" />
+              <input id="rem3" type="time" />
+            </div>
+            <label>Show To</label>
+            <select id="audienceType">
+              <option value="ONLY_ME">Only me</option>
+              <option value="EVERYONE">Everyone</option>
+              <option value="ME_AND_ADMINS">Me & Admins</option>
+              <option value="SELECTED_USERS">Select specific users</option>
+            </select>
+            <label>Selected Users</label>
+            <div id="audienceUsersBox" class="group-members" style="max-height:140px;"></div>
+            <label>Notes</label><textarea id="evNotes" rows="2"></textarea>
+            <div class="row" style="margin-top:10px;">
+              <button id="saveEventBtn" class="btn mini" type="button">Save Event</button>
+            </div>
+            <p id="eventMsg" class="msg"></p>
+          </div>
+
+          <div class="cal-side-block">
+            <h4>Requests / History</h4>
+            <div id="requestList" class="cal-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
+</body>
+</html>

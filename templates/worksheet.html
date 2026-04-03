@@ -1,0 +1,344 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Worksheet</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <style>
+    .ws-page-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-end;
+      gap:14px;
+      flex-wrap:wrap;
+      margin-bottom:16px;
+    }
+
+    .ws-page-head-left h3{
+      margin:0;
+    }
+
+    .ws-page-head-left p{
+      margin:6px 0 0 0;
+      color:#64748b;
+      font-size:13px;
+    }
+
+    .ws-controls{
+      display:flex;
+      gap:12px;
+      align-items:flex-end;
+      flex-wrap:wrap;
+      margin-bottom:14px;
+    }
+
+    .ws-controls .field{
+      min-width:180px;
+    }
+
+    .ws-controls label{
+      display:block;
+      margin-bottom:6px;
+      font-size:13px;
+      font-weight:700;
+      color:#334155;
+    }
+
+    .ws-controls input,
+    .ws-controls select{
+      width:100%;
+      box-sizing:border-box;
+    }
+
+    .ws-note{
+      font-size:12px;
+      color:#64748b;
+      margin:8px 0 14px 0;
+    }
+
+    .ws-table-wrap{
+      overflow:auto;
+      border:1px solid #e5e7eb;
+      border-radius:16px;
+      background:#fff;
+    }
+
+    .ws-table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:980px;
+    }
+
+    .ws-table th,
+    .ws-table td{
+      border-bottom:1px solid #eef2f7;
+      padding:10px;
+      text-align:left;
+      vertical-align:top;
+      font-size:13px;
+    }
+
+    .ws-table th{
+      background:#f8fafc;
+      color:#334155;
+      font-weight:700;
+      position:sticky;
+      top:0;
+      z-index:2;
+      white-space:nowrap;
+    }
+
+    .ws-table textarea{
+      width:100%;
+      min-height:82px;
+      resize:vertical;
+      box-sizing:border-box;
+    }
+
+    .ws-table select{
+      width:100%;
+      box-sizing:border-box;
+    }
+
+    .ws-day-off{
+      background:#f8fafc;
+    }
+
+    .ws-day-off textarea{
+      background:#f8fafc;
+    }
+
+    .ws-small{
+      font-size:12px;
+      color:#64748b;
+      line-height:1.4;
+    }
+
+    .ws-schedule-badge{
+      display:inline-flex;
+      padding:4px 9px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:700;
+      border:1px solid #cbd5e1;
+      background:#f8fafc;
+      color:#334155;
+    }
+
+    .ws-schedule-badge.work{
+      background:#ecfdf5;
+      color:#166534;
+      border-color:#bbf7d0;
+    }
+
+    .ws-schedule-badge.off{
+      background:#f8fafc;
+      color:#64748b;
+      border-color:#e2e8f0;
+    }
+
+    .ws-status{
+      display:inline-flex;
+      padding:4px 9px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:700;
+      border:1px solid #e5e7eb;
+      background:#f8fafc;
+    }
+
+    .ws-status.draft{
+      background:#eff6ff;
+      color:#1d4ed8;
+      border-color:#bfdbfe;
+    }
+
+    .ws-status.submitted{
+      background:#fff7ed;
+      color:#c2410c;
+      border-color:#fdba74;
+    }
+
+    .ws-status.approved{
+      background:#ecfdf5;
+      color:#166534;
+      border-color:#86efac;
+    }
+
+    .ws-status.returned{
+      background:#fee2e2;
+      color:#991b1b;
+      border-color:#fca5a5;
+    }
+
+    .ws-status.reopen_requested{
+      background:#fef3c7;
+      color:#92400e;
+      border-color:#fcd34d;
+    }
+
+    .ws-actions{
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+    }
+
+    .ws-locked{
+      opacity:.65;
+    }
+
+    .ws-admin-panel{
+      margin-bottom:14px;
+      padding:12px;
+      border:1px solid #dbeafe;
+      border-radius:14px;
+      background:#f8fbff;
+    }
+
+    .ws-admin-panel h4{
+      margin:0 0 10px 0;
+      color:#1e3a8a;
+    }
+
+    .ws-admin-panel .row{
+      row-gap:10px;
+    }
+
+    .ws-admin-empty{
+      padding:14px;
+      border:1px dashed #cbd5e1;
+      border-radius:14px;
+      background:#fff;
+      color:#64748b;
+      font-size:13px;
+      margin-bottom:14px;
+    }
+
+    .ws-view-badge{
+      display:inline-flex;
+      padding:5px 10px;
+      border-radius:999px;
+      background:#f1f5f9;
+      color:#334155;
+      font-size:12px;
+      font-weight:700;
+      border:1px solid #e2e8f0;
+    }
+
+    @media (max-width: 900px){
+      .ws-controls{
+        flex-direction:column;
+        align-items:stretch;
+      }
+
+      .ws-controls .field{
+        min-width:100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h2>Worksheet</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page" style="grid-template-columns:1fr;">
+    <div class="panel wide">
+      <div class="ws-page-head">
+        <div class="ws-page-head-left">
+          <h3>Daily Work Worksheet</h3>
+          <p>
+            {% if role == "ADMIN" %}
+              Admin can view any employee or admin worksheet from here. Your own records can also be saved here.
+            {% else %}
+              You can only see and manage your own worksheet here.
+            {% endif %}
+          </p>
+        </div>
+        <div>
+          <span id="wsCurrentView" class="ws-view-badge">My Worksheet</span>
+        </div>
+      </div>
+
+      {% if role == "ADMIN" %}
+      <div class="ws-admin-panel">
+        <h4>Admin Control Panel</h4>
+        <div class="ws-controls">
+          <div class="field">
+            <label for="wsUserSelect">Select User</label>
+            <select id="wsUserSelect">
+              <option value="">-- Select user to view --</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="wsMonth">Month</label>
+            <input id="wsMonth" type="month" />
+          </div>
+
+          <div class="field">
+            <button id="wsLoadBtn" class="btn mini" type="button">Load Worksheet</button>
+          </div>
+
+          <div class="field">
+            <button id="wsMyTableBtn" class="btn ghost mini" type="button">My Table</button>
+          </div>
+        </div>
+
+        <div class="ws-note">
+          Select any employee or admin name to see their table. If no user is selected, the table stays empty for admin view.
+        </div>
+      </div>
+
+      <div id="wsAdminEmptyState" class="ws-admin-empty">
+        Select a user from the admin control panel to open a worksheet table.
+      </div>
+      {% else %}
+      <div class="ws-controls">
+        <div class="field">
+          <label for="wsMonth">Month</label>
+          <input id="wsMonth" type="month" />
+        </div>
+
+        <div class="field">
+          <button id="wsLoadBtn" class="btn mini" type="button">Load Worksheet</button>
+        </div>
+      </div>
+
+      <div class="ws-note">
+        After you save, you can still edit. After you submit, the row is locked until admin reopens it.
+      </div>
+      {% endif %}
+
+      <p id="wsMsg" class="msg"></p>
+
+      <div id="wsTableWrap" class="ws-table-wrap" {% if role == "ADMIN" %}style="display:none;"{% endif %}>
+        <table class="ws-table">
+          <thead>
+            <tr>
+              <th style="width:125px;">Date</th>
+              <th style="width:170px;">Schedule</th>
+              <th style="width:150px;">Workday / Not Workday</th>
+              <th style="min-width:320px;">Work Summary</th>
+              <th style="width:130px;">Status</th>
+              <th style="min-width:220px;">Admin Comment</th>
+              <th style="min-width:220px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="wsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/worksheet.js') }}"></script>
+</body>
+</html>

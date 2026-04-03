@@ -1,0 +1,681 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Calendar</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <style>
+    .cal-wrap{
+      display:grid;
+      grid-template-columns:1.35fr .95fr;
+      gap:16px;
+      align-items:start;
+    }
+
+    .cal-toolbar,
+    .cal-row{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .cal-grid{
+      display:grid;
+      grid-template-columns:repeat(7,1fr);
+      gap:8px;
+      margin-top:12px;
+    }
+
+    .cal-week{
+      font-size:12px;
+      color:#64748b;
+      font-weight:700;
+      text-transform:uppercase;
+      padding:4px 6px;
+    }
+
+    .cal-day{
+      background:#fff;
+      border:1px solid #e5e7eb;
+      border-radius:14px;
+      min-height:130px;
+      padding:8px;
+      cursor:pointer;
+      transition:all .18s ease;
+    }
+
+    .cal-day:hover{
+      border-color:#cbd5e1;
+      box-shadow:0 10px 20px rgba(15,23,42,.05);
+    }
+
+    .cal-day.active{
+      border-color:#2563eb;
+      box-shadow:0 0 0 3px rgba(37,99,235,.10);
+    }
+
+    .cal-day.holiday{
+      background:#fffbeb;
+      border-color:#fcd34d;
+    }
+
+    .cal-day-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:6px;
+    }
+
+    .cal-day-num{
+      font-weight:800;
+    }
+
+    .cal-pill{
+      display:inline-flex;
+      padding:2px 7px;
+      border-radius:999px;
+      font-size:11px;
+      border:1px solid #e5e7eb;
+      background:#f8fafc;
+      margin:2px 4px 0 0;
+      line-height:1.2;
+    }
+
+    .cal-pill.work{
+      background:#ecfdf5;
+      color:#166534;
+      border-color:#bbf7d0;
+    }
+
+    .cal-pill.pending{
+      background:#fff7ed;
+      color:#9a3412;
+      border-color:#fed7aa;
+    }
+
+    .cal-pill.approved{
+      background:#fee2e2;
+      color:#991b1b;
+      border-color:#fecaca;
+    }
+
+    .cal-pill.cancelreq{
+      background:#fff7ed;
+      color:#b45309;
+      border-color:#fdba74;
+    }
+
+    .cal-pill.event{
+      background:#eff6ff;
+      color:#1d4ed8;
+      border-color:#bfdbfe;
+    }
+
+    .cal-pill.holiday{
+      background:#fef3c7;
+      color:#92400e;
+      border-color:#fcd34d;
+    }
+
+    .cal-side-block{
+      border:1px solid #e5e7eb;
+      border-radius:14px;
+      padding:12px;
+      background:#fff;
+      margin-bottom:12px;
+      overflow:hidden;
+    }
+
+    .cal-side-block h4{
+      margin:0 0 10px;
+    }
+
+    .cal-side-block label{
+      display:block;
+      margin:10px 0 6px;
+      font-size:13px;
+      color:#475569;
+      font-weight:600;
+    }
+
+    .cal-side-block input,
+    .cal-side-block select,
+    .cal-side-block textarea{
+      width:100%;
+      max-width:100%;
+      display:block;
+      box-sizing:border-box;
+    }
+
+    .cal-side-block textarea{
+      resize:vertical;
+      min-height:72px;
+    }
+
+    .cal-list{
+      max-height:260px;
+      overflow:auto;
+    }
+
+    .cal-item{
+      border-bottom:1px solid #eef2f7;
+      padding:10px 0;
+      overflow:hidden;
+    }
+
+    .cal-item:last-child{
+      border-bottom:none;
+    }
+
+    .cal-lock{
+      font-size:12px;
+      color:#64748b;
+    }
+
+    .cal-user-select{
+      min-width:240px;
+    }
+
+    .cal-mini{
+      font-size:12px;
+      color:#64748b;
+      line-height:1.4;
+    }
+
+    .pending-box{
+      position:fixed;
+      right:18px;
+      top:78px;
+      z-index:999;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      max-width:340px;
+    }
+
+    .pending-card{
+      background:#fff;
+      border:1px solid #fecaca;
+      border-left:5px solid #dc2626;
+      border-radius:14px;
+      padding:12px;
+      box-shadow:0 12px 24px rgba(15,23,42,.12);
+    }
+
+    .cal-form-switch{
+      margin-bottom:10px;
+    }
+
+    .cal-form-panel{
+      display:none;
+      opacity:0;
+      transform:translateY(-6px);
+      transition:all .22s ease;
+    }
+
+    .cal-form-panel.open{
+      display:block;
+      opacity:1;
+      transform:translateY(0);
+    }
+
+    .reminder-early-grid{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:8px;
+      margin-top:8px;
+    }
+
+    .reminder-early-item{
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:8px;
+      background:#f8fafc;
+    }
+
+    .reminder-early-item label{
+      margin:0 0 4px;
+      font-size:12px;
+    }
+
+    #audienceUsersWrap{
+      display:none;
+    }
+
+    #audienceUsersWrap.show{
+      display:block;
+    }
+
+    #audienceUsersBox{
+      display:block !important;
+      max-height:180px !important;
+      overflow:auto;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      background:#fff;
+      padding:10px;
+    }
+
+    #audienceUsersBox label{
+      display:flex;
+      align-items:flex-start;
+      gap:8px;
+      margin:0;
+      padding:8px 0;
+      font-size:14px;
+      font-weight:400;
+      color:#0f172a;
+      border-bottom:1px solid #f1f5f9;
+    }
+
+    #audienceUsersBox label:last-child{
+      border-bottom:none;
+    }
+
+    #audienceUsersBox input[type="checkbox"]{
+      width:16px;
+      height:16px;
+      min-width:16px;
+      margin-top:2px;
+      flex:0 0 auto;
+    }
+
+    #requestList .cal-item b{
+      display:block;
+      margin-bottom:3px;
+      font-size:15px;
+    }
+
+    #requestList .cal-item div{
+      word-break:break-word;
+    }
+
+    #selectedDateList .cal-item b{
+      display:block;
+      margin-bottom:4px;
+    }
+
+    #scheduleEditor .cal-item .grid2{
+      margin-top:8px;
+    }
+
+    #scheduleEditor .cal-item .row{
+      margin-top:6px;
+    }
+
+    .cal-side-block .row{
+      row-gap:8px;
+    }
+
+    .cal-side-block .btn{
+      flex:0 0 auto;
+    }
+
+    .cal-history-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      margin-bottom:10px;
+      flex-wrap:wrap;
+    }
+
+    .cal-history-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    .cal-soft-note{
+      margin-top:6px;
+      font-size:12px;
+      color:#64748b;
+    }
+
+    .event-form-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    .event-form-head .btn{
+      margin-top:0;
+    }
+
+    .cal-share-box{
+      margin-top:10px;
+      padding:10px;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      background:#f8fafc;
+    }
+
+    .cal-share-box label{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      margin:0;
+      font-weight:500;
+      color:#334155;
+    }
+
+    .cal-share-box input[type="checkbox"]{
+      width:auto;
+      margin:0;
+    }
+
+    .cal-view-note{
+      font-size:12px;
+      color:#64748b;
+      margin-top:4px;
+    }
+
+    .cal-hidden{
+      display:none !important;
+    }
+
+    .holiday-panel{
+      border:1px solid #fde68a;
+      background:#fffbeb;
+    }
+
+    .holiday-panel h4{
+      color:#92400e;
+    }
+
+    .history-month-note{
+      margin-top:4px;
+      font-size:12px;
+      color:#64748b;
+    }
+
+    .holiday-action-row{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:10px;
+    }
+
+    @media (max-width: 1100px){
+      .cal-wrap{
+        grid-template-columns:1fr;
+      }
+
+      .cal-grid{
+        grid-template-columns:repeat(2,1fr);
+      }
+    }
+
+    @media (max-width: 700px){
+      .cal-grid{
+        grid-template-columns:1fr;
+      }
+
+      .reminder-early-grid{
+        grid-template-columns:1fr;
+      }
+
+      .cal-user-select{
+        min-width:100%;
+      }
+    }
+  </style>
+</head>
+<body data-calendar-scope="SHARED">
+  <div class="topbar">
+    <div>
+      <h2>Calendar</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div id="pendingReminders" class="pending-box"></div>
+
+  <div class="page" style="grid-template-columns:1fr;">
+    <div class="panel wide">
+      <div class="cal-wrap">
+        <div>
+          <div class="cal-toolbar">
+            <button id="prevMonthBtn" class="btn ghost mini" type="button">←</button>
+            <h3 id="monthTitle" style="margin:0 6px 0 0;">Calendar</h3>
+            <button id="nextMonthBtn" class="btn ghost mini" type="button">→</button>
+            <button id="todayBtn" class="btn mini" type="button">Today</button>
+            <select id="viewUserSelect" class="cal-user-select"></select>
+          </div>
+
+          <div id="viewModeNote" class="cal-view-note">Active calendar view</div>
+
+          <div class="cal-grid" id="weekHead"></div>
+          <div class="cal-grid" id="monthGrid"></div>
+        </div>
+
+        <div>
+          <div class="cal-side-block">
+            <h4>Selected Day</h4>
+            <div id="selectedDateText" class="cal-mini">Choose a date</div>
+            <div id="selectedDateList" class="cal-list"></div>
+          </div>
+
+          <div class="cal-side-block">
+            <h4>Calendar Actions</h4>
+
+            <label for="calendarActionSelect">Choose Action</label>
+            <select id="calendarActionSelect" class="cal-form-switch">
+              {% if role == "ADMIN" %}
+              <option value="schedule">Weekly Work Schedule</option>
+              {% endif %}
+              <option value="unavailability">Unavailable / Break Request</option>
+              <option value="event">Create Reminder / Event</option>
+              {% if role == "ADMIN" %}
+              <option value="holiday">Holiday / Special Day</option>
+              {% endif %}
+            </select>
+
+            {% if role == "ADMIN" %}
+            <div id="panelSchedule" class="cal-form-panel open">
+              <h4 style="margin-top:4px;">Weekly Work Schedule</h4>
+              <div id="scheduleViewInfo" class="cal-soft-note"></div>
+              <div id="scheduleEditor"></div>
+              <div class="row" style="margin-top:10px;">
+                <button id="saveScheduleBtn" class="btn mini" type="button">Save Schedule</button>
+              </div>
+              <p id="scheduleMsg" class="msg"></p>
+            </div>
+            {% endif %}
+
+            <div id="panelUnavailability" class="cal-form-panel {% if role != 'ADMIN' %}open{% endif %}">
+              <h4 style="margin-top:4px;">Unavailable / Break Request</h4>
+
+              <label>Start Date</label>
+              <input id="unStartDate" type="date" />
+
+              <label>End Date</label>
+              <input id="unEndDate" type="date" />
+
+              <label class="row">
+                <input id="unAllDay" type="checkbox" checked style="width:auto;">
+                All day
+              </label>
+
+              <div class="grid2">
+                <div>
+                  <label>Start Time</label>
+                  <input id="unStartTime" type="time" />
+                </div>
+                <div>
+                  <label>End Time</label>
+                  <input id="unEndTime" type="time" />
+                </div>
+              </div>
+
+              <label>Reason</label>
+              <textarea id="unReason" rows="3" placeholder="Explain the break / unavailable reason"></textarea>
+
+              <div class="cal-share-box">
+                <label>
+                  <input id="unShareActive" type="checkbox">
+                  Share to Active calendar after approval
+                </label>
+              </div>
+
+              <div class="row" style="margin-top:10px;">
+                <button id="saveUnBtn" class="btn mini" type="button">Submit Request</button>
+              </div>
+              <p id="unMsg" class="msg"></p>
+            </div>
+
+            <div id="panelEvent" class="cal-form-panel">
+              <div class="event-form-head">
+                <h4 style="margin-top:4px; margin-bottom:0;">Create Reminder / Event</h4>
+                <button id="clearEventBtn" class="btn ghost mini" type="button">Clear Form</button>
+              </div>
+
+              <label>Title</label>
+              <input id="evTitle" />
+
+              <label>Main Event Date</label>
+              <input id="evDate" type="date" />
+
+              <label class="row">
+                <input id="evAllDay" type="checkbox" checked style="width:auto;">
+                All day
+              </label>
+
+              <div class="grid2">
+                <div>
+                  <label>Start Time</label>
+                  <input id="evStart" type="time" />
+                </div>
+                <div>
+                  <label>End Time</label>
+                  <input id="evEnd" type="time" />
+                </div>
+              </div>
+
+              <label>Main Event Reminder Time</label>
+              <input id="mainReminderTime" type="time" />
+
+              <label>Early Reminder Dates & Times (up to 3)</label>
+              <div class="reminder-early-grid">
+                <div class="reminder-early-item">
+                  <label>Reminder 1 Date</label>
+                  <input id="rem1Date" type="date" />
+                  <label>Reminder 1 Time</label>
+                  <input id="rem1Time" type="time" />
+                </div>
+
+                <div class="reminder-early-item">
+                  <label>Reminder 2 Date</label>
+                  <input id="rem2Date" type="date" />
+                  <label>Reminder 2 Time</label>
+                  <input id="rem2Time" type="time" />
+                </div>
+
+                <div class="reminder-early-item">
+                  <label>Reminder 3 Date</label>
+                  <input id="rem3Date" type="date" />
+                  <label>Reminder 3 Time</label>
+                  <input id="rem3Time" type="time" />
+                </div>
+              </div>
+
+              <div class="cal-soft-note">
+                Example: Event date 21st, early reminders on 18th, 19th, and 20th with different times.
+              </div>
+
+              <div class="cal-share-box">
+                <label>
+                  <input id="evShowInActive" type="checkbox">
+                  Show this event in Active calendar
+                </label>
+              </div>
+
+              <label>Show To</label>
+              <select id="audienceType">
+                <option value="ONLY_ME">Only me</option>
+                <option value="EVERYONE">Everyone</option>
+                <option value="ME_AND_ADMINS">Me & Admins</option>
+                <option value="SELECTED_USERS">Select specific users</option>
+              </select>
+
+              <div id="audienceUsersWrap">
+                <label>Selected Users</label>
+                <div id="audienceUsersBox" class="group-members"></div>
+              </div>
+
+              <label>Notes</label>
+              <textarea id="evNotes" rows="2"></textarea>
+
+              <div class="row" style="margin-top:10px;">
+                <button id="saveEventBtn" class="btn mini" type="button">Save Event</button>
+              </div>
+              <p id="eventMsg" class="msg"></p>
+            </div>
+
+            {% if role == "ADMIN" %}
+            <div id="panelHoliday" class="cal-form-panel">
+              <div class="holiday-panel cal-side-block" style="margin:8px 0 0 0;">
+                <div class="event-form-head">
+                  <h4 style="margin-top:4px; margin-bottom:0;">Holiday / Special Day</h4>
+                  <button id="clearHolidayBtn" class="btn ghost mini" type="button">Clear Form</button>
+                </div>
+
+                <label>Holiday Title</label>
+                <input id="holidayTitle" placeholder="Example: Poya Day / Christmas / Company Holiday" />
+
+                <label>Date</label>
+                <input id="holidayDate" type="date" />
+
+                <label>Type</label>
+                <select id="holidayType">
+                  <option value="GOVERNMENT_HOLIDAY">Government Holiday</option>
+                  <option value="POYA_DAY">Poya / Moon Day</option>
+                  <option value="COMPANY_HOLIDAY">Company Holiday</option>
+                  <option value="SPECIAL_DAY">Special Day</option>
+                </select>
+
+                <label>Notes</label>
+                <textarea id="holidayNotes" rows="2" placeholder="Optional note"></textarea>
+
+                <div class="holiday-action-row">
+                  <button id="saveHolidayBtn" class="btn mini" type="button">Save Holiday</button>
+                  <button id="updateHolidayBtn" class="btn ghost mini" type="button" disabled>Update Holiday</button>
+                  <button id="deleteHolidayBtn" class="btn ghost mini" type="button" disabled>Delete Holiday</button>
+                </div>
+                <p id="holidayMsg" class="msg"></p>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="cal-side-block">
+            <div class="cal-history-head">
+              <div>
+                <h4 style="margin:0;">Requests / History</h4>
+                <div class="history-month-note" id="historyMonthNote">Showing visible month only</div>
+              </div>
+              <div class="cal-history-actions">
+                <button id="refreshHistoryBtn" class="btn ghost mini" type="button">Refresh</button>
+                <button id="deleteHistoryBtn" class="btn ghost mini" type="button">Delete Selected</button>
+              </div>
+            </div>
+
+            <div id="requestList" class="cal-list"></div>
+            <p id="historyMsg" class="msg"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
+</body>
+</html>

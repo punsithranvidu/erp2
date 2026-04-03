@@ -1,0 +1,173 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Finance Trash</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h2>Finance Trash</h2>
+      <p class="sub">Deleted records (auto purge after 30 days if purge runs)</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="panel wide">
+      <div class="row">
+        <button class="btn ghost" id="refreshTrashBtn">Refresh</button>
+        <button class="btn danger" id="purgeBtn">Purge Expired (30+ days)</button>
+        <span id="msg" class="msg"></span>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="tableWrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Bank</th>
+              <th>Type</th>
+              <th>Client</th>
+              <th>Category</th>
+              <th>Currency</th>
+              <th>Amount</th>
+              <th>Deleted At</th>
+              <th>Deleted By</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="trashBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let ME = null;
+
+    async function safeJson(res){
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
+      if(ct.includes("application/json")) return await res.json();
+      const t = await res.text();
+      throw new Error("Non-JSON response. " + (t||"").slice(0,80));
+    }
+
+    function msg(t, ok=true){
+      const el = $("msg");
+      if(!el) return;
+      el.textContent = t;
+      el.className = "msg " + (ok ? "ok" : "bad");
+    }
+
+    function safeText(v){ return (v===null||v===undefined) ? "" : String(v); }
+
+    function canEditTrash(){
+      if(!ME) return false;
+      if(ME.role === "ADMIN") return true;
+      const p = (ME.permissions || {})["FINANCE_TRASH"];
+      return !!(p && Number(p.can_edit) === 1);
+    }
+
+    async function getMe(){
+      const res = await fetch("/api/me");
+      ME = await safeJson(res);
+
+      // Hide purge button if user cannot edit trash
+      const purgeBtn = $("purgeBtn");
+      if(purgeBtn){
+        purgeBtn.style.display = canEditTrash() ? "inline-block" : "none";
+      }
+    }
+
+    async function loadTrash(){
+      try{
+        const res = await fetch("/api/finance/trash");
+        const rows = await safeJson(res);
+
+        const body = $("trashBody");
+        body.innerHTML = "";
+
+        const editable = canEditTrash();
+
+        rows.forEach(r=>{
+          const tr = document.createElement("tr");
+          tr.classList.add("rowDeleted");
+
+          const bankName = safeText(r.bank_name || ""); // will be empty if API doesn't join bank (ok)
+          const actionHtml = editable
+            ? `<button class="btn mini ok" data-restore="${r.id}">Restore</button>`
+            : `<span class="pill muted">View only</span>`;
+
+          tr.innerHTML = `
+            <td>${r.id}</td>
+            <td>${bankName}</td>
+            <td>${safeText(r.type)}</td>
+            <td>${safeText(r.client_name)}</td>
+            <td>${safeText(r.category)}</td>
+            <td>${safeText(r.currency)}</td>
+            <td><b>${Number(r.amount || 0).toFixed(2)}</b></td>
+            <td>${safeText(r.deleted_at)}</td>
+            <td>${safeText(r.deleted_by)}</td>
+            <td>${actionHtml}</td>
+          `;
+          body.appendChild(tr);
+
+          if(editable){
+            const btn = tr.querySelector(`[data-restore="${r.id}"]`);
+            if(btn){
+              btn.addEventListener("click", async ()=>{
+                try{
+                  const rr = await fetch(`/api/finance/${r.id}/restore`, { method: "POST" });
+                  const out = await safeJson(rr);
+                  if(!rr.ok) throw new Error(out.error || "Restore failed");
+                  msg(`Restored record ${r.id}`, true);
+                  await loadTrash();
+                }catch(e){
+                  msg(e.message, false);
+                }
+              });
+            }
+          }
+        });
+
+        msg(`Loaded ${rows.length} deleted records.`, true);
+      }catch(e){
+        msg(e.message, false);
+      }
+    }
+
+    $("refreshTrashBtn").addEventListener("click", loadTrash);
+
+    $("purgeBtn").addEventListener("click", async ()=>{
+      if(!canEditTrash()){
+        return msg("No permission to purge.", false);
+      }
+      if(!confirm("Permanently delete records that were deleted 30+ days ago?")) return;
+      try{
+        const res = await fetch("/api/finance/purge", { method: "POST" });
+        const out = await safeJson(res);
+        if(!res.ok) throw new Error(out.error || "Purge failed");
+        msg("Purge complete.", true);
+        await loadTrash();
+      }catch(e){
+        msg(e.message, false);
+      }
+    });
+
+    // init
+    (async ()=>{
+      await getMe();
+      await loadTrash();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Finance Trash</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h2>Finance — Deleted Records (Trash)</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page" style="grid-template-columns: 1fr;">
+    <div class="panel wide">
+
+      <div class="block">
+        <p class="sub small">
+          Deleted records are kept for <b>30 days</b>. You can restore them anytime before expiry.
+        </p>
+
+        <div class="row">
+          <button class="btn ghost" id="refreshTrashBtn">Refresh</button>
+          <button class="btn ghost" id="purgeBtn">Purge Expired (30 days)</button>
+        </div>
+
+        <p id="trashMsg" class="msg"></p>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="tableWrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th><th>Type</th><th>Client</th><th>Category</th><th>Description</th>
+              <th>Amount</th><th>Payment</th><th>Status</th>
+              <th>Deleted At</th><th>Deleted By</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="trashBody"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/admin_finance_trash.js') }}"></script>
+</body>
+</html>

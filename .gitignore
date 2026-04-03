@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.vscode/
+.DS_Store
+*.backup*
+*.bak
+*.db-journal
+secrets/
+uploads/
+static/uploads/

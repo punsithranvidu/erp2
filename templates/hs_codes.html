@@ -1,0 +1,258 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HS Codes</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <style>
+    .hs-wrap{
+      display:grid;
+      grid-template-columns: 380px 1fr;
+      gap:18px;
+      align-items:start;
+    }
+
+    .hs-box{
+      border:1px solid #e5e7eb;
+      border-radius:18px;
+      background:#fff;
+      padding:16px;
+      overflow:hidden;
+    }
+
+    .hs-box h3{
+      margin:0 0 8px;
+    }
+
+    .hs-sub{
+      margin:0 0 14px;
+      color:#64748b;
+    }
+
+    .hs-box label{
+      display:block;
+      margin:10px 0 6px;
+      font-size:13px;
+      font-weight:600;
+      color:#475569;
+    }
+
+    .hs-box input,
+    .hs-box textarea{
+      width:100%;
+      box-sizing:border-box;
+    }
+
+    .hs-box textarea{
+      min-height:90px;
+      resize:vertical;
+    }
+
+    .hs-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:14px;
+    }
+
+    .hs-toolbar{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:end;
+      flex-wrap:wrap;
+      margin-bottom:14px;
+    }
+
+    .hs-search{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:end;
+      width:100%;
+    }
+
+    .hs-search > div{
+      flex:1;
+      min-width:220px;
+    }
+
+    .hs-table-wrap{
+      width:100%;
+      overflow-x:auto !important;
+      overflow-y:auto;
+      border:1px solid #e5e7eb;
+      border-radius:16px 16px 0 0;
+      background:#fff;
+      margin-top:14px;
+      scrollbar-gutter: stable;
+    }
+
+    .hs-bottom-scroll{
+      width:100%;
+      overflow-x:auto !important;
+      overflow-y:hidden !important;
+      border:1px solid #e5e7eb;
+      border-top:none;
+      border-radius:0 0 16px 16px;
+      background:#f8fafc;
+      height:18px;
+      scrollbar-gutter: stable;
+    }
+
+    .hs-bottom-scroll div{
+      height:1px;
+    }
+
+    .hs-table{
+      width:max-content !important;
+      min-width:1450px !important;
+      border-collapse:collapse;
+    }
+
+    .hs-table th,
+    .hs-table td{
+      border-bottom:1px solid #eef2f7;
+      padding:12px 10px;
+      text-align:left;
+      vertical-align:top;
+      font-size:14px;
+      white-space:normal;
+    }
+
+    .hs-table th{
+      background:#f8fafc;
+      color:#334155;
+      font-weight:700;
+      position:sticky;
+      top:0;
+      z-index:2;
+      white-space:nowrap;
+    }
+
+    .hs-code{
+      font-weight:700;
+      color:#1d4ed8;
+      white-space:nowrap;
+    }
+
+    .hs-mini{
+      font-size:12px;
+      color:#64748b;
+      line-height:1.4;
+    }
+
+    .hs-row-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    .hs-empty{
+      padding:18px;
+      color:#64748b;
+    }
+
+    .hs-link{
+      word-break:break-all;
+    }
+
+    @media (max-width: 980px){
+      .hs-wrap{
+        grid-template-columns:1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h2>HS Codes</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page" style="grid-template-columns:1fr;">
+    <div class="panel wide">
+      <div class="hs-wrap">
+
+        <div class="hs-box">
+          <h3 id="formTitle">Add HS Code</h3>
+          <p class="hs-sub">Store product name, HS code, proof link, and notes.</p>
+
+          <label for="productName">Product Name</label>
+          <input id="productName" type="text" placeholder="Example: Black Pepper Whole" />
+
+          <label for="hsCode">HS Code</label>
+          <input id="hsCode" type="text" placeholder="Example: 0904.11" />
+
+          <label for="proofLink">Proof Link</label>
+          <input id="proofLink" type="text" placeholder="Paste source / proof link" />
+
+          <label for="notes">Notes</label>
+          <textarea id="notes" placeholder="Optional note"></textarea>
+
+          <div class="hs-actions">
+            <button id="saveBtn" class="btn mini" type="button">Save</button>
+            <button id="updateBtn" class="btn ghost mini" type="button" disabled>Update</button>
+            <button id="deleteBtn" class="btn ghost mini" type="button" disabled>Delete</button>
+            <button id="clearBtn" class="btn ghost mini" type="button">Clear</button>
+          </div>
+
+          <p id="formMsg" class="msg"></p>
+        </div>
+
+        <div class="hs-box">
+          <div class="hs-toolbar">
+            <div>
+              <h3 style="margin:0;">HS Code List</h3>
+              <p class="hs-sub" style="margin:6px 0 0;">Search by product name or HS code.</p>
+            </div>
+          </div>
+
+          <div class="hs-search">
+            <div>
+              <label for="searchInput">Search</label>
+              <input id="searchInput" type="text" placeholder="Search by name, code, proof link..." />
+            </div>
+            <div style="flex:0 0 auto;">
+              <button id="searchBtn" class="btn mini" type="button">Search</button>
+            </div>
+            <div style="flex:0 0 auto;">
+              <button id="refreshBtn" class="btn ghost mini" type="button">Refresh</button>
+            </div>
+          </div>
+
+          <div class="hs-table-wrap" id="hsTableWrap">
+            <table class="hs-table">
+              <thead>
+                <tr>
+                  <th style="width:220px;">Product</th>
+                  <th style="width:130px;">HS Code</th>
+                  <th style="min-width:220px;">Proof Link</th>
+                  <th style="min-width:220px;">Notes</th>
+                  <th style="width:180px;">Added By</th>
+                  <th style="width:180px;">Last Edited By</th>
+                  <th style="width:160px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+
+
+          <p id="tableMsg" class="msg"></p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/hs_codes.js') }}"></script>
+</body>
+</html>

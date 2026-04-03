@@ -1,0 +1,189 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>User Management</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h2>User Management</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+      <p class="sub small">Admins can create users, edit details, set Google email access, reset passwords, set module access, and disable accounts.</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page" style="grid-template-columns: 430px 1fr;">
+    <div class="panel">
+      <h3>Create User</h3>
+
+      <div class="block">
+        <label>Username</label>
+        <input id="uUsername" placeholder="emp2" />
+
+        <label>Password</label>
+        <input id="uPassword" type="password" placeholder="emp23" />
+
+        <label>Role</label>
+        <select id="uRole">
+          <option value="EMP">EMP</option>
+          <option value="ADMIN">ADMIN</option>
+        </select>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Optional Details</h4>
+        <label>Full Name</label>
+        <input id="uFullName" placeholder="Employee full name" />
+
+        <label>NIC</label>
+        <input id="uNic" placeholder="NIC number (optional)" />
+
+        <label>Join Date</label>
+        <input id="uJoinDate" type="date" />
+
+        <label>Job Role</label>
+        <input id="uJobRole" placeholder="Driver / Store / Admin assistant..." />
+
+        <label>Address</label>
+        <input id="uAddress" placeholder="Address (optional)" />
+
+        <label>Personal Google Email</label>
+        <input id="uGoogleEmail" type="email" placeholder="emp@gmail.com" />
+        <p class="sub small">Used for Google Drive sharing. Leave blank if this user should not open Drive links directly.</p>
+
+        <button id="createUserBtn" class="btn" type="button">Create User</button>
+        <p id="createMsg" class="msg"></p>
+      </div>
+
+      <div class="hr"></div>
+
+      <h3>Selected User</h3>
+      <p class="sub small">Click a user in the right table.</p>
+
+      <div class="block">
+        <div class="hr"></div>
+        <div class="alert" id="selectedAlert" style="display:none;"></div>
+
+        <h4 class="miniTitle">Edit Profile Details</h4>
+        <label>Full Name</label>
+        <input id="eFullName" placeholder="Full name" />
+
+        <label>NIC</label>
+        <input id="eNic" placeholder="NIC" />
+
+        <label>Join Date</label>
+        <input id="eJoinDate" type="date" />
+
+        <label>Job Role</label>
+        <input id="eJobRole" placeholder="Job role" />
+
+        <label>Address</label>
+        <input id="eAddress" placeholder="Address" />
+
+        <label>Personal Google Email</label>
+        <input id="eGoogleEmail" type="email" placeholder="emp@gmail.com" />
+        <p class="sub small">This Google email will be shared automatically on folders/files when ERP permissions are given.</p>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Rename Username</h4>
+        <label>New Username</label>
+        <input id="renameTo" placeholder="emp01" />
+        <button id="renameBtn" class="btn ghost" type="button">Rename</button>
+        <p id="renameMsg" class="msg"></p>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Reset Password</h4>
+        <label>New Password</label>
+        <input id="newPass" type="password" placeholder="new password" />
+        <button id="resetPassBtn" class="btn ghost" type="button">Update Password</button>
+        <p id="passMsg" class="msg"></p>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Role / Status</h4>
+        <label>Role</label>
+        <select id="editRole">
+          <option value="EMP">EMP</option>
+          <option value="ADMIN">ADMIN</option>
+        </select>
+
+        <label>Active</label>
+        <select id="editActive">
+          <option value="1">ACTIVE</option>
+          <option value="0">DISABLED</option>
+        </select>
+
+        <button id="saveUserBtn" class="btn" type="button">Save Changes</button>
+        <p id="saveMsg" class="msg"></p>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Module Access (EMP only)</h4>
+        <p class="sub small">Admins always have full access. For EMP users, choose what pages they can open.</p>
+
+        <div class="form compact" id="permBox">
+          <label class="small muted">Allowed Modules</label>
+          <div id="permModules" class="grid2"></div>
+          <button id="savePermBtn" class="btn ghost" type="button">Save Permissions</button>
+          <p id="permMsg" class="msg"></p>
+        </div>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Danger Zone</h4>
+        <div class="grid2">
+          <button id="disableBtn" class="btn ghost" type="button">Disable User</button>
+          <button id="deleteBtn" class="btn danger" type="button">Delete User</button>
+        </div>
+        <p class="sub small">Delete will permanently remove the user (only allowed if safe). Otherwise, disable is recommended.</p>
+        <p id="dangerMsg" class="msg"></p>
+      </div>
+    </div>
+
+    <div class="panel wide">
+      <div class="block">
+        <h3>Users</h3>
+        <div class="row">
+          <button id="refreshUsersBtn" class="btn ghost" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="tableWrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Active</th>
+              <th>Full Name</th>
+              <th>Google Email</th>
+              <th>Job Role</th>
+              <th>Join Date</th>
+              <th>Created At</th>
+              <th style="text-align:center;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
+
+      <div class="hr"></div>
+      <p class="hint">Tip: save each user's personal Google email here so Document Storage can auto-share folders/files correctly.</p>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/users.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,611 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Messages</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+
+  <style>
+    .msg-layout {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
+      min-height: calc(100vh - 140px);
+    }
+
+    .msg-left,
+    .msg-right {
+      display: flex;
+      flex-direction: column;
+      min-height: 640px;
+    }
+
+    .msg-toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .msg-search {
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    .msg-users-box,
+    .msg-convo-list {
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      overflow: auto;
+      background: #fff;
+    }
+
+    .msg-users-box {
+      max-height: 220px;
+      padding: 8px;
+    }
+
+    .msg-user-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .msg-user-row:hover {
+      background: #f8fafc;
+    }
+
+    .msg-convo-item {
+      padding: 12px 12px;
+      border-bottom: 1px solid #eef2f7;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .msg-convo-item:last-child {
+      border-bottom: none;
+    }
+
+    .msg-convo-item:hover {
+      background: #f8fafc;
+    }
+
+    .msg-convo-item.active {
+      background: #eef6ff;
+      border-left: 4px solid #2563eb;
+      padding-left: 8px;
+    }
+
+    .msg-convo-main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .msg-convo-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .msg-convo-snippet,
+    .msg-convo-meta {
+      font-size: 12px;
+      color: #6b7280;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .msg-badge {
+      min-width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      background: #dc2626;
+      color: #fff;
+      padding: 0 6px;
+    }
+
+    .msg-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .msg-chat-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .msg-chat-sub {
+      font-size: 12px;
+      color: #6b7280;
+      line-height: 1.35;
+    }
+
+    .msg-chat-wrap {
+      position: relative;
+      margin-top: 14px;
+    }
+
+    .msg-messages {
+      flex: 1;
+      height: 68vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: #f8fafc;
+      border-radius: 14px;
+      min-height: 420px;
+      border-left: 1px solid #e5e7eb;
+      scroll-behavior: smooth;
+    }
+
+    /* Change this if you want message width smaller or bigger */
+    .bubble-wrap {
+      display: flex;
+      flex-direction: column;
+      max-width: 46%;
+    }
+
+    .bubble-wrap.mine {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .bubble-wrap.other {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .bubble-meta {
+      font-size: 11px;
+      color: #6b7280;
+      margin-bottom: 1px;
+      padding: 0 2px;
+      line-height: 1.15;
+    }
+
+    /* Main message bubble - FIXED */
+    .bubble {
+      display: inline-block;
+      width: auto;
+      max-width: 100%;
+      min-width: 0;
+      height: auto;
+      margin: 0;
+      border-radius: 12px;
+      padding: 7px 10px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      white-space: normal; /* important fix */
+      overflow-wrap: break-word;
+      word-break: break-word;
+      line-height: 1.28;
+      font-size: 13px;
+      position: relative;
+      vertical-align: top;
+    }
+
+    /* remove template spacing effect */
+    .bubble > div {
+      margin: 0;
+    }
+
+    /* actual message text inside bubble */
+    .bubble > div:not(.bubble-reply):not(.bubble-file) {
+      white-space: pre-wrap;
+      line-height: 1.28;
+      margin: 0;
+    }
+
+    .bubble.mine {
+      background: #dbeafe;
+      color: #111827;
+      border-bottom-right-radius: 6px;
+    }
+
+    .bubble.other {
+      background: #ffffff;
+      color: #111827;
+      border-bottom-left-radius: 6px;
+    }
+
+    .bubble-reply {
+      margin: 0 0 5px 0;
+      padding: 5px 7px;
+      border-left: 3px solid #2563eb;
+      background: #eff6ff;
+      border-radius: 8px;
+      font-size: 11px;
+      color: #374151;
+      line-height: 1.22;
+      white-space: pre-wrap;
+    }
+
+    .bubble-file {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px dashed rgba(0, 0, 0, 0.12);
+      font-size: 12px;
+      line-height: 1.2;
+      white-space: normal;
+    }
+
+    .bubble-actions {
+      margin-top: 1px;
+      padding: 0 2px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      line-height: 1;
+    }
+
+    .bubble-actions button {
+      border: none;
+      background: none;
+      color: #2563eb;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 0;
+      margin: 0;
+      line-height: 1;
+    }
+
+    .msg-compose {
+      margin-top: 10px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 10px;
+    }
+
+    .msg-compose-top {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    .msg-compose textarea {
+      flex: 1;
+      min-height: 60px;
+      max-height: 150px;
+      resize: vertical;
+    }
+
+    .msg-compose-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      align-items: center;
+    }
+
+    .emoji-box {
+      display: none;
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #fff;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .emoji-box.open {
+      display: flex;
+    }
+
+    .emoji-btn {
+      border: none;
+      background: #f3f4f6;
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 18px;
+    }
+
+    .group-members {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 10px;
+      background: #fff;
+    }
+
+    .empty-chat {
+      color: #6b7280;
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .reply-preview {
+      display: none;
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-left: 3px solid #2563eb;
+      background: #eff6ff;
+      border-radius: 10px;
+      font-size: 12px;
+      color: #374151;
+    }
+
+    .reply-preview.show {
+      display: block;
+    }
+
+    .reply-close {
+      float: right;
+      border: none;
+      background: none;
+      color: #dc2626;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .trash-list {
+      max-height: 320px;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #fff;
+      padding: 8px;
+    }
+
+    .trash-item {
+      border-bottom: 1px solid #eef2f7;
+      padding: 10px 8px;
+    }
+
+    .trash-item:last-child {
+      border-bottom: none;
+    }
+
+    .msg-scroll-bottom {
+      position: absolute;
+      right: 18px;
+      bottom: 16px;
+      width: 42px;
+      height: 42px;
+      border: none;
+      border-radius: 999px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 10px 20px rgba(37, 99, 235, .25);
+      cursor: pointer;
+      z-index: 5;
+    }
+
+    .msg-scroll-bottom.show {
+      display: inline-flex;
+    }
+
+    /* Keep New Group button blue always */
+    #newGroupBtn {
+      background: rgba(37, 99, 235, .10);
+      color: var(--accent);
+      border: 1px solid rgba(37, 99, 235, .35);
+    }
+
+    #newGroupBtn:hover,
+    #newGroupBtn:focus,
+    #newGroupBtn:active {
+      background: rgba(37, 99, 235, .16);
+      color: var(--accent);
+      border: 1px solid rgba(37, 99, 235, .40);
+    }
+
+    @media (max-width: 980px) {
+      .msg-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .msg-left,
+      .msg-right {
+        min-height: auto;
+      }
+
+      .bubble-wrap {
+        max-width: 82%;
+      }
+
+      .group-members {
+        grid-template-columns: 1fr;
+      }
+
+      .msg-messages {
+        height: 55vh;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <div>
+      <h2>Messages</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+      <p class="sub small">Internal ERP messaging for admins and employees.</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page" style="grid-template-columns:1fr;">
+    <div class="panel wide">
+      <div class="msg-layout">
+        <div class="panel msg-left">
+          <h3>Conversations</h3>
+
+          <div class="msg-toolbar">
+            <button id="refreshConvosBtn" class="btn ghost mini" type="button">Refresh</button>
+            <button id="newGroupBtn" class="btn mini" type="button">New Group</button>
+            <button id="addMemberBtn" class="btn ghost mini" type="button">Add Member</button>
+            <button id="deleteConversationBtn" class="btn ghost mini" type="button">Delete Chat</button>
+            <button id="leaveGroupBtn" class="btn ghost mini" type="button">Leave Group</button>
+            <button id="openTrashBtn" class="btn ghost mini" type="button">Trash</button>
+          </div>
+
+          <input id="conversationSearch" class="msg-search" placeholder="Search conversations..." />
+
+          <div class="hr"></div>
+
+          <h4 class="miniTitle">Start Direct Chat</h4>
+          <div id="userPickerBox" class="msg-users-box"></div>
+
+          <div class="hr"></div>
+
+          <h4 class="miniTitle">Recent Chats</h4>
+          <div id="conversationList" class="msg-convo-list"></div>
+          <p id="leftMsg" class="msg"></p>
+        </div>
+
+        <div class="panel msg-right">
+          <div class="msg-header">
+            <div>
+              <div id="chatTitle" class="msg-chat-title">No conversation selected</div>
+              <div id="chatSub" class="msg-chat-sub">Choose a person or group to start messaging.</div>
+            </div>
+            <div class="row">
+              <button id="markReadBtn" class="btn ghost mini" type="button">Mark Read</button>
+            </div>
+          </div>
+
+          <div class="msg-chat-wrap">
+            <div id="messagesBox" class="msg-messages">
+              <div class="empty-chat">Open a conversation to view messages.</div>
+            </div>
+
+            <button id="scrollBottomBtn" class="msg-scroll-bottom" type="button" title="Go to latest message">↓</button>
+          </div>
+
+          <div class="msg-compose">
+            <div id="replyPreview" class="reply-preview">
+              <button id="clearReplyBtn" class="reply-close" type="button">✕</button>
+              <div><b>Replying to:</b></div>
+              <div id="replyPreviewText"></div>
+            </div>
+
+            <div class="msg-compose-top">
+              <textarea id="messageInput" placeholder="Type your message..."></textarea>
+              <button id="sendMessageBtn" class="btn" type="button">Send</button>
+            </div>
+
+            <div class="msg-compose-actions">
+              <button id="emojiToggleBtn" class="btn ghost mini" type="button">Emoji</button>
+              <label class="btn ghost mini" for="messageFileInput" style="cursor:pointer;">Attach File</label>
+              <input id="messageFileInput" type="file" style="display:none;" />
+              <span id="attachedFileName" class="tiny muted"></span>
+            </div>
+
+            <div id="emojiBox" class="emoji-box">
+              <button class="emoji-btn" type="button">😀</button>
+              <button class="emoji-btn" type="button">😂</button>
+              <button class="emoji-btn" type="button">👍</button>
+              <button class="emoji-btn" type="button">🙏</button>
+              <button class="emoji-btn" type="button">🔥</button>
+              <button class="emoji-btn" type="button">✅</button>
+              <button class="emoji-btn" type="button">📦</button>
+              <button class="emoji-btn" type="button">📄</button>
+              <button class="emoji-btn" type="button">📌</button>
+              <button class="emoji-btn" type="button">🚚</button>
+              <button class="emoji-btn" type="button">💬</button>
+              <button class="emoji-btn" type="button">🎉</button>
+            </div>
+
+            <p id="rightMsg" class="msg"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="groupModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.45); z-index:999;">
+    <div style="max-width:700px; margin:50px auto; background:#fff; border-radius:18px; padding:20px;">
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <h3 style="margin:0;">Create Group Chat</h3>
+        <button id="closeGroupModalBtn" class="btn ghost mini" type="button">Close</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <label>Group Name</label>
+      <input id="groupNameInput" placeholder="Example: Export Team / Finance Team" />
+
+      <label style="margin-top:12px;">Select Members</label>
+      <div id="groupMembersBox" class="group-members"></div>
+
+      <div class="row" style="margin-top:16px;">
+        <button id="createGroupSubmitBtn" class="btn" type="button">Create Group</button>
+      </div>
+
+      <p id="groupMsg" class="msg"></p>
+    </div>
+  </div>
+
+  <div id="addMemberModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.45); z-index:999;">
+    <div style="max-width:700px; margin:50px auto; background:#fff; border-radius:18px; padding:20px;">
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <h3 style="margin:0;">Add Members</h3>
+        <button id="closeAddMemberModalBtn" class="btn ghost mini" type="button">Close</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <div id="addMemberBox" class="group-members"></div>
+
+      <div class="row" style="margin-top:16px;">
+        <button id="addMemberSubmitBtn" class="btn" type="button">Add Selected Members</button>
+      </div>
+
+      <p id="addMemberMsg" class="msg"></p>
+    </div>
+  </div>
+
+  <div id="trashModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.45); z-index:999;">
+    <div style="max-width:760px; margin:50px auto; background:#fff; border-radius:18px; padding:20px;">
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <h3 style="margin:0;">Messages Trash</h3>
+        <button id="closeTrashModalBtn" class="btn ghost mini" type="button">Close</button>
+      </div>
+
+      <div class="hr"></div>
+      <div id="trashList" class="trash-list"></div>
+      <p id="trashMsg" class="msg"></p>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/messages.js') }}"></script>
+</body>
+
+</html>

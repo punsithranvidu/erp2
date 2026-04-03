@@ -1,0 +1,304 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cash Advances</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+
+  <style>
+    .cash-page{ display:grid; grid-template-columns:420px 1fr; gap:16px; }
+    @media (max-width: 900px){ .cash-page{ grid-template-columns:1fr; } .table{ min-width: 900px; } }
+    .pill.neg{ background:#ffe7e7; border:1px solid #ffb5b5; color:#b30000; }
+    .pill.pos{ background:#eaffea; border:1px solid #b8f1b8; color:#0b6b0b; }
+    .muted2{ color:#76839a; font-size:13px; }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <div>
+      <h2>Cash Advances</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+      <p class="sub small">Track company-given money + expenses + out-of-pocket + top-ups + balance.</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page cash-page">
+
+    <!-- LEFT PANEL -->
+    <div class="panel">
+      <h3>Advance</h3>
+
+      {% if role == "ADMIN" %}
+      <div class="block">
+        <h4 class="miniTitle">Create New Advance (Admin)</h4>
+
+        <label>User (Admin/EMP)</label>
+        <select id="advEmployee"></select>
+
+        <label>Bank Account</label>
+        <select id="advBank"></select>
+
+        <div class="grid2">
+          <div>
+            <label>Currency</label>
+            <select id="advCurrency">
+              <option value="LKR">LKR</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="AUD">AUD</option>
+            </select>
+          </div>
+          <div>
+            <label>Amount Given</label>
+            <input id="advAmount" type="number" step="0.01" />
+          </div>
+        </div>
+
+        <label>Purpose</label>
+        <input id="advPurpose" placeholder="Example: Transport / Supplier / etc" />
+
+        <label>Given Date</label>
+        <input id="advGivenDate" type="date" />
+
+        <label>Proof Link (Drive)</label>
+        <input id="advProofLink" placeholder="drive.google.com/..." />
+
+        <button id="createAdvanceBtn" class="btn" type="button">Create Advance</button>
+        <p id="advMsg" class="msg"></p>
+      </div>
+
+      <div class="hr"></div>
+      {% endif %}
+
+      <div class="block">
+        <h4 class="miniTitle">Selected Advance</h4>
+        <p class="sub small">Choose an advance on the right table.</p>
+
+        <div class="hr"></div>
+
+        <div class="grid2">
+          <button id="closeAdvanceBtn" type="button" class="btn danger">Close Advance (Admin)</button>
+          <button id="reopenAdvanceBtn" type="button" class="btn ghost">Re-Open (Unlock) (Admin)</button>
+        </div>
+
+        <div style="margin-top:10px;">
+          <button id="refreshAdvBtn" type="button" class="btn ghost" style="width:100%;">Refresh</button>
+        </div>
+
+        <p id="selMsg" class="msg"></p>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Add Expense Breakdown</h4>
+
+        <label>Category</label>
+        <input id="expCategory" placeholder="Transport / Food / Supplier / etc" />
+
+        <label>Description</label>
+        <input id="expDescription" placeholder="Optional details" />
+
+        <label>Paid By</label>
+        <select id="expPaidBy">
+          <option value="COMPANY_ADVANCE">COMPANY (from advance)</option>
+          <option value="EMPLOYEE_PERSONAL">EMPLOYEE PERSONAL (out of pocket)</option>
+        </select>
+        <p class="muted2">
+          If balance is not enough: choose <b>EMPLOYEE PERSONAL</b>. Then balance can go negative (company owes).
+        </p>
+
+        <div class="grid2">
+          <div>
+            <label>Amount</label>
+            <input id="expAmount" type="number" step="0.01" />
+          </div>
+          <div>
+            <label>Spent Date</label>
+            <input id="expDate" type="date" />
+          </div>
+        </div>
+
+        <label>Proof Link (Drive)</label>
+        <input id="expProof" placeholder="drive.google.com/..." />
+
+        <button id="addExpenseBtn" class="btn" type="button">Add Expense</button>
+        <p id="expMsg" class="msg"></p>
+
+        <div class="hr"></div>
+
+        {% if role == "ADMIN" %}
+        <h4 class="miniTitle">Top-Up This Advance (Admin)</h4>
+        <p class="sub small">Use this when company sends more money to settle negative balance or add more budget.</p>
+
+        <div class="grid2">
+          <div>
+            <label>Top-Up Amount</label>
+            <input id="topupAmount" type="number" step="0.01" />
+          </div>
+          <div>
+            <label>Top-Up Date</label>
+            <input id="topupDate" type="date" />
+          </div>
+        </div>
+
+        <label>Top-Up Proof Link (Drive)</label>
+        <input id="topupProof" placeholder="drive.google.com/..." />
+
+        <button id="addTopupBtn" class="btn ghost" type="button">Add Top-Up</button>
+        <p id="topupMsg" class="msg"></p>
+        {% endif %}
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="block">
+        <h4 class="miniTitle">Summary & Export</h4>
+        <p class="sub small">Filter by Employee + Month and export to CSV.</p>
+
+        <div class="hr"></div>
+
+        <label>Employee</label>
+        <select id="sumEmployee"></select>
+
+        <div class="grid2">
+          <div>
+            <label>Month (YYYY-MM)</label>
+            <input id="sumMonth" placeholder="2026-01" />
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="sumStatus">
+              <option value="ALL">ALL</option>
+              <option value="OPEN">OPEN</option>
+              <option value="CLOSED">CLOSED</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <button id="loadSummaryBtn" type="button" class="btn ghost">Load Summary</button>
+          <button id="exportSummaryBtn" type="button" class="btn">Export CSV</button>
+        </div>
+
+        <p id="sumMsg" class="msg"></p>
+
+        <div class="tableWrap smallWrap" style="margin-top:10px;">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Currency</th>
+                <th>Total Given</th>
+                <th>Total TopUps</th>
+                <th>Total Spent</th>
+                <th>Total Balance</th>
+                <th>Advances</th>
+              </tr>
+            </thead>
+            <tbody id="sumBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="panel wide">
+      <div class="block">
+        <h3>Advances & Balances</h3>
+        <p class="sub small">EMP: you will see only your advances. ADMIN: you will see all employees.</p>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="block">
+        <h4 class="miniTitle">Advances</h4>
+        <div class="hr"></div>
+
+        <div class="tableWrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Employee</th>
+                <th>Bank</th>
+                <th>Currency</th>
+                <th>Given</th>
+                <th>TopUps</th>
+                <th>Spent</th>
+                <th>Balance</th>
+                <th>Status</th>
+                <th>Purpose</th>
+                <th>Given Date</th>
+                <th>Proof</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="advTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="block">
+        <h4 class="miniTitle">Top-Ups for Selected Advance</h4>
+        <div class="hr"></div>
+
+        <div class="tableWrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Proof</th>
+                <th>Created By</th>
+                <th>Created At</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="topupTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="hr"></div>
+
+        <h4 class="miniTitle">Expense Breakdown for Selected Advance</h4>
+        <div class="hr"></div>
+
+        <div class="tableWrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Paid By</th>
+                <th>Amount</th>
+                <th>Spent Date</th>
+                <th>Proof</th>
+                <th>Created By</th>
+                <th>Created At</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="expTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="hr"></div>
+        <p class="hint">Links without https:// will auto-fix.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="{{ url_for('static', filename='js/cash_advances.js') }}"></script>
+</body>
+</html>

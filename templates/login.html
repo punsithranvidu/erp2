@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ERP Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <div class="authWrap">
+    <div class="authCard">
+      <div class="brand">
+        <div class="logo">ERP</div>
+        <div>
+          <h1>Sign in</h1>
+          <p class="sub">Admin & Employee access</p>
+        </div>
+      </div>
+
+      {% if error %}
+        <div class="alert">{{ error }}</div>
+      {% endif %}
+
+      <form class="form" method="POST">
+        <label>Username</label>
+        <input name="username" placeholder="punsith / dulmina / mihiran / emp1" required />
+
+        <label>Password</label>
+        <input type="password" name="password" placeholder="••••••••" required />
+
+        <button class="btn" type="submit">Login</button>
+      </form>
+
+      <p class="hint small">
+        Admins: punsith, dulmina, mihiran • Employee: emp1
+      </p>
+    </div>
+  </div>
+</body>
+</html>
