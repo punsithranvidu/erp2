@@ -932,8 +932,10 @@ def api_modules_list():
 # Your remaining APIs (users/banks/finance/advances/etc.) should stay unchanged.
 # Just paste the rest of your existing app.py below this comment.
 
+import os
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
 
 # ---------- PERMISSIONS (ADMIN ONLY) ----------
