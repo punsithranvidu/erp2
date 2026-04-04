@@ -3,8 +3,10 @@ from functools import wraps
 import sqlite3
 import json
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 calendar_bp = Blueprint("calendar", __name__)
+APP_TZ = ZoneInfo("Asia/Colombo")
 
 
 def db():
@@ -14,7 +16,7 @@ def db():
 
 
 def now_iso():
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(APP_TZ).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def login_required(f):
@@ -1405,7 +1407,7 @@ def api_calendar_audit():
 def api_calendar_reminders_pending():
     conn = db()
     me = get_me(conn)
-    now = datetime.now()
+    now = datetime.now(APP_TZ).replace(tzinfo=None)
 
     month_start = (now - timedelta(days=60)).date().isoformat()
 
