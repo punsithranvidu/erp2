@@ -30,7 +30,7 @@ app.config["DB_PATH"] = DB_PATH
 app.config["GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE"] = "/etc/secrets/the-ceylon-spice-haven-erp-a23cffff0d8d.json"
 app.config["GOOGLE_DRIVE_ROOT_FOLDER_ID"] = "1jhC2WBUyFq2TRVUnBOcIJqJAySdlPjA0"
 app.config["GOOGLE_OAUTH_CLIENT_FILE"] = "/etc/secrets/google-oauth-client.json"
-app.config["GOOGLE_OAUTH_TOKEN_FILE"] = "/etc/secrets/google-oauth-token.json"
+app.config["GOOGLE_OAUTH_TOKEN_FILE"] = "/tmp/google-oauth-token.json"
 
 # fallback only (for safety)
 USERS = {

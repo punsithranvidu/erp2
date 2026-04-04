@@ -30,10 +30,21 @@ def oauth_token_file():
 
 def get_oauth_drive_service():
     token_path = oauth_token_file()
+    secret_token_path = "/etc/secrets/google-oauth-token.json"
+
+    # If token not in /tmp, copy from /etc/secrets
     if not os.path.exists(token_path):
-        raise ValueError("Google Drive is not connected yet. Please connect your Google account first.")
+        if os.path.exists(secret_token_path):
+            with open(secret_token_path, "r") as src:
+                token_data = src.read()
+            with open(token_path, "w") as dst:
+                dst.write(token_data)
+        else:
+            raise ValueError("Google Drive is not connected yet. Please connect your Google account first.")
 
     creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
+
+    # Refresh token and save ONLY to /tmp (writable)
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
         with open(token_path, "w") as f:
