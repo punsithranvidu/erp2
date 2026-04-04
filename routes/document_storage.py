@@ -376,7 +376,7 @@ def google_drive_connect():
         oauth_client_file(),
         scopes=DRIVE_SCOPES,
     )
-    flow.redirect_uri = "http://127.0.0.1:5001/google-drive/callback"
+    flow.redirect_uri = "https://erp2-vpd7.onrender.com/google-drive/callback"
 
     authorization_url, state = flow.authorization_url(
         access_type="offline",
@@ -406,7 +406,7 @@ def google_drive_callback():
         scopes=DRIVE_SCOPES,
         state=state,
     )
-    flow.redirect_uri = "http://127.0.0.1:5001/google-drive/callback"
+    flow.redirect_uri = "https://erp2-vpd7.onrender.com/google-drive/callback"
     flow.code_verifier = code_verifier
     flow.fetch_token(authorization_response=request.url)
     creds = flow.credentials
