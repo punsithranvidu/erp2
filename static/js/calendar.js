@@ -8,6 +8,7 @@ let MONTH_DATA = [];
 let REQUESTS = [];
 let EDIT_EVENT_ID = null;
 let EDIT_HOLIDAY_ID = null;
+let SHOWN_REMINDERS = new Set();
 
 async function safeJson(res) {
   try {
@@ -365,6 +366,19 @@ function fillEventFormFromRow(e) {
   if (btn) btn.textContent = "Update Event";
 
   showMsg("eventMsg", "Event loaded for editing.", true);
+}
+
+async function ensureNotificationPermission() {
+  if (!("Notification" in window)) return false;
+
+  if (Notification.permission === "granted") return true;
+
+  if (Notification.permission !== "denied") {
+    const result = await Notification.requestPermission();
+    return result === "granted";
+  }
+
+  return false;
 }
 
 async function loadMe() {
@@ -1251,6 +1265,18 @@ async function loadPendingReminders() {
       return;
     }
 
+    const canNotify = await ensureNotificationPermission();
+
+    rows.forEach((r) => {
+      const key = `${r.event_id}|${r.remind_at}`;
+      if (canNotify && !SHOWN_REMINDERS.has(key)) {
+        new Notification(`Reminder: ${r.title}`, {
+          body: `${r.event_date} • ${String(r.remind_at || "").replace("T", " ")}`
+        });
+        SHOWN_REMINDERS.add(key);
+      }
+    });
+
     box.innerHTML = rows.slice(0, 4).map((r) => `
       <div class="pending-card">
         <div><b>${esc(r.title)}</b></div>
@@ -1271,6 +1297,8 @@ async function loadPendingReminders() {
             remind_at: btn.dataset.ackTime
           })
         });
+
+        SHOWN_REMINDERS.delete(`${btn.dataset.ackEvent}|${btn.dataset.ackTime}`);
         await loadPendingReminders();
       };
     });
@@ -1296,6 +1324,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadMonth();
   await loadSchedules();
   await loadRequests();
+  await ensureNotificationPermission();
   await loadPendingReminders();
 
   if (ME.role === "ADMIN") {
