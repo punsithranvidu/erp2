@@ -79,14 +79,18 @@ def _translate_sql(sql: str):
         flags=re.IGNORECASE,
     )
     translated = re.sub(r"\bAUTOINCREMENT\b", "", translated, flags=re.IGNORECASE)
-    translated = translated.replace(
-        "datetime('now','-30 days')",
-        "NOW() - INTERVAL '30 days'",
-    )
+
+    # IMPORTANT: specific replacement first
     translated = translated.replace(
         "replace(deleted_at,'T',' ') <= datetime('now','-30 days')",
         "CAST(REPLACE(deleted_at,'T',' ') AS timestamp) <= NOW() - INTERVAL '30 days'",
     )
+
+    translated = translated.replace(
+        "datetime('now','-30 days')",
+        "NOW() - INTERVAL '30 days'",
+    )
+
     translated = _replace_qmark_placeholders(translated)
 
     return (translated, None, "normal")

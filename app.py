@@ -869,7 +869,7 @@ def purge_deleted_older_than_30_days():
     conn.execute("""
         DELETE FROM finance_records
         WHERE deleted_at IS NOT NULL
-          AND replace(deleted_at,'T',' ') <= datetime('now','-30 days')
+          AND CAST(REPLACE(deleted_at, 'T', ' ') AS timestamp) <= NOW() - INTERVAL '30 days'
     """)
     conn.commit()
     conn.close()
