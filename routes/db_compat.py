@@ -1,7 +1,7 @@
 import os
 import re
 import psycopg
-from psycopg2.extras import RealDictCursor
+from psycopg.rows import dict_row
 
 
 def _get_database_url():
@@ -18,8 +18,10 @@ def _replace_qmark_placeholders(sql: str) -> str:
     in_single = False
     in_double = False
     i = 0
+
     while i < len(sql):
         ch = sql[i]
+
         if ch == "'" and not in_double:
             if i + 1 < len(sql) and sql[i + 1] == "'":
                 out.append("''")
@@ -27,21 +29,26 @@ def _replace_qmark_placeholders(sql: str) -> str:
                 continue
             in_single = not in_single
             out.append(ch)
+
         elif ch == '"' and not in_single:
             in_double = not in_double
             out.append(ch)
-        elif ch == '?' and not in_single and not in_double:
-            out.append('%s')
+
+        elif ch == "?" and not in_single and not in_double:
+            out.append("%s")
+
         else:
             out.append(ch)
+
         i += 1
-    return ''.join(out)
+
+    return "".join(out)
 
 
 def _translate_sql(sql: str):
     stripped = sql.strip()
 
-    pragma = re.match(r'^PRAGMA\s+table_info\(([^)]+)\)\s*$', stripped, flags=re.IGNORECASE)
+    pragma = re.match(r"^PRAGMA\s+table_info\(([^)]+)\)\s*$", stripped, flags=re.IGNORECASE)
     if pragma:
         table_name = pragma.group(1).strip().strip("'\"")
         return (
@@ -58,27 +65,27 @@ def _translate_sql(sql: str):
             ORDER BY ordinal_position
             """,
             (table_name,),
-            "pragma"
+            "pragma",
         )
 
-    if re.match(r'^SELECT\s+last_insert_rowid\(\)\s+AS\s+id\s*$', stripped, flags=re.IGNORECASE):
+    if re.match(r"^SELECT\s+last_insert_rowid\(\)\s+AS\s+id\s*$", stripped, flags=re.IGNORECASE):
         return ("SELECT %s AS id", None, "last_insert_id")
 
     translated = sql
     translated = re.sub(
-        r'\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b',
-        'SERIAL PRIMARY KEY',
+        r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b",
+        "SERIAL PRIMARY KEY",
         translated,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
-    translated = re.sub(r'\bAUTOINCREMENT\b', '', translated, flags=re.IGNORECASE)
+    translated = re.sub(r"\bAUTOINCREMENT\b", "", translated, flags=re.IGNORECASE)
     translated = translated.replace(
         "datetime('now','-30 days')",
-        "NOW() - INTERVAL '30 days'"
+        "NOW() - INTERVAL '30 days'",
     )
     translated = translated.replace(
         "replace(deleted_at,'T',' ') <= datetime('now','-30 days')",
-        "CAST(REPLACE(deleted_at,'T',' ') AS timestamp) <= NOW() - INTERVAL '30 days'"
+        "CAST(REPLACE(deleted_at,'T',' ') AS timestamp) <= NOW() - INTERVAL '30 days'",
     )
     translated = _replace_qmark_placeholders(translated)
 
@@ -108,7 +115,7 @@ class PgCompatCursor:
 
         if translated_sql.lstrip().upper().startswith("INSERT"):
             try:
-                tmp = self._wrapped_conn._conn.cursor(cursor_factory=RealDictCursor)
+                tmp = self._wrapped_conn._conn.cursor()
                 tmp.execute("SELECT LASTVAL() AS id")
                 row = tmp.fetchone()
                 if row and row.get("id") is not None:
@@ -139,12 +146,12 @@ class PgCompatCursor:
 
 class PgCompatConnection:
     def __init__(self, dsn):
-        self._conn = psycopg.connect(dsn, cursor_factory=RealDictCursor)
+        self._conn = psycopg.connect(dsn, row_factory=dict_row)
         self.last_insert_id = None
         self.row_factory = None
 
     def cursor(self):
-        return PgCompatCursor(self, self._conn.cursor(cursor_factory=RealDictCursor))
+        return PgCompatCursor(self, self._conn.cursor())
 
     def execute(self, sql, params=None):
         cur = self.cursor()
@@ -161,7 +168,7 @@ class PgCompatConnection:
 
 
 class sqlite3:
-    IntegrityError = psycopg2.IntegrityError
+    IntegrityError = psycopg.IntegrityError
     Row = dict
 
     @staticmethod
