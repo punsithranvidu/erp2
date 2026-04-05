@@ -68,6 +68,24 @@ def _translate_sql(sql: str):
             "pragma",
         )
 
+    sqlite_master = re.match(
+        r"^SELECT\s+name\s+FROM\s+sqlite_master\s+WHERE\s+type='table'\s+AND\s+name=\?\s*$",
+        stripped,
+        flags=re.IGNORECASE,
+    )
+    if sqlite_master:
+        return (
+            """
+            SELECT table_name AS name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = %s
+            LIMIT 1
+            """,
+            None,
+            "normal",
+        )
+
     if re.match(r"^SELECT\s+last_insert_rowid\(\)\s+AS\s+id\s*$", stripped, flags=re.IGNORECASE):
         return ("SELECT %s AS id", None, "last_insert_id")
 
@@ -80,7 +98,6 @@ def _translate_sql(sql: str):
     )
     translated = re.sub(r"\bAUTOINCREMENT\b", "", translated, flags=re.IGNORECASE)
 
-    # IMPORTANT: specific replacement first
     translated = translated.replace(
         "replace(deleted_at,'T',' ') <= datetime('now','-30 days')",
         "CAST(REPLACE(deleted_at,'T',' ') AS timestamp) <= NOW() - INTERVAL '30 days'",

@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, jsonify, session, current
 from functools import wraps
 from datetime import datetime, timedelta
 from .db_compat import sqlite3
+
 attendance_bp = Blueprint("attendance", __name__)
 
 
@@ -9,6 +10,7 @@ def db():
     conn = sqlite3.connect(current_app.config["DATABASE_URL"])
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def now_iso():
     return datetime.now().isoformat(timespec="seconds")
@@ -36,10 +38,13 @@ def require_module(module: str, need_edit: bool = False):
 
 
 def table_exists(conn, table_name):
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,)
-    ).fetchone()
+    row = conn.execute("""
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = ?
+        LIMIT 1
+    """, (table_name,)).fetchone()
     return row is not None
 
 
@@ -50,19 +55,9 @@ def get_table_columns(conn, table_name):
 
 
 def has_unique_user_date(conn):
-    if not table_exists(conn, "attendance_entries"):
-        return False
-
-    idx_rows = conn.execute("PRAGMA index_list(attendance_entries)").fetchall()
-    for idx in idx_rows:
-        if int(idx["unique"] or 0) != 1:
-            continue
-        idx_name = idx["name"]
-        cols = conn.execute(f"PRAGMA index_info({idx_name})").fetchall()
-        names = [c["name"] for c in cols]
-        if names == ["user_id", "attendance_date"]:
-            return True
-    return False
+    cols = get_table_columns(conn, "attendance_entries")
+    required = {"user_id", "attendance_date"}
+    return required.issubset(cols)
 
 
 def rebuild_attendance_table(conn):
@@ -85,7 +80,6 @@ def rebuild_attendance_table(conn):
     """)
 
     if old_cols:
-        # detect old date column name
         if "attendance_date" in old_cols:
             date_expr = "attendance_date"
         elif "work_date" in old_cols:
@@ -95,7 +89,6 @@ def rebuild_attendance_table(conn):
         else:
             date_expr = "NULL"
 
-        # detect old status column name
         if "marked_status" in old_cols:
             status_expr = "marked_status"
         elif "status" in old_cols:
@@ -112,7 +105,7 @@ def rebuild_attendance_table(conn):
 
         if "user_id" in old_cols and date_expr != "NULL":
             conn.execute(f"""
-                INSERT OR REPLACE INTO attendance_entries_new (
+                INSERT INTO attendance_entries_new (
                     id,
                     user_id,
                     attendance_date,
@@ -146,7 +139,6 @@ def rebuild_attendance_table(conn):
 def ensure_attendance_tables():
     conn = db()
 
-    # If table missing, create clean one
     if not table_exists(conn, "attendance_entries"):
         conn.execute("""
             CREATE TABLE attendance_entries (
@@ -182,7 +174,6 @@ def ensure_attendance_tables():
         "admin_action_by",
     }
 
-    # If broken/old schema, rebuild safely
     if not required.issubset(cols) or not has_unique_user_date(conn):
         rebuild_attendance_table(conn)
         conn.commit()
