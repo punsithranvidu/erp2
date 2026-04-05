@@ -1,16 +1,14 @@
 from flask import Blueprint, render_template, request, jsonify, session, current_app
 from functools import wraps
-import sqlite3
 from datetime import datetime, timedelta
-
+from .db_compat import sqlite3
 attendance_bp = Blueprint("attendance", __name__)
 
 
 def db():
-    conn = sqlite3.connect(current_app.config["DB_PATH"])
+    conn = sqlite3.connect(current_app.config["DATABASE_URL"])
     conn.row_factory = sqlite3.Row
     return conn
-
 
 def now_iso():
     return datetime.now().isoformat(timespec="seconds")

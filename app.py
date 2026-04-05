@@ -1,12 +1,15 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, Response
-import sqlite3
 import os
+import re
 import uuid
 from datetime import datetime
 from functools import wraps
 from io import StringIO
 import csv
 
+
+
+from routes.db_compat import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -22,15 +25,23 @@ from routes.hs_codes import hs_codes_bp
 
 
 app = Flask(__name__)
-app.secret_key = "CHANGE_THIS_TO_A_RANDOM_SECRET"
+app.secret_key = os.environ.get("SECRET_KEY", "CHANGE_THIS_TO_A_RANDOM_SECRET")
 
-DB_PATH = "erp.db"
-app.config["DB_PATH"] = DB_PATH
+DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or "").strip()
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-app.config["GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE"] = "/etc/secrets/the-ceylon-spice-haven-erp-a23cffff0d8d.json"
-app.config["GOOGLE_DRIVE_ROOT_FOLDER_ID"] = "1jhC2WBUyFq2TRVUnBOcIJqJAySdlPjA0"
-app.config["GOOGLE_OAUTH_CLIENT_FILE"] = "/etc/secrets/google-oauth-client.json"
-app.config["GOOGLE_OAUTH_TOKEN_FILE"] = "/tmp/google-oauth-token.json"
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is required. Set it in your environment before starting the app.")
+
+# Keep old config key name too, in case existing blueprints still read it
+app.config["DATABASE_URL"] = DATABASE_URL
+app.config["DATABASE_URL"] = DATABASE_URL
+
+app.config["GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE"] = os.environ.get("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "/etc/secrets/the-ceylon-spice-haven-erp-a23cffff0d8d.json")
+app.config["GOOGLE_DRIVE_ROOT_FOLDER_ID"] = os.environ.get("GOOGLE_DRIVE_ROOT_FOLDER_ID", "1jhC2WBUyFq2TRVUnBOcIJqJAySdlPjA0")
+app.config["GOOGLE_OAUTH_CLIENT_FILE"] = os.environ.get("GOOGLE_OAUTH_CLIENT_FILE", "/etc/secrets/google-oauth-client.json")
+app.config["GOOGLE_OAUTH_TOKEN_FILE"] = os.environ.get("GOOGLE_OAUTH_TOKEN_FILE", "/tmp/google-oauth-token.json")
 
 # fallback only (for safety)
 USERS = {
@@ -59,13 +70,12 @@ MODULES = [
     "MARKETING_EMAILS",
 ]
 
+
 # ======================
 # DB / HELPERS
 # ======================
 def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return sqlite3.connect(DATABASE_URL)
 
 def now_iso():
     return datetime.now().isoformat(timespec="seconds")
@@ -319,7 +329,7 @@ def require_module_response(module: str, need_edit: bool = False):
 
 
 def init_invoice_table():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DATABASE_URL)
     c = conn.cursor()
 
     c.execute("""
@@ -541,6 +551,23 @@ def init_db():
         )
     """)
 
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS cash_advance_topups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            advance_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            topup_date TEXT,
+            proof_link TEXT,
+            ref_type TEXT,
+            ref_id TEXT,
+            note TEXT,
+            created_at TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            FOREIGN KEY(advance_id) REFERENCES cash_advances(id)
+        )
+    """)
+
 # ---------------- DOCUMENT STORAGE ----------------
     cur.execute("""
         CREATE TABLE IF NOT EXISTS doc_items (
@@ -652,6 +679,21 @@ def init_db():
         )
     """)
 
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS message_conversation_deleted (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            deleted_at TEXT NOT NULL,
+            deleted_by TEXT,
+            active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(conversation_id, user_id),
+            FOREIGN KEY(conversation_id) REFERENCES message_conversations(id),
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    """)
+
     # ---- Safe migrate columns if missing (old installs) ----
     cur.execute("PRAGMA table_info(finance_records)")
     cols = {r["name"] for r in cur.fetchall()}
@@ -666,6 +708,16 @@ def init_db():
     bcols = {r["name"] for r in cur.fetchall()}
     if "bank_id" not in bcols:
         cur.execute("ALTER TABLE month_balances ADD COLUMN bank_id INTEGER")
+
+    cur.execute("PRAGMA table_info(cash_advance_expenses)")
+    cexp_cols = {r["name"] for r in cur.fetchall()}
+    if "paid_by" not in cexp_cols:
+        cur.execute("ALTER TABLE cash_advance_expenses ADD COLUMN paid_by TEXT DEFAULT 'COMPANY_ADVANCE'")
+
+    cur.execute("PRAGMA table_info(message_messages)")
+    msg_cols = {r["name"] for r in cur.fetchall()}
+    if "reply_to" not in msg_cols:
+        cur.execute("ALTER TABLE message_messages ADD COLUMN reply_to INTEGER")
 
     conn.commit()
 
@@ -931,11 +983,6 @@ def api_modules_list():
 # >>> IMPORTANT:
 # Your remaining APIs (users/banks/finance/advances/etc.) should stay unchanged.
 # Just paste the rest of your existing app.py below this comment.
-
-import os
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
 
 # ---------- PERMISSIONS (ADMIN ONLY) ----------
@@ -3482,3 +3529,6 @@ def api_messages_leave_group(conversation_id):
     return jsonify({"ok": True})
 
     
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

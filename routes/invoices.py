@@ -1,13 +1,13 @@
 from flask import Blueprint, request, jsonify, session, current_app
-import sqlite3
 from datetime import datetime
 import pytz
+from .db_compat import sqlite3
 
 invoices_bp = Blueprint("invoices", __name__, url_prefix="/api/invoices")
 
 
-def get_db():
-    conn = sqlite3.connect(current_app.config["DB_PATH"])
+def db():
+    conn = sqlite3.connect(current_app.config["DATABASE_URL"])
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -21,10 +21,9 @@ def get_next_number(doc_type):
     year = now.year
     month = now.month
 
-    conn = get_db()
+    conn = db()
     c = conn.cursor()
 
-    # 1. Check restored first
     c.execute("""
         SELECT number
         FROM document_numbers
@@ -39,7 +38,6 @@ def get_next_number(doc_type):
         conn.close()
         return row["number"], year, month
 
-    # 2. Get max number for current year
     c.execute("""
         SELECT MAX(number) AS max_num
         FROM document_numbers
@@ -82,7 +80,7 @@ def reserve():
 
     num, year, month = get_next_number(doc_type)
 
-    conn = get_db()
+    conn = db()
     c = conn.cursor()
 
     c.execute("""
@@ -147,7 +145,7 @@ def restore():
     except Exception:
         return jsonify({"ok": False, "error": "Invalid number format"}), 400
 
-    conn = get_db()
+    conn = db()
     c = conn.cursor()
 
     c.execute("""
@@ -191,7 +189,7 @@ def use():
     except Exception:
         return jsonify({"ok": False, "error": "Invalid number format"}), 400
 
-    conn = get_db()
+    conn = db()
     c = conn.cursor()
 
     c.execute("""
@@ -224,7 +222,7 @@ def search():
     if not q:
         return jsonify({"ok": False, "error": "Search value is required"}), 400
 
-    conn = get_db()
+    conn = db()
     c = conn.cursor()
 
     c.execute("""

@@ -2,7 +2,7 @@ from flask import Blueprint, request, session, jsonify, current_app, redirect
 import os
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
-import sqlite3
+from .db_compat import sqlite3
 import io
 import json
 from functools import wraps
@@ -54,7 +54,7 @@ def get_oauth_drive_service():
 
 
 def db():
-    conn = sqlite3.connect(current_app.config["DB_PATH"])
+    conn = sqlite3.connect(current_app.config["DATABASE_URL"])
     conn.row_factory = sqlite3.Row
     return conn
 

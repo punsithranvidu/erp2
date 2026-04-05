@@ -1,16 +1,16 @@
 from flask import Blueprint, request, jsonify, session, current_app
 from functools import wraps
-import sqlite3
 import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from .db_compat import sqlite3
 
 calendar_bp = Blueprint("calendar", __name__)
 APP_TZ = ZoneInfo("Asia/Colombo")
 
 
 def db():
-    conn = sqlite3.connect(current_app.config["DB_PATH"])
+    conn = sqlite3.connect(current_app.config["DATABASE_URL"])
     conn.row_factory = sqlite3.Row
     return conn
 
