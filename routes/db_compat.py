@@ -1,6 +1,6 @@
 import os
 import re
-import psycopg2
+import psycopg
 from psycopg2.extras import RealDictCursor
 
 
@@ -139,7 +139,7 @@ class PgCompatCursor:
 
 class PgCompatConnection:
     def __init__(self, dsn):
-        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+        self._conn = psycopg.connect(dsn, cursor_factory=RealDictCursor)
         self.last_insert_id = None
         self.row_factory = None
 
