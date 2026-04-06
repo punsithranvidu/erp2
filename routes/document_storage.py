@@ -91,17 +91,14 @@ def _materialize_json_or_path(value, tmp_filename, fallback_secret_path=None, re
     if value:
         value = str(value).strip()
 
-        # 1) already a real path
         if os.path.exists(value):
             return value
 
-        # 2) raw JSON content from env/config
         if _looks_like_json(value):
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(value)
             return out_path
 
-    # 3) fallback secret path mounted by Render
     if fallback_secret_path and os.path.exists(fallback_secret_path):
         shutil.copyfile(fallback_secret_path, out_path)
         return out_path
@@ -113,10 +110,6 @@ def _materialize_json_or_path(value, tmp_filename, fallback_secret_path=None, re
 
 
 def oauth_client_file():
-    # supports:
-    # - path in config
-    # - raw JSON in config/env
-    # - /etc/secrets/google-oauth-client.json
     cfg = current_app.config.get("GOOGLE_OAUTH_CLIENT_FILE") or os.environ.get("GOOGLE_OAUTH_CLIENT_FILE")
     return _materialize_json_or_path(
         cfg,
@@ -127,10 +120,6 @@ def oauth_client_file():
 
 
 def oauth_token_file():
-    # supports:
-    # - path in config
-    # - raw JSON token in config/env
-    # - /etc/secrets/google-oauth-token.json
     cfg = current_app.config.get("GOOGLE_OAUTH_TOKEN_FILE") or os.environ.get("GOOGLE_OAUTH_TOKEN_FILE")
     return _materialize_json_or_path(
         cfg,
@@ -157,7 +146,6 @@ def get_oauth_drive_service():
 
 
 def get_redirect_uri():
-    # safer than hardcoding one domain
     return request.url_root.rstrip("/") + "/google-drive/callback"
 
 
@@ -259,57 +247,131 @@ def get_parent_drive_id(conn, parent_id):
     return row["drive_id"]
 
 
+def get_item_row(conn, item_id):
+    return conn.execute(
+        """
+        SELECT *
+        FROM doc_items
+        WHERE id=? LIMIT 1
+        """,
+        (int(item_id),),
+    ).fetchone()
+
+
+def get_item_ancestors(conn, item_row):
+    ancestors = []
+    parent_id = item_row["parent_id"]
+
+    while parent_id is not None:
+        parent = conn.execute(
+            """
+            SELECT *
+            FROM doc_items
+            WHERE id=? LIMIT 1
+            """,
+            (int(parent_id),),
+        ).fetchone()
+
+        if not parent:
+            break
+
+        ancestors.append(parent)
+        parent_id = parent["parent_id"]
+
+    return ancestors
+
+
+def has_direct_permission(conn, item_id, uid, username, role, need_edit=False):
+    if role == "ADMIN":
+        return True
+
+    if need_edit:
+        row = conn.execute(
+            """
+            SELECT di.id
+            FROM doc_items di
+            LEFT JOIN doc_item_permissions dp
+              ON dp.item_id = di.id AND dp.user_id = ?
+            WHERE di.id = ?
+              AND di.is_active = 1
+              AND di.deleted_at IS NULL
+              AND COALESCE(di.admin_locked, 0) = 0
+              AND (
+                  di.created_by = ?
+                  OR COALESCE(dp.can_edit, 0) = 1
+              )
+            LIMIT 1
+            """,
+            (uid, item_id, username),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """
+            SELECT di.id
+            FROM doc_items di
+            LEFT JOIN doc_item_permissions dp
+              ON dp.item_id = di.id AND dp.user_id = ?
+            WHERE di.id = ?
+              AND di.is_active = 1
+              AND di.deleted_at IS NULL
+              AND COALESCE(di.admin_locked, 0) = 0
+              AND (
+                  di.created_by = ?
+                  OR COALESCE(dp.can_access, 0) = 1
+              )
+            LIMIT 1
+            """,
+            (uid, item_id, username),
+        ).fetchone()
+
+    return row is not None
+
+
+def has_item_access_or_inherited(conn, item_row, uid, username, role, need_edit=False):
+    if role == "ADMIN":
+        return True
+
+    if not item_row:
+        return False
+
+    if item_row["deleted_at"] or int(item_row["is_active"] or 0) != 1:
+        return False
+
+    if int(item_row["admin_locked"] or 0) == 1:
+        return False
+
+    if has_direct_permission(conn, item_row["id"], uid, username, role, need_edit=need_edit):
+        return True
+
+    ancestors = get_item_ancestors(conn, item_row)
+    for parent in ancestors:
+        if parent["deleted_at"] or int(parent["is_active"] or 0) != 1:
+            continue
+        if int(parent["admin_locked"] or 0) == 1:
+            continue
+        if has_direct_permission(conn, parent["id"], uid, username, role, need_edit=need_edit):
+            return True
+
+    return False
+
+
 def can_view_item(conn, item_id, uid, username, role):
     if role == "ADMIN":
         return True
 
-    row = conn.execute(
-        """
-        SELECT di.id
-        FROM doc_items di
-        LEFT JOIN doc_item_permissions dp
-          ON dp.item_id = di.id AND dp.user_id = ?
-        WHERE di.id = ?
-          AND di.is_active = 1
-          AND di.deleted_at IS NULL
-          AND COALESCE(di.admin_locked, 0) = 0
-          AND (
-              di.created_by = ?
-              OR COALESCE(dp.can_access, 0) = 1
-          )
-        LIMIT 1
-        """,
-        (uid, item_id, username),
-    ).fetchone()
-    return row is not None
+    item = get_item_row(conn, item_id)
+    return has_item_access_or_inherited(conn, item, uid, username, role, need_edit=False)
 
 
 def can_edit_item(conn, item_id, uid, username, role):
     if role == "ADMIN":
         return True
 
-    row = conn.execute(
-        """
-        SELECT di.id
-        FROM doc_items di
-        LEFT JOIN doc_item_permissions dp
-          ON dp.item_id = di.id AND dp.user_id = ?
-        WHERE di.id = ?
-          AND di.is_active = 1
-          AND di.deleted_at IS NULL
-          AND COALESCE(di.admin_locked, 0) = 0
-          AND (
-              di.created_by = ?
-              OR COALESCE(dp.can_edit, 0) = 1
-          )
-        LIMIT 1
-        """,
-        (uid, item_id, username),
-    ).fetchone()
-    return row is not None
+    item = get_item_row(conn, item_id)
+    return has_item_access_or_inherited(conn, item, uid, username, role, need_edit=True)
+
 
 def save_item_permissions(conn, item_id, creator_username, permissions):
-    # clear old permissions
     conn.execute("DELETE FROM doc_item_permissions WHERE item_id=?", (item_id,))
 
     seen_users = set()
@@ -328,7 +390,6 @@ def save_item_permissions(conn, item_id, creator_username, permissions):
             (item_id, user_id, can_access, can_edit),
         )
 
-    # 1. creator (always full access)
     creator = conn.execute(
         "SELECT id FROM users WHERE username=? LIMIT 1",
         (creator_username,)
@@ -337,7 +398,6 @@ def save_item_permissions(conn, item_id, creator_username, permissions):
     if creator:
         safe_insert(creator["id"], 1, 1)
 
-    # 2. admins (always full access)
     admins = conn.execute(
         "SELECT id FROM users WHERE role='ADMIN' AND active=1"
     ).fetchall()
@@ -345,7 +405,6 @@ def save_item_permissions(conn, item_id, creator_username, permissions):
     for a in admins:
         safe_insert(a["id"], 1, 1)
 
-    # 3. custom permissions
     for p in (permissions or []):
         try:
             user_id = int(p.get("user_id"))
@@ -524,42 +583,46 @@ def api_docs_items_list():
     conn = db()
 
     if parent_id in (None, "", "ROOT", "null"):
-        parent_sql = "di.parent_id IS NULL"
-        parent_params = []
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM doc_items
+            WHERE is_active=1
+              AND deleted_at IS NULL
+              AND parent_id IS NULL
+            ORDER BY
+              CASE WHEN item_type='FOLDER' THEN 0 ELSE 1 END,
+              LOWER(name) ASC
+            """
+        ).fetchall()
     else:
-        parent_sql = "di.parent_id = ?"
-        parent_params = [int(parent_id)]
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM doc_items
+            WHERE is_active=1
+              AND deleted_at IS NULL
+              AND parent_id=?
+            ORDER BY
+              CASE WHEN item_type='FOLDER' THEN 0 ELSE 1 END,
+              LOWER(name) ASC
+            """,
+            (int(parent_id),),
+        ).fetchall()
 
-    sql = f"""
-        SELECT di.*
-        FROM doc_items di
-        LEFT JOIN doc_item_permissions dp
-          ON dp.item_id = di.id AND dp.user_id = ?
-        WHERE di.is_active = 1
-          AND di.deleted_at IS NULL
-          AND {parent_sql}
-          AND (
-            ? = 'ADMIN'
-            OR (
-                COALESCE(di.admin_locked, 0) = 0
-                AND (
-                    di.created_by = ?
-                    OR COALESCE(dp.can_access, 0) = 1
-                )
-            )
-          )
-        ORDER BY
-          CASE WHEN di.item_type='FOLDER' THEN 0 ELSE 1 END,
-          LOWER(di.name) ASC
-    """
-
-    rows = conn.execute(sql, [uid] + parent_params + [role, username]).fetchall()
     out = []
     for r in rows:
         item = dict(r)
         if q and q not in (item["name"] or "").lower():
             continue
-        out.append(item)
+
+        if role == "ADMIN":
+            out.append(item)
+            continue
+
+        if has_item_access_or_inherited(conn, r, uid, username, role, need_edit=False):
+            out.append(item)
+
     conn.close()
     return jsonify({"ok": True, "data": out})
 
@@ -615,33 +678,41 @@ def api_docs_shared_items():
         conn.close()
         return jsonify({"ok": True, "data": visible})
 
-    else:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT di.*
-            FROM doc_items di
-            JOIN doc_item_permissions dp ON dp.item_id = di.id
-            WHERE di.is_active=1
-              AND di.deleted_at IS NULL
-              AND COALESCE(di.admin_locked, 0) = 0
-              AND dp.user_id=?
-              AND COALESCE(dp.can_access, 0)=1
-              AND di.created_by <> ?
-            ORDER BY CASE WHEN di.item_type='FOLDER' THEN 0 ELSE 1 END, LOWER(di.name) ASC
-            LIMIT 500
-            """,
-            (uid, username),
-        ).fetchall()
+    rows = conn.execute(
+        """
+        SELECT di.*
+        FROM doc_items di
+        JOIN doc_item_permissions dp ON dp.item_id = di.id
+        WHERE di.is_active=1
+          AND di.deleted_at IS NULL
+          AND COALESCE(di.admin_locked, 0)=0
+          AND dp.user_id=?
+          AND COALESCE(dp.can_access, 0)=1
+          AND di.created_by <> ?
+        ORDER BY
+          CASE WHEN di.item_type='FOLDER' THEN 0 ELSE 1 END,
+          LOWER(di.name) ASC
+        LIMIT 500
+        """,
+        (uid, username),
+    ).fetchall()
 
-        out = []
-        for r in rows:
-            item = dict(r)
-            if q and q not in (item["name"] or "").lower():
-                continue
-            out.append(item)
+    out = []
+    seen = set()
 
-        conn.close()
-        return jsonify({"ok": True, "data": out})
+    for r in rows:
+        item = dict(r)
+        if item["id"] in seen:
+            continue
+        seen.add(item["id"])
+
+        if q and q not in (item["name"] or "").lower():
+            continue
+
+        out.append(item)
+
+    conn.close()
+    return jsonify({"ok": True, "data": out})
 
 
 @document_storage_bp.route("/api/docs/trash", methods=["GET"])
@@ -719,6 +790,7 @@ def api_docs_item_get(item_id):
 @login_required
 @require_module("DOCUMENT_STORAGE", need_edit=True)
 def api_docs_create_folder():
+    conn = None
     try:
         data = request.json or {}
         parent_id = data.get("parent_id")
@@ -805,8 +877,9 @@ def api_docs_create_folder():
 
     except Exception as e:
         try:
-            conn.rollback()
-            conn.close()
+            if conn:
+                conn.rollback()
+                conn.close()
         except Exception:
             pass
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -816,6 +889,7 @@ def api_docs_create_folder():
 @login_required
 @require_module("DOCUMENT_STORAGE", need_edit=True)
 def api_docs_upload():
+    conn = None
     try:
         parent_id = request.form.get("parent_id")
         display_name = (request.form.get("name") or "").strip()
@@ -889,8 +963,9 @@ def api_docs_upload():
 
     except Exception as e:
         try:
-            conn.rollback()
-            conn.close()
+            if conn:
+                conn.rollback()
+                conn.close()
         except Exception:
             pass
         return jsonify({"ok": False, "error": str(e)}), 500
