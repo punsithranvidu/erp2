@@ -1,12 +1,14 @@
 from flask import Blueprint, request, session, jsonify, current_app, redirect
 import os
+import io
+import json
+import shutil
+from functools import wraps
+from datetime import datetime
+
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 from .db_compat import sqlite3
-import io
-import json
-from functools import wraps
-from datetime import datetime
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -18,39 +20,6 @@ from googleapiclient.errors import HttpError
 
 document_storage_bp = Blueprint("document_storage", __name__)
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
-
-
-def oauth_client_file():
-    return current_app.config["GOOGLE_OAUTH_CLIENT_FILE"]
-
-
-def oauth_token_file():
-    return current_app.config["GOOGLE_OAUTH_TOKEN_FILE"]
-
-
-def get_oauth_drive_service():
-    token_path = oauth_token_file()
-    secret_token_path = "/etc/secrets/google-oauth-token.json"
-
-    # If token not in /tmp, copy from /etc/secrets
-    if not os.path.exists(token_path):
-        if os.path.exists(secret_token_path):
-            with open(secret_token_path, "r") as src:
-                token_data = src.read()
-            with open(token_path, "w") as dst:
-                dst.write(token_data)
-        else:
-            raise ValueError("Google Drive is not connected yet. Please connect your Google account first.")
-
-    creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
-
-    # Refresh token and save ONLY to /tmp (writable)
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open(token_path, "w") as f:
-            f.write(creds.to_json())
-
-    return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
 def db():
@@ -96,11 +65,107 @@ def get_me_user_id():
     return session.get("uid")
 
 
+def _ensure_tmp_dir():
+    os.makedirs("/tmp/erp_google", exist_ok=True)
+    return "/tmp/erp_google"
+
+
+def _looks_like_json(text: str) -> bool:
+    if not text:
+        return False
+    s = text.strip()
+    return s.startswith("{") and s.endswith("}")
+
+
+def _materialize_json_or_path(value, tmp_filename, fallback_secret_path=None, required=False):
+    """
+    Accepts:
+    - real file path
+    - raw JSON content in env/config
+    - fallback /etc/secrets file
+    Returns a real file path usable by Google libraries.
+    """
+    tmp_dir = _ensure_tmp_dir()
+    out_path = os.path.join(tmp_dir, tmp_filename)
+
+    if value:
+        value = str(value).strip()
+
+        # 1) already a real path
+        if os.path.exists(value):
+            return value
+
+        # 2) raw JSON content from env/config
+        if _looks_like_json(value):
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(value)
+            return out_path
+
+    # 3) fallback secret path mounted by Render
+    if fallback_secret_path and os.path.exists(fallback_secret_path):
+        shutil.copyfile(fallback_secret_path, out_path)
+        return out_path
+
+    if required:
+        raise ValueError(f"Required Google secret not found: {tmp_filename}")
+
+    return out_path
+
+
+def oauth_client_file():
+    # supports:
+    # - path in config
+    # - raw JSON in config/env
+    # - /etc/secrets/google-oauth-client.json
+    cfg = current_app.config.get("GOOGLE_OAUTH_CLIENT_FILE") or os.environ.get("GOOGLE_OAUTH_CLIENT_FILE")
+    return _materialize_json_or_path(
+        cfg,
+        "google-oauth-client.json",
+        fallback_secret_path="/etc/secrets/google-oauth-client.json",
+        required=True,
+    )
+
+
+def oauth_token_file():
+    # supports:
+    # - path in config
+    # - raw JSON token in config/env
+    # - /etc/secrets/google-oauth-token.json
+    cfg = current_app.config.get("GOOGLE_OAUTH_TOKEN_FILE") or os.environ.get("GOOGLE_OAUTH_TOKEN_FILE")
+    return _materialize_json_or_path(
+        cfg,
+        "google-oauth-token.json",
+        fallback_secret_path="/etc/secrets/google-oauth-token.json",
+        required=False,
+    )
+
+
+def get_oauth_drive_service():
+    token_path = oauth_token_file()
+
+    if not os.path.exists(token_path):
+        raise ValueError("Google Drive is not connected yet. Please connect your Google account first.")
+
+    creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
+
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        with open(token_path, "w", encoding="utf-8") as f:
+            f.write(creds.to_json())
+
+    return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+
+def get_redirect_uri():
+    # safer than hardcoding one domain
+    return request.url_root.rstrip("/") + "/google-drive/callback"
+
+
 def get_root_drive_folder_id():
-    root_id = current_app.config.get("GOOGLE_DRIVE_ROOT_FOLDER_ID")
+    root_id = current_app.config.get("GOOGLE_DRIVE_ROOT_FOLDER_ID") or os.environ.get("GOOGLE_DRIVE_ROOT_FOLDER_ID")
     if not root_id or root_id == "PASTE_YOUR_ROOT_FOLDER_ID_HERE":
         raise RuntimeError("GOOGLE_DRIVE_ROOT_FOLDER_ID is not configured")
-    return root_id
+    return root_id.strip()
 
 
 def drive_create_folder(name: str, parent_drive_id: str):
@@ -149,9 +214,6 @@ def drive_rename_item(drive_id: str, new_name: str):
 
 
 def drive_delete_item_safe(drive_id: str):
-    """
-    Do not crash ERP if Google Drive delete fails.
-    """
     if not drive_id:
         return {"ok": True, "deleted_in_drive": False, "warning": ""}
 
@@ -254,7 +316,7 @@ def save_item_permissions(conn, item_id, creator_username, permissions):
     if creator:
         conn.execute(
             """
-            INSERT OR REPLACE INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
+            INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
             VALUES (?,?,1,1)
             """,
             (item_id, creator["id"]),
@@ -264,12 +326,13 @@ def save_item_permissions(conn, item_id, creator_username, permissions):
     for a in admins:
         conn.execute(
             """
-            INSERT OR REPLACE INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
+            INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
             VALUES (?,?,1,1)
             """,
             (item_id, a["id"]),
         )
 
+    seen = set()
     for p in (permissions or []):
         try:
             user_id = int(p.get("user_id"))
@@ -281,13 +344,19 @@ def save_item_permissions(conn, item_id, creator_username, permissions):
         if can_access == 0:
             can_edit = 0
 
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
-            VALUES (?,?,?,?)
-            """,
-            (item_id, user_id, can_access, can_edit),
-        )
+        key = (item_id, user_id)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        if can_access or can_edit:
+            conn.execute(
+                """
+                INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
+                VALUES (?,?,?,?)
+                """,
+                (item_id, user_id, can_access, can_edit),
+            )
 
 
 def desired_drive_shares(conn, item_id):
@@ -387,17 +456,15 @@ def google_drive_connect():
         oauth_client_file(),
         scopes=DRIVE_SCOPES,
     )
-    flow.redirect_uri = "https://erp2-vpd7.onrender.com/google-drive/callback"
+    flow.redirect_uri = get_redirect_uri()
 
     authorization_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",
-        code_challenge_method="S256",
     )
 
     session["google_drive_oauth_state"] = state
-    session["google_drive_code_verifier"] = flow.code_verifier
     return redirect(authorization_url)
 
 
@@ -405,28 +472,23 @@ def google_drive_connect():
 @login_required
 def google_drive_callback():
     state = session.get("google_drive_oauth_state")
-    code_verifier = session.get("google_drive_code_verifier")
-
     if not state:
         return jsonify({"ok": False, "error": "Missing OAuth state. Please connect again."}), 400
-    if not code_verifier:
-        return jsonify({"ok": False, "error": "Missing OAuth code verifier. Please connect again."}), 400
 
     flow = Flow.from_client_secrets_file(
         oauth_client_file(),
         scopes=DRIVE_SCOPES,
         state=state,
     )
-    flow.redirect_uri = "https://erp2-vpd7.onrender.com/google-drive/callback"
-    flow.code_verifier = code_verifier
+    flow.redirect_uri = get_redirect_uri()
     flow.fetch_token(authorization_response=request.url)
     creds = flow.credentials
 
-    with open(oauth_token_file(), "w") as f:
+    token_path = oauth_token_file()
+    with open(token_path, "w", encoding="utf-8") as f:
         f.write(creds.to_json())
 
     session.pop("google_drive_oauth_state", None)
-    session.pop("google_drive_code_verifier", None)
     return redirect("/document-storage")
 
 
@@ -655,143 +717,181 @@ def api_docs_item_get(item_id):
 @login_required
 @require_module("DOCUMENT_STORAGE", need_edit=True)
 def api_docs_create_folder():
-    data = request.json or {}
-    parent_id = data.get("parent_id")
-    name = (data.get("name") or "").strip()
-    notes = (data.get("notes") or "").strip()
-    permissions = data.get("permissions") or []
+    try:
+        data = request.json or {}
+        parent_id = data.get("parent_id")
+        name = (data.get("name") or "").strip()
+        notes = (data.get("notes") or "").strip()
+        permissions = data.get("permissions") or []
 
-    if not name:
-        return jsonify({"ok": False, "error": "Folder name is required"}), 400
+        if not name:
+            return jsonify({"ok": False, "error": "Folder name is required"}), 400
 
-    conn = db()
+        conn = db()
 
-    if parent_id in (None, "", "ROOT", "null"):
-        if not is_admin():
+        if parent_id in (None, "", "ROOT", "null"):
+            if not is_admin():
+                conn.close()
+                return jsonify({"ok": False, "error": "Only admin can create folders at root level"}), 403
+            parent_db_id = None
+        else:
+            parent_db_id = int(parent_id)
+            if not can_edit_item(conn, parent_db_id, get_me_user_id(), session["user"], session["role"]):
+                conn.close()
+                return jsonify({"ok": False, "error": "No edit access to parent folder"}), 403
+
+        dupe = conn.execute(
+            """
+            SELECT id
+            FROM doc_items
+            WHERE is_active=1
+              AND deleted_at IS NULL
+              AND COALESCE(parent_id, -1) = COALESCE(?, -1)
+              AND LOWER(name)=LOWER(?)
+            LIMIT 1
+            """,
+            (parent_db_id, name),
+        ).fetchone()
+
+        if dupe:
             conn.close()
-            return jsonify({"ok": False, "error": "Only admin can create folders at root level"}), 403
-        parent_db_id = None
-    else:
-        parent_db_id = int(parent_id)
-        if not can_edit_item(conn, parent_db_id, get_me_user_id(), session["user"], session["role"]):
+            return jsonify({"ok": False, "error": "A folder/file with this name already exists here"}), 400
+
+        parent_drive_id = get_parent_drive_id(conn, parent_id)
+        created = drive_create_folder(name, parent_drive_id)
+
+        conn.execute(
+            """
+            INSERT INTO doc_items (
+                parent_id, item_type, name, category,
+                drive_id, web_view_link, mime_type, notes,
+                admin_locked, is_active, created_at, created_by,
+                deleted_at, deleted_by
+            ) VALUES (?, 'FOLDER', ?, 'GENERAL', ?, ?, ?, ?, 0, 1, ?, ?, NULL, NULL)
+            """,
+            (
+                parent_db_id,
+                name,
+                created.get("id"),
+                created.get("webViewLink"),
+                created.get("mimeType"),
+                notes,
+                now_iso(),
+                session["user"],
+            ),
+        )
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT * FROM doc_items WHERE drive_id=? LIMIT 1",
+            (created.get("id"),)
+        ).fetchone()
+
+        if not row:
             conn.close()
-            return jsonify({"ok": False, "error": "No edit access to parent folder"}), 403
+            return jsonify({"ok": False, "error": "Folder created in Drive but failed to save in ERP"}), 500
 
-    dupe = conn.execute(
-        """
-        SELECT id
-        FROM doc_items
-        WHERE is_active=1
-          AND deleted_at IS NULL
-          AND COALESCE(parent_id, -1) = COALESCE(?, -1)
-          AND LOWER(name)=LOWER(?)
-        LIMIT 1
-        """,
-        (parent_db_id, name),
-    ).fetchone()
+        item_id = row["id"]
 
-    if dupe:
+        save_item_permissions(conn, item_id, session["user"], permissions)
+        sync_drive_shares(conn, item_id, created.get("id"))
+        conn.commit()
+
+        row = conn.execute("SELECT * FROM doc_items WHERE id=?", (item_id,)).fetchone()
         conn.close()
-        return jsonify({"ok": False, "error": "A folder/file with this name already exists here"}), 400
+        return jsonify({"ok": True, "data": dict(row)})
 
-    parent_drive_id = get_parent_drive_id(conn, parent_id)
-    created = drive_create_folder(name, parent_drive_id)
-
-    conn.execute(
-        """
-        INSERT INTO doc_items (
-            parent_id, item_type, name, category,
-            drive_id, web_view_link, mime_type, notes,
-            admin_locked, is_active, created_at, created_by,
-            deleted_at, deleted_by
-        ) VALUES (?, 'FOLDER', ?, 'GENERAL', ?, ?, ?, ?, 0, 1, ?, ?, NULL, NULL)
-        """,
-        (
-            parent_db_id,
-            name,
-            created.get("id"),
-            created.get("webViewLink"),
-            created.get("mimeType"),
-            notes,
-            now_iso(),
-            session["user"],
-        ),
-    )
-    conn.commit()
-
-    item_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-    save_item_permissions(conn, item_id, session["user"], permissions)
-    sync_drive_shares(conn, item_id, created.get("id"))
-    conn.commit()
-
-    row = conn.execute("SELECT * FROM doc_items WHERE id=?", (item_id,)).fetchone()
-    conn.close()
-    return jsonify({"ok": True, "data": dict(row)})
+    except Exception as e:
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @document_storage_bp.route("/api/docs/upload", methods=["POST"])
 @login_required
 @require_module("DOCUMENT_STORAGE", need_edit=True)
 def api_docs_upload():
-    parent_id = request.form.get("parent_id")
-    display_name = (request.form.get("name") or "").strip()
-    notes = (request.form.get("notes") or "").strip()
-
     try:
-        permissions = json.loads(request.form.get("permissions_json") or "[]")
-    except Exception:
-        permissions = []
+        parent_id = request.form.get("parent_id")
+        display_name = (request.form.get("name") or "").strip()
+        notes = (request.form.get("notes") or "").strip()
 
-    file = request.files.get("file")
-    if not file or not file.filename:
-        return jsonify({"ok": False, "error": "Please choose a file"}), 400
+        try:
+            permissions = json.loads(request.form.get("permissions_json") or "[]")
+        except Exception:
+            permissions = []
 
-    conn = db()
+        file = request.files.get("file")
+        if not file or not file.filename:
+            return jsonify({"ok": False, "error": "Please choose a file"}), 400
 
-    if parent_id in (None, "", "ROOT", "null"):
-        if not is_admin():
+        conn = db()
+
+        if parent_id in (None, "", "ROOT", "null"):
+            if not is_admin():
+                conn.close()
+                return jsonify({"ok": False, "error": "Only admin can upload at root level"}), 403
+            parent_db_id = None
+        else:
+            parent_db_id = int(parent_id)
+            if not can_edit_item(conn, parent_db_id, get_me_user_id(), session["user"], session["role"]):
+                conn.close()
+                return jsonify({"ok": False, "error": "No edit access to parent folder"}), 403
+
+        parent_drive_id = get_parent_drive_id(conn, parent_id)
+        uploaded = drive_upload_file(file, parent_drive_id, display_name or file.filename)
+
+        conn.execute(
+            """
+            INSERT INTO doc_items (
+                parent_id, item_type, name, category,
+                drive_id, web_view_link, mime_type, notes,
+                admin_locked, is_active, created_at, created_by,
+                deleted_at, deleted_by
+            ) VALUES (?, 'DOCUMENT', ?, 'GENERAL', ?, ?, ?, ?, 0, 1, ?, ?, NULL, NULL)
+            """,
+            (
+                parent_db_id,
+                uploaded.get("name"),
+                uploaded.get("id"),
+                uploaded.get("webViewLink"),
+                uploaded.get("mimeType"),
+                notes,
+                now_iso(),
+                session["user"],
+            ),
+        )
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT * FROM doc_items WHERE drive_id=? LIMIT 1",
+            (uploaded.get("id"),)
+        ).fetchone()
+
+        if not row:
             conn.close()
-            return jsonify({"ok": False, "error": "Only admin can upload at root level"}), 403
-        parent_db_id = None
-    else:
-        parent_db_id = int(parent_id)
-        if not can_edit_item(conn, parent_db_id, get_me_user_id(), session["user"], session["role"]):
+            return jsonify({"ok": False, "error": "File uploaded to Drive but failed to save in ERP"}), 500
+
+        item_id = row["id"]
+
+        save_item_permissions(conn, item_id, session["user"], permissions)
+        sync_drive_shares(conn, item_id, uploaded.get("id"))
+        conn.commit()
+
+        row = conn.execute("SELECT * FROM doc_items WHERE id=?", (item_id,)).fetchone()
+        conn.close()
+        return jsonify({"ok": True, "data": dict(row)})
+
+    except Exception as e:
+        try:
+            conn.rollback()
             conn.close()
-            return jsonify({"ok": False, "error": "No edit access to parent folder"}), 403
-
-    parent_drive_id = get_parent_drive_id(conn, parent_id)
-    uploaded = drive_upload_file(file, parent_drive_id, display_name or file.filename)
-
-    conn.execute(
-        """
-        INSERT INTO doc_items (
-            parent_id, item_type, name, category,
-            drive_id, web_view_link, mime_type, notes,
-            admin_locked, is_active, created_at, created_by,
-            deleted_at, deleted_by
-        ) VALUES (?, 'DOCUMENT', ?, 'GENERAL', ?, ?, ?, ?, 0, 1, ?, ?, NULL, NULL)
-        """,
-        (
-            parent_db_id,
-            uploaded.get("name"),
-            uploaded.get("id"),
-            uploaded.get("webViewLink"),
-            uploaded.get("mimeType"),
-            notes,
-            now_iso(),
-            session["user"],
-        ),
-    )
-    conn.commit()
-
-    item_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-    save_item_permissions(conn, item_id, session["user"], permissions)
-    sync_drive_shares(conn, item_id, uploaded.get("id"))
-    conn.commit()
-
-    row = conn.execute("SELECT * FROM doc_items WHERE id=?", (item_id,)).fetchone()
-    conn.close()
-    return jsonify({"ok": True, "data": dict(row)})
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @document_storage_bp.route("/api/docs/items/<int:item_id>", methods=["PUT"])
