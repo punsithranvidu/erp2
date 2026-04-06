@@ -308,31 +308,44 @@ def can_edit_item(conn, item_id, uid, username, role):
     ).fetchone()
     return row is not None
 
-
 def save_item_permissions(conn, item_id, creator_username, permissions):
+    # clear old permissions
     conn.execute("DELETE FROM doc_item_permissions WHERE item_id=?", (item_id,))
 
-    creator = conn.execute("SELECT id FROM users WHERE username=? LIMIT 1", (creator_username,)).fetchone()
+    seen_users = set()
+
+    def safe_insert(user_id, can_access, can_edit):
+        key = (item_id, user_id)
+        if key in seen_users:
+            return
+        seen_users.add(key)
+
+        conn.execute(
+            """
+            INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
+            VALUES (?,?,?,?)
+            """,
+            (item_id, user_id, can_access, can_edit),
+        )
+
+    # 1. creator (always full access)
+    creator = conn.execute(
+        "SELECT id FROM users WHERE username=? LIMIT 1",
+        (creator_username,)
+    ).fetchone()
+
     if creator:
-        conn.execute(
-            """
-            INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
-            VALUES (?,?,1,1)
-            """,
-            (item_id, creator["id"]),
-        )
+        safe_insert(creator["id"], 1, 1)
 
-    admins = conn.execute("SELECT id FROM users WHERE role='ADMIN' AND active=1").fetchall()
+    # 2. admins (always full access)
+    admins = conn.execute(
+        "SELECT id FROM users WHERE role='ADMIN' AND active=1"
+    ).fetchall()
+
     for a in admins:
-        conn.execute(
-            """
-            INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
-            VALUES (?,?,1,1)
-            """,
-            (item_id, a["id"]),
-        )
+        safe_insert(a["id"], 1, 1)
 
-    seen = set()
+    # 3. custom permissions
     for p in (permissions or []):
         try:
             user_id = int(p.get("user_id"))
@@ -344,19 +357,8 @@ def save_item_permissions(conn, item_id, creator_username, permissions):
         if can_access == 0:
             can_edit = 0
 
-        key = (item_id, user_id)
-        if key in seen:
-            continue
-        seen.add(key)
-
         if can_access or can_edit:
-            conn.execute(
-                """
-                INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
-                VALUES (?,?,?,?)
-                """,
-                (item_id, user_id, can_access, can_edit),
-            )
+            safe_insert(user_id, can_access, can_edit)
 
 
 def desired_drive_shares(conn, item_id):
