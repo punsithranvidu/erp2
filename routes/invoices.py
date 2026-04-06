@@ -228,7 +228,7 @@ def search():
     c.execute("""
         SELECT doc_type, year, month, number, status
         FROM document_numbers
-        WHERE doc_type || '-' || year || '/' || printf('%02d', month) || '-' || printf('%03d', number) = ?
+        WHERE doc_type || '-' || year::text || '/' || LPAD(month::text, 2, '0') || '-' || LPAD(number::text, 3, '0') = ?
         LIMIT 1
     """, (q,))
 
