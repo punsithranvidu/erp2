@@ -777,8 +777,8 @@ app.config["IS_ALL_BANKS_FUNC"] = is_all_banks
 app.config["PURGE_DELETED_OLDER_THAN_30_DAYS_FUNC"] = purge_deleted_older_than_30_days
 app.config["MODULES"] = MODULES
 
-init_db()
-purge_deleted_older_than_30_days()
+# init_db()
+# purge_deleted_older_than_30_days()
 
 # register blueprints
 app.register_blueprint(auth_bp)
