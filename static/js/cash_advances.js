@@ -83,38 +83,71 @@
   async function loadEmployees(){
     const selA = $("advEmployee");
     const selS = $("sumEmployee");
-
-    // ✅ correct endpoint for cash advances module
+  
     const out = await apiGet("/api/users/employees");
     const rows = out.data || [];
-
-    function fill(sel){
-      if(!sel) return;
-      sel.innerHTML = "";
-
-      const all = document.createElement("option");
-      all.value = "ALL";
-      all.textContent = "ALL";
-      sel.appendChild(all);
-
-      rows.forEach(u=>{
-        const opt = document.createElement("option");
-        opt.value = u.username;
-        opt.textContent = `${u.username} (${u.role})`;
-        sel.appendChild(opt);
-      });
-
+  
+    // ADMIN
+    if(me?.role === "ADMIN"){
+      if(selA){
+        selA.innerHTML = "";
+        const all = document.createElement("option");
+        all.value = "ALL";
+        all.textContent = "ALL";
+        selA.appendChild(all);
+  
+        rows.forEach(u=>{
+          const opt = document.createElement("option");
+          opt.value = u.username;
+          opt.textContent = `${u.username} (${u.role})`;
+          selA.appendChild(opt);
+        });
+      }
+  
+      if(selS){
+        selS.innerHTML = "";
+        const all = document.createElement("option");
+        all.value = "ALL";
+        all.textContent = "ALL";
+        selS.appendChild(all);
+  
+        rows.forEach(u=>{
+          const opt = document.createElement("option");
+          opt.value = u.username;
+          opt.textContent = `${u.username} (${u.role})`;
+          selS.appendChild(opt);
+        });
+      }
+  
       if(me?.user){
         const found = rows.find(x => x.username === me.user);
-        if(found) sel.value = me.user;
+        if(found && selA) selA.value = me.user;
+        if(found && selS) selS.value = me.user;
       }
+  
+      return;
     }
-
-    fill(selA);
-    fill(selS);
-
-    // EMP: hide admin create dropdown
-    if(me?.role !== "ADMIN" && selA) selA.innerHTML = "";
+  
+    // EMP
+    if(selA){
+      selA.innerHTML = "";
+      const opt = document.createElement("option");
+      opt.value = me?.user || "";
+      opt.textContent = me?.user || "My Advance";
+      selA.appendChild(opt);
+      selA.value = me?.user || "";
+      selA.disabled = true;
+    }
+  
+    if(selS){
+      selS.innerHTML = "";
+      const opt = document.createElement("option");
+      opt.value = me?.user || "";
+      opt.textContent = me?.user || "My Summary";
+      selS.appendChild(opt);
+      selS.value = me?.user || "";
+      selS.disabled = true;
+    }
   }
 
   async function loadBanks(){

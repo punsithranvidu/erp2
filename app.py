@@ -33,6 +33,11 @@ if not DATABASE_URL:
 
 app.config["DATABASE_URL"] = DATABASE_URL
 
+app.config["GOOGLE_OAUTH_REDIRECT_URI"] = os.environ.get(
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    "https://erp2-vpd7.onrender.com/google-drive/callback"
+)
+
 app.config["GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE"] = os.environ.get(
     "GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE",
     "/etc/secrets/the-ceylon-spice-haven-erp-a23cffff0d8d.json"

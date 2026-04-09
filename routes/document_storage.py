@@ -135,18 +135,41 @@ def get_oauth_drive_service():
     if not os.path.exists(token_path):
         raise ValueError("Google Drive is not connected yet. Please connect your Google account first.")
 
-    creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
+    try:
+        creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
+    except Exception:
+        raise ValueError("Google Drive token file is invalid. Please reconnect Google Drive.")
 
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open(token_path, "w", encoding="utf-8") as f:
-            f.write(creds.to_json())
+    try:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            with open(token_path, "w", encoding="utf-8") as f:
+                f.write(creds.to_json())
+        elif not creds.valid:
+            raise ValueError("Google Drive token is no longer valid. Please reconnect Google Drive.")
+    except Exception:
+        try:
+            os.remove(token_path)
+        except Exception:
+            pass
+        raise ValueError("Google Drive connection expired or was revoked. Please click Connect / Refresh Google Drive again.")
 
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
 def get_redirect_uri():
-    return request.url_root.rstrip("/") + "/google-drive/callback"
+    forced = (
+        current_app.config.get("GOOGLE_OAUTH_REDIRECT_URI")
+        or os.environ.get("GOOGLE_OAUTH_REDIRECT_URI")
+        or ""
+    ).strip()
+
+    if forced:
+        return forced
+
+    proto = request.headers.get("X-Forwarded-Proto", request.scheme)
+    host = request.headers.get("X-Forwarded-Host", request.host)
+    return f"{proto}://{host}/google-drive/callback"
 
 
 def get_root_drive_folder_id():
@@ -513,20 +536,23 @@ def sync_drive_shares(conn, item_id, drive_id):
 @document_storage_bp.route("/google-drive/connect", methods=["GET"])
 @login_required
 def google_drive_connect():
-    flow = Flow.from_client_secrets_file(
-        oauth_client_file(),
-        scopes=DRIVE_SCOPES,
-    )
-    flow.redirect_uri = get_redirect_uri()
+    try:
+        flow = Flow.from_client_secrets_file(
+            oauth_client_file(),
+            scopes=DRIVE_SCOPES,
+        )
+        flow.redirect_uri = get_redirect_uri()
 
-    authorization_url, state = flow.authorization_url(
-        access_type="offline",
-        include_granted_scopes="true",
-        prompt="consent",
-    )
+        authorization_url, state = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="consent",
+        )
 
-    session["google_drive_oauth_state"] = state
-    return redirect(authorization_url)
+        session["google_drive_oauth_state"] = state
+        return redirect(authorization_url)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Google Drive connect failed: {str(e)}"}), 500
 
 
 @document_storage_bp.route("/google-drive/callback", methods=["GET"])
@@ -536,21 +562,26 @@ def google_drive_callback():
     if not state:
         return jsonify({"ok": False, "error": "Missing OAuth state. Please connect again."}), 400
 
-    flow = Flow.from_client_secrets_file(
-        oauth_client_file(),
-        scopes=DRIVE_SCOPES,
-        state=state,
-    )
-    flow.redirect_uri = get_redirect_uri()
-    flow.fetch_token(authorization_response=request.url)
-    creds = flow.credentials
+    try:
+        flow = Flow.from_client_secrets_file(
+            oauth_client_file(),
+            scopes=DRIVE_SCOPES,
+            state=state,
+        )
+        flow.redirect_uri = get_redirect_uri()
+        flow.fetch_token(authorization_response=request.url)
+        creds = flow.credentials
 
-    token_path = oauth_token_file()
-    with open(token_path, "w", encoding="utf-8") as f:
-        f.write(creds.to_json())
+        token_path = oauth_token_file()
+        with open(token_path, "w", encoding="utf-8") as f:
+            f.write(creds.to_json())
 
-    session.pop("google_drive_oauth_state", None)
-    return redirect("/document-storage")
+        session.pop("google_drive_oauth_state", None)
+        return redirect("/document-storage")
+
+    except Exception as e:
+        session.pop("google_drive_oauth_state", None)
+        return jsonify({"ok": False, "error": f"Google Drive callback failed: {str(e)}"}), 500
 
 
 @document_storage_bp.route("/api/docs/users", methods=["GET"])

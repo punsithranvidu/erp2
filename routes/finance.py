@@ -68,14 +68,28 @@ def normalize_url(url: str) -> str:
 
 
 def purge_deleted_older_than_30_days():
-    conn = db()
-    conn.execute("""
-        DELETE FROM finance_records
-        WHERE deleted_at IS NOT NULL
-          AND CAST(REPLACE(deleted_at, 'T', ' ') AS timestamp) <= NOW() - INTERVAL '30 days'
-    """)
-    conn.commit()
-    conn.close()
+    """
+    Safe purge.
+    If DB pool is temporarily full, do not break the whole page load.
+    """
+    conn = None
+    try:
+        conn = db()
+        conn.execute("""
+            DELETE FROM finance_records
+            WHERE deleted_at IS NOT NULL
+              AND CAST(REPLACE(deleted_at, 'T', ' ') AS timestamp) <= NOW() - INTERVAL '30 days'
+        """)
+        conn.commit()
+    except Exception:
+        # Ignore purge failures so finance page can still work
+        pass
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
 
 
 def get_default_bank_id():
@@ -156,6 +170,7 @@ def api_banks_create():
     if not name:
         return jsonify({"ok": False, "error": "Bank account name is required"}), 400
 
+    conn = None
     try:
         conn = db()
         conn.execute("""
@@ -168,6 +183,7 @@ def api_banks_create():
             SELECT id, name, active
             FROM bank_accounts
             WHERE name=?
+            LIMIT 1
         """, (name,)).fetchone()
         conn.close()
 
@@ -178,7 +194,19 @@ def api_banks_create():
             "active": row["active"]
         })
     except sqlite3.IntegrityError:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
         return jsonify({"ok": False, "error": "This bank account already exists"}), 400
+    except Exception as e:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @finance_bp.route("/api/banks/<int:bid>", methods=["PUT"])
@@ -191,6 +219,7 @@ def api_banks_rename(bid):
     if not new_name:
         return jsonify({"ok": False, "error": "New bank name is required"}), 400
 
+    conn = None
     try:
         conn = db()
 
@@ -224,7 +253,19 @@ def api_banks_rename(bid):
 
         return jsonify({"ok": True, "id": bid, "name": new_name})
     except sqlite3.IntegrityError:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
         return jsonify({"ok": False, "error": "This bank account name already exists"}), 400
+    except Exception as e:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @finance_bp.route("/api/banks/<int:bid>", methods=["DELETE"])
@@ -331,42 +372,51 @@ def api_finance_create():
         if not data.get(k):
             return jsonify({"ok": False, "error": f"Missing field: {k}"}), 400
 
-    conn = db()
-    conn.execute("""
-        INSERT INTO finance_records (
-            bank_id,
-            type, client_name, category, description, currency, amount,
-            payment_type, status, proof_of_payment, invoice_ref, po_number, quotation_number,
-            paid_date, folder_link, proof_link, invoice_link, quotation_link,
-            created_at, created_by,
-            deleted_at, deleted_by
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)
-    """, (
-        int(data["bank_id"]),
-        data["type"],
-        data["client_name"],
-        data["category"],
-        data.get("description", ""),
-        data["currency"],
-        float(data["amount"]),
-        data["payment_type"],
-        data["status"],
-        data["proof_of_payment"],
-        data.get("invoice_ref", ""),
-        data.get("po_number", ""),
-        data.get("quotation_number", ""),
-        data.get("paid_date", ""),
-        normalize_url(data.get("folder_link", "")),
-        normalize_url(data.get("proof_link", "")),
-        normalize_url(data.get("invoice_link", "")),
-        normalize_url(data.get("quotation_link", "")),
-        now_iso(),
-        session["user"],
-    ))
-    conn.commit()
-    conn.close()
+    conn = None
+    try:
+        conn = db()
+        conn.execute("""
+            INSERT INTO finance_records (
+                bank_id,
+                type, client_name, category, description, currency, amount,
+                payment_type, status, proof_of_payment, invoice_ref, po_number, quotation_number,
+                paid_date, folder_link, proof_link, invoice_link, quotation_link,
+                created_at, created_by,
+                deleted_at, deleted_by
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)
+        """, (
+            int(data["bank_id"]),
+            data["type"],
+            data["client_name"],
+            data["category"],
+            data.get("description", ""),
+            data["currency"],
+            float(data["amount"]),
+            data["payment_type"],
+            data["status"],
+            data["proof_of_payment"],
+            data.get("invoice_ref", ""),
+            data.get("po_number", ""),
+            data.get("quotation_number", ""),
+            data.get("paid_date", ""),
+            normalize_url(data.get("folder_link", "")),
+            normalize_url(data.get("proof_link", "")),
+            normalize_url(data.get("invoice_link", "")),
+            normalize_url(data.get("quotation_link", "")),
+            now_iso(),
+            session["user"],
+        ))
+        conn.commit()
+        conn.close()
 
-    return jsonify({"ok": True})
+        return jsonify({"ok": True})
+    except Exception as e:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @finance_bp.route("/api/finance/<int:rid>", methods=["PUT"])
@@ -506,7 +556,7 @@ def api_finance_summary():
         SELECT
           {key_expr} AS key,
           currency AS currency,
-          ROUND(SUM(amount), 2) AS total,
+          SUM(amount) AS total,
           COUNT(*) AS count
         FROM finance_records
         WHERE {" AND ".join(where)}
@@ -516,7 +566,16 @@ def api_finance_summary():
     """, params).fetchall()
     conn.close()
 
-    return jsonify([dict(r) for r in rows])
+    out = []
+    for r in rows:
+        out.append({
+            "key": r["key"],
+            "currency": r["currency"],
+            "total": round(float(r["total"] or 0), 2),
+            "count": int(r["count"] or 0),
+        })
+
+    return jsonify(out)
 
 
 @finance_bp.route("/api/finance/summary.csv", methods=["GET"])
@@ -566,7 +625,7 @@ def api_finance_summary_csv():
         SELECT
           {key_expr} AS key,
           currency AS currency,
-          ROUND(SUM(amount), 2) AS total,
+          SUM(amount) AS total,
           COUNT(*) AS count
         FROM finance_records
         WHERE {" AND ".join(where)}
@@ -581,7 +640,12 @@ def api_finance_summary_csv():
     writer.writerow(["key", "currency", "total", "count"])
 
     for r in rows:
-        writer.writerow([r["key"], r["currency"], r["total"], r["count"]])
+        writer.writerow([
+            r["key"],
+            r["currency"],
+            round(float(r["total"] or 0), 2),
+            int(r["count"] or 0)
+        ])
 
     bank_tag = "allbanks" if is_all_banks(bank_id) else f"bank{bank_id}"
     filename = f"summary_{ftype.lower()}_{group}{'_'+month if month else ''}{'_user-'+user_filter if user_filter else ''}_{bank_tag}.csv"
