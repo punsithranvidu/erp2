@@ -1,5 +1,7 @@
-from flask import Blueprint, request, session, jsonify, current_app
+from flask import Blueprint, request, session, jsonify, current_app, Response
 from functools import wraps
+from io import StringIO
+import csv
 
 from .db_compat import sqlite3
 
@@ -11,7 +13,9 @@ cash_advances_bp = Blueprint("cash_advances", __name__)
 # ======================
 def db():
     database_url = current_app.config["DATABASE_URL"]
-    return sqlite3.connect(database_url)
+    conn = sqlite3.connect(database_url)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def now_iso():
@@ -847,23 +851,23 @@ def api_advances_summary():
         SELECT
             ca.employee_username,
             ca.currency,
-            ROUND(SUM(ca.amount_given), 2) AS total_given,
+            SUM(COALESCE(ca.amount_given, 0)) AS total_given,
 
-            ROUND(SUM(
+            SUM(
                 COALESCE((
                     SELECT SUM(t.amount)
                     FROM cash_advance_topups t
                     WHERE t.advance_id = ca.id
                 ), 0)
-            ), 2) AS total_topups,
+            ) AS total_topups,
 
-            ROUND(SUM(
+            SUM(
                 COALESCE((
                     SELECT SUM(e.amount)
                     FROM cash_advance_expenses e
                     WHERE e.advance_id = ca.id
                 ), 0)
-            ), 2) AS total_spent,
+            ) AS total_spent,
 
             COUNT(*) AS count
         FROM cash_advances ca
@@ -875,8 +879,8 @@ def api_advances_summary():
 
     data = []
     for r in rows:
-        topups = float(r["total_topups"] or 0)
         given = float(r["total_given"] or 0)
+        topups = float(r["total_topups"] or 0)
         spent = float(r["total_spent"] or 0)
         count = int(r["count"] or 0)
 
@@ -891,3 +895,102 @@ def api_advances_summary():
         })
 
     return jsonify({"ok": True, "data": data})
+
+
+@cash_advances_bp.route("/api/advances/summary.csv", methods=["GET"])
+@login_required
+@require_module("CASH_ADVANCES")
+def api_advances_summary_csv():
+    employee = (request.args.get("employee") or "").strip()
+    month = (request.args.get("month") or "").strip()
+    status = (request.args.get("status") or "").strip().upper()
+
+    if not is_admin():
+        employee = session["user"]
+
+    where = ["1=1"]
+    params = []
+
+    if employee and employee.upper() != "ALL":
+        where.append("ca.employee_username = ?")
+        params.append(employee)
+
+    if month:
+        where.append("substr(COALESCE(NULLIF(ca.given_date,''), ca.created_at), 1, 7) = ?")
+        params.append(month)
+
+    if status in ("OPEN", "CLOSED"):
+        where.append("ca.closed = ?")
+        params.append(1 if status == "CLOSED" else 0)
+
+    conn = db()
+    rows = conn.execute(f"""
+        SELECT
+            ca.employee_username,
+            ca.currency,
+            SUM(COALESCE(ca.amount_given, 0)) AS total_given,
+
+            SUM(
+                COALESCE((
+                    SELECT SUM(t.amount)
+                    FROM cash_advance_topups t
+                    WHERE t.advance_id = ca.id
+                ), 0)
+            ) AS total_topups,
+
+            SUM(
+                COALESCE((
+                    SELECT SUM(e.amount)
+                    FROM cash_advance_expenses e
+                    WHERE e.advance_id = ca.id
+                ), 0)
+            ) AS total_spent,
+
+            COUNT(*) AS count
+        FROM cash_advances ca
+        WHERE {" AND ".join(where)}
+        GROUP BY ca.employee_username, ca.currency
+        ORDER BY ca.employee_username ASC, ca.currency ASC
+    """, params).fetchall()
+    conn.close()
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Employee",
+        "Currency",
+        "Total Given",
+        "Total Top-Ups",
+        "Total Spent",
+        "Balance",
+        "Advances Count"
+    ])
+
+    for r in rows:
+        given = float(r["total_given"] or 0)
+        topups = float(r["total_topups"] or 0)
+        spent = float(r["total_spent"] or 0)
+        balance = (given + topups) - spent
+
+        writer.writerow([
+            r["employee_username"],
+            r["currency"],
+            round(given, 2),
+            round(topups, 2),
+            round(spent, 2),
+            round(balance, 2),
+            int(r["count"] or 0),
+        ])
+
+    csv_text = output.getvalue()
+    output.close()
+
+    filename = "cash_advance_summary.csv"
+    if month:
+        filename = f"cash_advance_summary_{month}.csv"
+
+    return Response(
+        csv_text,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
