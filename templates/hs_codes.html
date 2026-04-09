@@ -78,36 +78,22 @@
       min-width:220px;
     }
 
+    /* ✅ FIXED SCROLL */
     .hs-table-wrap{
       width:100%;
-      overflow-x:auto !important;
+      max-height:500px; /* IMPORTANT */
       overflow-y:auto;
+      overflow-x:auto;
       border:1px solid #e5e7eb;
-      border-radius:16px 16px 0 0;
+      border-radius:16px;
       background:#fff;
       margin-top:14px;
-      scrollbar-gutter: stable;
-    }
-
-    .hs-bottom-scroll{
-      width:100%;
-      overflow-x:auto !important;
-      overflow-y:hidden !important;
-      border:1px solid #e5e7eb;
-      border-top:none;
-      border-radius:0 0 16px 16px;
-      background:#f8fafc;
-      height:18px;
-      scrollbar-gutter: stable;
-    }
-
-    .hs-bottom-scroll div{
-      height:1px;
+      scroll-behavior:smooth;
     }
 
     .hs-table{
-      width:max-content !important;
-      min-width:1450px !important;
+      width:100%;
+      min-width:1450px;
       border-collapse:collapse;
     }
 
@@ -118,7 +104,6 @@
       text-align:left;
       vertical-align:top;
       font-size:14px;
-      white-space:normal;
     }
 
     .hs-table th{
@@ -140,7 +125,6 @@
     .hs-mini{
       font-size:12px;
       color:#64748b;
-      line-height:1.4;
     }
 
     .hs-row-actions{
@@ -186,22 +170,22 @@
           <p class="hs-sub">Store product name, HS code, proof link, and notes.</p>
 
           <label for="productName">Product Name</label>
-          <input id="productName" type="text" placeholder="Example: Black Pepper Whole" />
+          <input id="productName" type="text" />
 
           <label for="hsCode">HS Code</label>
-          <input id="hsCode" type="text" placeholder="Example: 0904.11" />
+          <input id="hsCode" type="text" />
 
           <label for="proofLink">Proof Link</label>
-          <input id="proofLink" type="text" placeholder="Paste source / proof link" />
+          <input id="proofLink" type="text" />
 
           <label for="notes">Notes</label>
-          <textarea id="notes" placeholder="Optional note"></textarea>
+          <textarea id="notes"></textarea>
 
           <div class="hs-actions">
-            <button id="saveBtn" class="btn mini" type="button">Save</button>
-            <button id="updateBtn" class="btn ghost mini" type="button" disabled>Update</button>
-            <button id="deleteBtn" class="btn ghost mini" type="button" disabled>Delete</button>
-            <button id="clearBtn" class="btn ghost mini" type="button">Clear</button>
+            <button id="saveBtn" class="btn mini">Save</button>
+            <button id="updateBtn" class="btn ghost mini" disabled>Update</button>
+            <button id="deleteBtn" class="btn ghost mini" disabled>Delete</button>
+            <button id="clearBtn" class="btn ghost mini">Clear</button>
           </div>
 
           <p id="formMsg" class="msg"></p>
@@ -210,41 +194,37 @@
         <div class="hs-box">
           <div class="hs-toolbar">
             <div>
-              <h3 style="margin:0;">HS Code List</h3>
-              <p class="hs-sub" style="margin:6px 0 0;">Search by product name or HS code.</p>
+              <h3>HS Code List</h3>
+              <p class="hs-sub">Search by product name or HS code.</p>
             </div>
           </div>
 
           <div class="hs-search">
             <div>
               <label for="searchInput">Search</label>
-              <input id="searchInput" type="text" placeholder="Search by name, code, proof link..." />
+              <input id="searchInput" type="text" />
             </div>
-            <div style="flex:0 0 auto;">
-              <button id="searchBtn" class="btn mini" type="button">Search</button>
-            </div>
-            <div style="flex:0 0 auto;">
-              <button id="refreshBtn" class="btn ghost mini" type="button">Refresh</button>
-            </div>
+            <button id="searchBtn" class="btn mini">Search</button>
+            <button id="refreshBtn" class="btn ghost mini">Refresh</button>
           </div>
 
-          <div class="hs-table-wrap" id="hsTableWrap">
+          <!-- ✅ SCROLL FIXED -->
+          <div class="hs-table-wrap">
             <table class="hs-table">
               <thead>
                 <tr>
-                  <th style="width:220px;">Product</th>
-                  <th style="width:130px;">HS Code</th>
-                  <th style="min-width:220px;">Proof Link</th>
-                  <th style="min-width:220px;">Notes</th>
-                  <th style="width:180px;">Added By</th>
-                  <th style="width:180px;">Last Edited By</th>
-                  <th style="width:160px;">Actions</th>
+                  <th>Product</th>
+                  <th>HS Code</th>
+                  <th>Proof Link</th>
+                  <th>Notes</th>
+                  <th>Added By</th>
+                  <th>Last Edited By</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="tableBody"></tbody>
             </table>
           </div>
-
 
           <p id="tableMsg" class="msg"></p>
         </div>
