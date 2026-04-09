@@ -120,13 +120,32 @@ def oauth_client_file():
 
 
 def oauth_token_file():
-    cfg = current_app.config.get("GOOGLE_OAUTH_TOKEN_FILE") or os.environ.get("GOOGLE_OAUTH_TOKEN_FILE")
-    return _materialize_json_or_path(
-        cfg,
-        "google-oauth-token.json",
-        fallback_secret_path="/etc/secrets/google-oauth-token.json",
-        required=False,
-    )
+    """
+    IMPORTANT:
+    This must stay as a writable runtime token file.
+    Do NOT fallback to /etc/secrets/google-oauth-token.json here.
+    Otherwise the app may keep reusing an old revoked token.
+    """
+    token_path = (
+        current_app.config.get("GOOGLE_OAUTH_TOKEN_FILE")
+        or os.environ.get("GOOGLE_OAUTH_TOKEN_FILE")
+        or "/tmp/google-oauth-token.json"
+    ).strip()
+
+    parent = os.path.dirname(token_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+    return token_path
+
+
+def clear_oauth_token_file():
+    token_path = oauth_token_file()
+    try:
+        if os.path.exists(token_path):
+            os.remove(token_path)
+    except Exception:
+        pass
 
 
 def get_oauth_drive_service():
@@ -138,6 +157,7 @@ def get_oauth_drive_service():
     try:
         creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
     except Exception:
+        clear_oauth_token_file()
         raise ValueError("Google Drive token file is invalid. Please click Connect / Refresh Google Drive again.")
 
     try:
@@ -146,12 +166,12 @@ def get_oauth_drive_service():
             with open(token_path, "w", encoding="utf-8") as f:
                 f.write(creds.to_json())
         elif not creds.valid:
-            raise ValueError("Google Drive token is no longer valid.")
+            clear_oauth_token_file()
+            raise ValueError("Google Drive connection is invalid. Please click Connect / Refresh Google Drive again.")
+    except ValueError:
+        raise
     except Exception:
-        try:
-            os.remove(token_path)
-        except Exception:
-            pass
+        clear_oauth_token_file()
         raise ValueError("Google Drive connection expired or was revoked. Please click Connect / Refresh Google Drive again.")
 
     return build("drive", "v3", credentials=creds, cache_discovery=False)
@@ -537,6 +557,8 @@ def sync_drive_shares(conn, item_id, drive_id):
 @login_required
 def google_drive_connect():
     try:
+        clear_oauth_token_file()
+
         flow = Flow.from_client_secrets_file(
             oauth_client_file(),
             scopes=DRIVE_SCOPES,
@@ -547,13 +569,10 @@ def google_drive_connect():
             access_type="offline",
             include_granted_scopes="true",
             prompt="consent",
-            code_challenge_method="S256",
         )
 
         session["google_drive_oauth_state"] = state
-        session["google_drive_code_verifier"] = flow.code_verifier
         return redirect(authorization_url)
-
     except Exception as e:
         return jsonify({"ok": False, "error": f"Google Drive connect failed: {str(e)}"}), 500
 
@@ -562,13 +581,8 @@ def google_drive_connect():
 @login_required
 def google_drive_callback():
     state = session.get("google_drive_oauth_state")
-    code_verifier = session.get("google_drive_code_verifier")
-
     if not state:
         return jsonify({"ok": False, "error": "Missing OAuth state. Please connect again."}), 400
-
-    if not code_verifier:
-        return jsonify({"ok": False, "error": "Missing OAuth code verifier. Please connect again."}), 400
 
     try:
         flow = Flow.from_client_secrets_file(
@@ -577,7 +591,6 @@ def google_drive_callback():
             state=state,
         )
         flow.redirect_uri = get_redirect_uri()
-        flow.code_verifier = code_verifier
         flow.fetch_token(authorization_response=request.url)
         creds = flow.credentials
 
@@ -586,12 +599,11 @@ def google_drive_callback():
             f.write(creds.to_json())
 
         session.pop("google_drive_oauth_state", None)
-        session.pop("google_drive_code_verifier", None)
         return redirect("/document-storage")
 
     except Exception as e:
         session.pop("google_drive_oauth_state", None)
-        session.pop("google_drive_code_verifier", None)
+        clear_oauth_token_file()
         return jsonify({"ok": False, "error": f"Google Drive callback failed: {str(e)}"}), 500
 
 
