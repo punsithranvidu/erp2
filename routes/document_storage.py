@@ -121,10 +121,8 @@ def oauth_client_file():
 
 def oauth_token_file():
     """
-    IMPORTANT:
-    This must stay as a writable runtime token file.
-    Do NOT fallback to /etc/secrets/google-oauth-token.json here.
-    Otherwise the app may keep reusing an old revoked token.
+    Writable runtime token file.
+    We still use /tmp, but we also restore from /etc/secrets if available.
     """
     token_path = (
         current_app.config.get("GOOGLE_OAUTH_TOKEN_FILE")
@@ -139,6 +137,10 @@ def oauth_token_file():
     return token_path
 
 
+def oauth_token_secret_file():
+    return "/etc/secrets/google-oauth-token.json"
+
+
 def clear_oauth_token_file():
     token_path = oauth_token_file()
     try:
@@ -148,11 +150,31 @@ def clear_oauth_token_file():
         pass
 
 
-def get_oauth_drive_service():
+def restore_token_from_secret_if_needed():
     token_path = oauth_token_file()
+    secret_path = oauth_token_secret_file()
 
-    if not os.path.exists(token_path):
-        raise ValueError("Google Drive is not connected yet. Please click Connect / Refresh Google Drive first.")
+    if os.path.exists(token_path):
+        return token_path
+
+    if os.path.exists(secret_path):
+        try:
+            shutil.copyfile(secret_path, token_path)
+            return token_path
+        except Exception as e:
+            raise ValueError(f"Could not restore Google token from secrets: {str(e)}")
+
+    raise ValueError("Google Drive is not connected yet. Please click Connect / Refresh Google Drive first.")
+
+
+def save_runtime_token(token_json: str):
+    token_path = oauth_token_file()
+    with open(token_path, "w", encoding="utf-8") as f:
+        f.write(token_json)
+
+
+def get_oauth_drive_service():
+    token_path = restore_token_from_secret_if_needed()
 
     try:
         creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
@@ -163,11 +185,12 @@ def get_oauth_drive_service():
     try:
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            with open(token_path, "w", encoding="utf-8") as f:
-                f.write(creds.to_json())
+            save_runtime_token(creds.to_json())
+
         elif not creds.valid:
             clear_oauth_token_file()
             raise ValueError("Google Drive connection is invalid. Please click Connect / Refresh Google Drive again.")
+
     except ValueError:
         raise
     except Exception:
@@ -594,9 +617,8 @@ def google_drive_callback():
         flow.fetch_token(authorization_response=request.url)
         creds = flow.credentials
 
-        token_path = oauth_token_file()
-        with open(token_path, "w", encoding="utf-8") as f:
-            f.write(creds.to_json())
+        token_json = creds.to_json()
+        save_runtime_token(token_json)
 
         session.pop("google_drive_oauth_state", None)
         return redirect("/document-storage")
