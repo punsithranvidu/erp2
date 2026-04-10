@@ -592,10 +592,14 @@ def google_drive_connect():
             access_type="offline",
             include_granted_scopes="true",
             prompt="consent",
+            code_challenge_method="S256",
         )
 
         session["google_drive_oauth_state"] = state
+        session["google_drive_code_verifier"] = flow.code_verifier
+
         return redirect(authorization_url)
+
     except Exception as e:
         return jsonify({"ok": False, "error": f"Google Drive connect failed: {str(e)}"}), 500
 
@@ -604,8 +608,13 @@ def google_drive_connect():
 @login_required
 def google_drive_callback():
     state = session.get("google_drive_oauth_state")
+    code_verifier = session.get("google_drive_code_verifier")
+
     if not state:
         return jsonify({"ok": False, "error": "Missing OAuth state. Please connect again."}), 400
+
+    if not code_verifier:
+        return jsonify({"ok": False, "error": "Missing OAuth code verifier. Please connect again."}), 400
 
     try:
         flow = Flow.from_client_secrets_file(
@@ -614,17 +623,21 @@ def google_drive_callback():
             state=state,
         )
         flow.redirect_uri = get_redirect_uri()
+        flow.code_verifier = code_verifier
         flow.fetch_token(authorization_response=request.url)
-        creds = flow.credentials
 
+        creds = flow.credentials
         token_json = creds.to_json()
         save_runtime_token(token_json)
 
         session.pop("google_drive_oauth_state", None)
+        session.pop("google_drive_code_verifier", None)
+
         return redirect("/document-storage")
 
     except Exception as e:
         session.pop("google_drive_oauth_state", None)
+        session.pop("google_drive_code_verifier", None)
         clear_oauth_token_file()
         return jsonify({"ok": False, "error": f"Google Drive callback failed: {str(e)}"}), 500
 
