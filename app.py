@@ -54,7 +54,15 @@ app.config["GOOGLE_OAUTH_TOKEN_FILE"] = os.environ.get(
     "GOOGLE_OAUTH_TOKEN_FILE",
     "/tmp/google-oauth-token.json"
 )
-app.config["GOOGLE_SERVICE_ACCOUNT_JSON"] = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+
+app.config["GOOGLE_MESSAGES_DRIVE_ROOT_FOLDER_ID"] = os.environ.get(
+    "GOOGLE_MESSAGES_DRIVE_ROOT_FOLDER_ID",
+    ""
+)
+app.config["GOOGLE_SERVICE_ACCOUNT_JSON"] = os.environ.get(
+    "GOOGLE_SERVICE_ACCOUNT_JSON",
+    ""
+)
 
 USERS = {
     "punsith": {"password": "punsith123", "role": "ADMIN"},
