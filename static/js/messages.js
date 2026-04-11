@@ -6,6 +6,7 @@ let CONVERSATIONS = [];
 let ACTIVE_CONVO_ID = null;
 let ACTIVE_CONVO = null;
 let MESSAGES = [];
+let DRIVE_STATUS = null;
 
 let SIDEBAR_REFRESH_TIMER = null;
 let CHAT_REFRESH_TIMER = null;
@@ -108,6 +109,41 @@ function bindMessageScrollWatcher() {
   box.addEventListener("scroll", () => {
     updateScrollBottomButton();
   });
+}
+
+async function loadDriveStatus() {
+  try {
+    const out = await api("/api/messages/google-drive/status");
+    DRIVE_STATUS = out.data || null;
+  } catch (err) {
+    DRIVE_STATUS = null;
+  }
+  renderDriveStatus();
+}
+
+function renderDriveStatus() {
+  const textEl = $("driveStatusText");
+  const btn = $("connectDriveBtn");
+  if (!textEl || !btn) return;
+
+  if (!DRIVE_STATUS) {
+    textEl.textContent = "Google Drive status unavailable right now.";
+    btn.textContent = "Connect Drive";
+    return;
+  }
+
+  if (DRIVE_STATUS.connected) {
+    const accountEmail = DRIVE_STATUS.google_account_email || "Connected";
+    textEl.textContent = `Attachments use your own Google Drive connection. Connected account: ${accountEmail}`;
+    btn.textContent = "Reconnect Drive";
+    return;
+  }
+
+  const savedEmail = DRIVE_STATUS.saved_google_email || "";
+  textEl.textContent = savedEmail
+    ? `Connect your Google Drive to send message attachments. Conversation sharing uses saved Google email: ${savedEmail}`
+    : "Connect your Google Drive to send message attachments. Users without a saved Google email can still use chat, but Drive sharing is limited until one is saved.";
+  btn.textContent = "Connect Drive";
 }
 
 async function loadMe() {
@@ -859,6 +895,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindMessageScrollWatcher();
 
   await loadMe();
+  await loadDriveStatus();
   await loadUsers();
   await loadConversations(false, false);
   restartRefreshLoops();
@@ -869,8 +906,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   $("refreshConvosBtn")?.addEventListener("click", async () => {
+    await loadDriveStatus();
     await loadConversations(true, false);
     if (ACTIVE_CONVO_ID) await loadMessages({ silent: false });
+  });
+
+  $("connectDriveBtn")?.addEventListener("click", () => {
+    window.location.href = "/messages/google-drive/connect";
   });
 
   $("newGroupBtn")?.addEventListener("click", () => {

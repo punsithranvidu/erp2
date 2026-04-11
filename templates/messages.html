@@ -35,6 +35,13 @@
       margin-top: 10px;
     }
 
+    .msg-drive-status {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #6b7280;
+      line-height: 1.35;
+    }
+
     .msg-users-box,
     .msg-convo-list {
       border: 1px solid #e5e7eb;
@@ -469,12 +476,14 @@
 
           <div class="msg-toolbar">
             <button id="refreshConvosBtn" class="btn ghost mini" type="button">Refresh</button>
+            <button id="connectDriveBtn" class="btn ghost mini" type="button">Connect Drive</button>
             <button id="newGroupBtn" class="btn mini" type="button">New Group</button>
             <button id="addMemberBtn" class="btn ghost mini" type="button">Add Member</button>
             <button id="deleteConversationBtn" class="btn ghost mini" type="button">Delete Chat</button>
             <button id="leaveGroupBtn" class="btn ghost mini" type="button">Leave Group</button>
             <button id="openTrashBtn" class="btn ghost mini" type="button">Trash</button>
           </div>
+          <div id="driveStatusText" class="msg-drive-status">Checking Google Drive connection...</div>
 
           <input id="conversationSearch" class="msg-search" placeholder="Search conversations..." />
 
