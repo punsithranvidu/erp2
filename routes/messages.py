@@ -4,7 +4,6 @@ from datetime import datetime
 import io
 import os
 import shutil
-import uuid
 
 from werkzeug.utils import secure_filename
 
@@ -13,11 +12,61 @@ from .db_compat import sqlite3
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-from googleapiclient.errors import HttpError
 
 messages_bp = Blueprint("messages", __name__)
 
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+
+# ======================
+# HELPERS
+# ======================
+def db():
+    database_url = current_app.config["DATABASE_URL"]
+    conn = sqlite3.connect(database_url)
+    try:
+        conn.row_factory = sqlite3.Row
+    except Exception:
+        pass
+    return conn
+
+
+def now_iso():
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def login_required(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if "user" not in session:
+            return jsonify({"ok": False, "error": "Login required"}), 401
+        return f(*args, **kwargs)
+    return wrapped
+
+
+def is_admin():
+    return session.get("role") == "ADMIN"
+
+
+def has_module_access(module: str, need_edit: bool = False) -> bool:
+    fn = current_app.config.get("HAS_MODULE_ACCESS_FUNC")
+    if callable(fn):
+        return fn(module, need_edit)
+    return False
+
+
+def require_module(module: str, need_edit: bool = False):
+    def deco(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            if not has_module_access(module, need_edit=need_edit):
+                return jsonify({
+                    "ok": False,
+                    "error": f"No permission for {module}{' (edit)' if need_edit else ''}"
+                }), 403
+            return f(*args, **kwargs)
+        return wrapped
+    return deco
 
 
 # ======================
@@ -212,6 +261,7 @@ def delete_drive_file_safe(drive_file_id: str):
         service.files().delete(fileId=drive_file_id, supportsAllDrives=True).execute()
     except Exception:
         pass
+
 
 # ======================
 # MESSAGE HELPERS
