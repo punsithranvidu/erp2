@@ -10,8 +10,7 @@ from werkzeug.utils import secure_filename
 
 from .db_compat import sqlite3
 
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from googleapiclient.errors import HttpError
@@ -22,59 +21,8 @@ DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
 # ======================
-# HELPERS
-# ======================
-def db():
-    database_url = current_app.config["DATABASE_URL"]
-    conn = sqlite3.connect(database_url)
-    try:
-        conn.row_factory = sqlite3.Row
-    except Exception:
-        pass
-    return conn
-
-
-def now_iso():
-    return datetime.now().isoformat(timespec="seconds")
-
-
-def login_required(f):
-    @wraps(f)
-    def wrapped(*args, **kwargs):
-        if "user" not in session:
-            return jsonify({"ok": False, "error": "Login required"}), 401
-        return f(*args, **kwargs)
-    return wrapped
-
-
-def is_admin():
-    return session.get("role") == "ADMIN"
-
-
-def has_module_access(module: str, need_edit: bool = False) -> bool:
-    fn = current_app.config.get("HAS_MODULE_ACCESS_FUNC")
-    if callable(fn):
-        return fn(module, need_edit)
-    return False
-
-
-def require_module(module: str, need_edit: bool = False):
-    def deco(f):
-        @wraps(f)
-        def wrapped(*args, **kwargs):
-            if not has_module_access(module, need_edit=need_edit):
-                return jsonify({
-                    "ok": False,
-                    "error": f"No permission for {module}{' (edit)' if need_edit else ''}"
-                }), 403
-            return f(*args, **kwargs)
-        return wrapped
-    return deco
-
-
-# ======================
 # GOOGLE DRIVE HELPERS
-# Reuses the same OAuth token used by document storage
+# Uses Service Account JSON from Render ENV
 # ======================
 def _ensure_tmp_dir():
     os.makedirs("/tmp/erp_google", exist_ok=True)
@@ -93,80 +41,51 @@ def _materialize_json_or_path(value, tmp_filename, fallback_secret_path=None, re
     out_path = os.path.join(tmp_dir, tmp_filename)
 
     if value:
-      القيمة = str(value).strip()
-      if os.path.exists(القيمة):
-          return القيمة
-      if _looks_like_json(القيمة):
-          with open(out_path, "w", encoding="utf-8") as f:
-              f.write(القيمة)
-          return out_path
+        clean_value = str(value).strip()
+
+        if os.path.exists(clean_value):
+            return clean_value
+
+        if _looks_like_json(clean_value):
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(clean_value)
+            return out_path
 
     if fallback_secret_path and os.path.exists(fallback_secret_path):
         shutil.copyfile(fallback_secret_path, out_path)
         return out_path
 
     if required:
-        raise ValueError(f"Required Google secret not found: {tmp_filename}")
+        raise ValueError(f"Required Google service account secret not found: {tmp_filename}")
 
     return out_path
 
 
-def oauth_token_file():
-    token_path = (
-        current_app.config.get("GOOGLE_OAUTH_TOKEN_FILE")
-        or os.environ.get("GOOGLE_OAUTH_TOKEN_FILE")
-        or "/tmp/google-oauth-token.json"
-    ).strip()
+def service_account_file():
+    cfg = (
+        current_app.config.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+        or os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+        or ""
+    )
 
-    parent = os.path.dirname(token_path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-
-    return token_path
-
-
-def oauth_token_secret_file():
-    return "/etc/secrets/google-oauth-token.json"
+    return _materialize_json_or_path(
+        cfg,
+        "google-service-account.json",
+        fallback_secret_path="/etc/secrets/google-service-account.json",
+        required=True,
+    )
 
 
-def restore_token_from_secret_if_needed():
-    token_path = oauth_token_file()
-    secret_path = oauth_token_secret_file()
-
-    if os.path.exists(token_path):
-        return token_path
-
-    if os.path.exists(secret_path):
-        shutil.copyfile(secret_path, token_path)
-        return token_path
-
-    raise ValueError("Google Drive is not connected yet. Please connect Google Drive first.")
-
-
-def save_runtime_token(token_json: str):
-    token_path = oauth_token_file()
-    with open(token_path, "w", encoding="utf-8") as f:
-        f.write(token_json)
-
-
-def get_oauth_drive_service():
-    token_path = restore_token_from_secret_if_needed()
+def get_service_account_drive_service():
+    sa_file = service_account_file()
 
     try:
-        creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
-    except Exception:
-        raise ValueError("Google Drive token file is invalid. Please reconnect Google Drive.")
-
-    try:
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            save_runtime_token(creds.to_json())
-        elif not creds.valid:
-            raise ValueError("Google Drive connection is invalid. Please reconnect Google Drive.")
-    except ValueError:
-        raise
-    except Exception:
-        raise ValueError("Google Drive connection expired or was revoked. Please reconnect Google Drive.")
+        creds = service_account.Credentials.from_service_account_file(
+            sa_file,
+            scopes=DRIVE_SCOPES,
+        )
+    except Exception as e:
+        raise ValueError(f"Service account credentials are invalid: {str(e)}")
 
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
@@ -229,7 +148,7 @@ def upload_message_attachment_to_drive(file_storage, conversation_id: int):
     if not file_storage or not getattr(file_storage, "filename", ""):
         return None
 
-    service = get_oauth_drive_service()
+    service = get_service_account_drive_service()
     parent_drive_id = ensure_conversation_drive_folder(service, conversation_id)
 
     safe_name = secure_filename(file_storage.filename) or "attachment"
@@ -260,7 +179,7 @@ def upload_message_attachment_to_drive(file_storage, conversation_id: int):
 
 
 def download_drive_file(drive_file_id: str):
-    service = get_oauth_drive_service()
+    service = get_service_account_drive_service()
 
     meta = service.files().get(
         fileId=drive_file_id,
@@ -289,11 +208,10 @@ def delete_drive_file_safe(drive_file_id: str):
         return
 
     try:
-        service = get_oauth_drive_service()
+        service = get_service_account_drive_service()
         service.files().delete(fileId=drive_file_id, supportsAllDrives=True).execute()
     except Exception:
         pass
-
 
 # ======================
 # MESSAGE HELPERS
