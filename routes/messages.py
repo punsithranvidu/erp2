@@ -140,9 +140,16 @@ def get_service_account_drive_service():
 
 
 def get_root_drive_folder_id():
-    root_id = current_app.config.get("GOOGLE_DRIVE_ROOT_FOLDER_ID") or os.environ.get("GOOGLE_DRIVE_ROOT_FOLDER_ID")
+    root_id = (
+        current_app.config.get("GOOGLE_MESSAGES_DRIVE_ROOT_FOLDER_ID")
+        or os.environ.get("GOOGLE_MESSAGES_DRIVE_ROOT_FOLDER_ID")
+        or current_app.config.get("GOOGLE_DRIVE_ROOT_FOLDER_ID")
+        or os.environ.get("GOOGLE_DRIVE_ROOT_FOLDER_ID")
+    )
+
     if not root_id or root_id == "PASTE_YOUR_ROOT_FOLDER_ID_HERE":
-        raise RuntimeError("GOOGLE_DRIVE_ROOT_FOLDER_ID is not configured")
+        raise RuntimeError("Google Drive root folder ID is not configured")
+
     return root_id.strip()
 
 
