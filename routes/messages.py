@@ -1,16 +1,15 @@
-from flask import Blueprint, request, session, jsonify, current_app, url_for, Response, redirect
+from flask import Blueprint, request, session, jsonify, current_app, url_for, Response
 from functools import wraps
 from datetime import datetime
 import io
 import os
-import json
+import shutil
 
 from werkzeug.utils import secure_filename
 
 from .db_compat import sqlite3
 
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
@@ -73,319 +72,86 @@ def require_module(module: str, need_edit: bool = False):
 
 # ======================
 # GOOGLE DRIVE HELPERS
-# Per-user OAuth for message attachments
+# OAuth version using company Drive connection
 # ======================
 def _ensure_tmp_dir():
     os.makedirs("/tmp/erp_google", exist_ok=True)
     return "/tmp/erp_google"
 
 
-def _looks_like_json(text: str) -> bool:
-    if not text:
-        return False
-    s = text.strip()
-    return s.startswith("{") and s.endswith("}")
-
-
-def _materialize_json_or_path(value, tmp_filename, fallback_secret_path=None, required=False):
-    tmp_dir = _ensure_tmp_dir()
-    out_path = os.path.join(tmp_dir, tmp_filename)
-
-    if value:
-        value = str(value).strip()
-
-        if os.path.exists(value):
-            return value
-
-        if _looks_like_json(value):
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(value)
-            return out_path
-
-    if fallback_secret_path and os.path.exists(fallback_secret_path):
-        with open(fallback_secret_path, "r", encoding="utf-8") as src:
-            with open(out_path, "w", encoding="utf-8") as dst:
-                dst.write(src.read())
-        return out_path
-
-    if required:
-        raise ValueError(f"Required Google secret not found: {tmp_filename}")
-
-    return out_path
-
-
-def oauth_client_file():
-    cfg = current_app.config.get("GOOGLE_OAUTH_CLIENT_FILE") or os.environ.get("GOOGLE_OAUTH_CLIENT_FILE")
-    return _materialize_json_or_path(
-        cfg,
-        "google-oauth-client.json",
-        fallback_secret_path="/etc/secrets/google-oauth-client.json",
-        required=True,
-    )
-
-
-def get_messages_oauth_redirect_uri():
-    forced = (
-        current_app.config.get("GOOGLE_MESSAGES_OAUTH_REDIRECT_URI")
-        or os.environ.get("GOOGLE_MESSAGES_OAUTH_REDIRECT_URI")
-        or ""
+def oauth_token_file():
+    token_path = (
+        current_app.config.get("GOOGLE_OAUTH_TOKEN_FILE")
+        or os.environ.get("GOOGLE_OAUTH_TOKEN_FILE")
+        or "/tmp/google-oauth-token.json"
     ).strip()
 
-    if forced:
-        return forced
+    parent = os.path.dirname(token_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
-    proto = request.headers.get("X-Forwarded-Proto", request.scheme)
-    host = request.headers.get("X-Forwarded-Host", request.host)
-    return f"{proto}://{host}/messages/google-drive/callback"
-
-
-def get_user_message_token_row(conn, user_id: int):
-    return conn.execute("""
-        SELECT *
-        FROM user_google_oauth_tokens
-        WHERE user_id=? AND provider='GOOGLE_DRIVE_MESSAGES'
-        LIMIT 1
-    """, (user_id,)).fetchone()
+    return token_path
 
 
-def save_user_message_token(conn, user_id: int, token_json: str, google_account_email: str = None):
-    now = now_iso()
-    conn.execute("""
-        INSERT INTO user_google_oauth_tokens (
-            user_id,
-            provider,
-            token_json,
-            google_account_email,
-            created_at,
-            updated_at
-        ) VALUES (?, 'GOOGLE_DRIVE_MESSAGES', ?, ?, ?, ?)
-        ON CONFLICT(user_id)
-        DO UPDATE SET
-            provider=excluded.provider,
-            token_json=excluded.token_json,
-            google_account_email=excluded.google_account_email,
-            updated_at=excluded.updated_at
-    """, (
-        user_id,
-        token_json,
-        (google_account_email or "").strip().lower() or None,
-        now,
-        now,
-    ))
+def oauth_token_secret_file():
+    return "/etc/secrets/google-oauth-token.json"
 
 
-def delete_user_message_token(conn, user_id: int):
-    conn.execute("""
-        DELETE FROM user_google_oauth_tokens
-        WHERE user_id=? AND provider='GOOGLE_DRIVE_MESSAGES'
-    """, (user_id,))
-
-
-def _credentials_from_token_json(token_json: str):
+def clear_oauth_token_file():
+    token_path = oauth_token_file()
     try:
-        payload = json.loads(token_json)
-    except Exception as e:
-        raise ValueError(f"Stored Google Drive token is invalid JSON: {str(e)}")
-
-    try:
-        return Credentials.from_authorized_user_info(payload, DRIVE_SCOPES)
-    except Exception as e:
-        raise ValueError(f"Stored Google Drive token is invalid: {str(e)}")
-
-
-def get_connected_google_account_email(service):
-    try:
-        about = service.about().get(fields="user(emailAddress)").execute()
-        user = about.get("user") or {}
-        return (user.get("emailAddress") or "").strip().lower() or None
+        if os.path.exists(token_path):
+            os.remove(token_path)
     except Exception:
-        return None
+        pass
 
 
-def get_user_oauth_drive_service(conn, user_id: int, fail_message: str = None):
-    token_row = get_user_message_token_row(conn, user_id)
-    if not token_row:
-        raise ValueError(fail_message or "Connect your Google Drive for messages first.")
+def restore_token_from_secret_if_needed():
+    token_path = oauth_token_file()
+    secret_path = oauth_token_secret_file()
 
-    creds = _credentials_from_token_json(token_row["token_json"])
+    if os.path.exists(token_path):
+        return token_path
+
+    if os.path.exists(secret_path):
+        try:
+            shutil.copyfile(secret_path, token_path)
+            return token_path
+        except Exception as e:
+            raise ValueError(f"Could not restore Google token from secrets: {str(e)}")
+
+    raise ValueError("Google Drive is not connected yet. Please connect Google Drive first.")
+
+
+def save_runtime_token(token_json: str):
+    token_path = oauth_token_file()
+    with open(token_path, "w", encoding="utf-8") as f:
+        f.write(token_json)
+
+
+def get_oauth_drive_service():
+    token_path = restore_token_from_secret_if_needed()
+
+    try:
+        creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
+    except Exception:
+        clear_oauth_token_file()
+        raise ValueError("Google Drive token file is invalid. Please reconnect Google Drive.")
 
     try:
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            service = build("drive", "v3", credentials=creds, cache_discovery=False)
-            google_account_email = get_connected_google_account_email(service)
-            save_user_message_token(conn, user_id, creds.to_json(), google_account_email)
-            conn.commit()
-            return service
-
-        if not creds.valid:
-            raise ValueError("Your Google Drive connection is invalid. Please reconnect it from Messages.")
-
-        return build("drive", "v3", credentials=creds, cache_discovery=False)
-
+            save_runtime_token(creds.to_json())
+        elif not creds.valid:
+            clear_oauth_token_file()
+            raise ValueError("Google Drive connection is invalid. Please reconnect Google Drive.")
     except ValueError:
         raise
     except Exception:
-        raise ValueError("Your Google Drive connection expired or was revoked. Please reconnect it from Messages.")
+        clear_oauth_token_file()
+        raise ValueError("Google Drive connection expired or was revoked. Please reconnect Google Drive.")
 
-
-def get_connected_conversation_user_ids(conn, conversation_id: int):
-    rows = conn.execute("""
-        SELECT DISTINCT m.user_id
-        FROM message_conversation_members m
-        JOIN user_google_oauth_tokens t
-          ON t.user_id = m.user_id
-         AND t.provider = 'GOOGLE_DRIVE_MESSAGES'
-        WHERE m.conversation_id=?
-          AND m.active=1
-        ORDER BY m.user_id ASC
-    """, (conversation_id,)).fetchall()
-    return [int(r["user_id"]) for r in rows]
-
-
-def get_drive_candidates_for_conversation(conn, conversation_id: int, preferred_user_id=None, attachment_owner_user_id=None):
-    ordered = []
-
-    def add(uid):
-        if uid in (None, "", 0):
-            return
-        try:
-            uid = int(uid)
-        except Exception:
-            return
-        if uid not in ordered:
-            ordered.append(uid)
-
-    add(preferred_user_id)
-    add(attachment_owner_user_id)
-
-    for uid in get_connected_conversation_user_ids(conn, conversation_id):
-        add(uid)
-
-    return ordered
-
-
-def get_working_drive_service_for_candidates(conn, candidate_user_ids):
-    last_error = None
-
-    for candidate_user_id in candidate_user_ids:
-        try:
-            service = get_user_oauth_drive_service(conn, candidate_user_id)
-            return candidate_user_id, service
-        except Exception as e:
-            last_error = e
-
-    if last_error:
-        raise last_error
-
-    raise ValueError("No connected Google Drive account is available for this conversation.")
-
-
-@messages_bp.route("/api/messages/google-drive/status", methods=["GET"])
-@login_required
-@require_module("MESSAGES")
-def api_messages_google_drive_status():
-    conn = db()
-    uid = int(session.get("uid"))
-    token_row = get_user_message_token_row(conn, uid)
-    user_row = conn.execute("""
-        SELECT google_email
-        FROM users
-        WHERE id=?
-        LIMIT 1
-    """, (uid,)).fetchone()
-    conn.close()
-
-    return jsonify({
-        "ok": True,
-        "data": {
-            "connected": token_row is not None,
-            "google_account_email": (token_row["google_account_email"] if token_row else None),
-            "saved_google_email": (user_row["google_email"] if user_row else None),
-        }
-    })
-
-
-@messages_bp.route("/messages/google-drive/connect", methods=["GET"])
-@login_required
-@require_module("MESSAGES")
-def messages_google_drive_connect():
-    try:
-        flow = Flow.from_client_secrets_file(
-            oauth_client_file(),
-            scopes=DRIVE_SCOPES,
-        )
-        flow.redirect_uri = get_messages_oauth_redirect_uri()
-
-        authorization_url, state = flow.authorization_url(
-            access_type="offline",
-            include_granted_scopes="true",
-            prompt="consent",
-            code_challenge_method="S256",
-        )
-
-        session["messages_google_drive_oauth_state"] = state
-        session["messages_google_drive_code_verifier"] = flow.code_verifier
-
-        return redirect(authorization_url)
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Google Drive connect failed: {str(e)}"}), 500
-
-
-@messages_bp.route("/messages/google-drive/callback", methods=["GET"])
-@login_required
-@require_module("MESSAGES")
-def messages_google_drive_callback():
-    state = session.get("messages_google_drive_oauth_state")
-    code_verifier = session.get("messages_google_drive_code_verifier")
-
-    if not state:
-        return jsonify({"ok": False, "error": "Missing OAuth state. Please connect again."}), 400
-
-    if not code_verifier:
-        return jsonify({"ok": False, "error": "Missing OAuth code verifier. Please connect again."}), 400
-
-    conn = db()
-
-    try:
-        flow = Flow.from_client_secrets_file(
-            oauth_client_file(),
-            scopes=DRIVE_SCOPES,
-            state=state,
-        )
-        flow.redirect_uri = get_messages_oauth_redirect_uri()
-        flow.code_verifier = code_verifier
-        flow.fetch_token(authorization_response=request.url)
-
-        creds = flow.credentials
-        service = build("drive", "v3", credentials=creds, cache_discovery=False)
-        google_account_email = get_connected_google_account_email(service)
-
-        save_user_message_token(conn, int(session.get("uid")), creds.to_json(), google_account_email)
-        conn.commit()
-
-        session.pop("messages_google_drive_oauth_state", None)
-        session.pop("messages_google_drive_code_verifier", None)
-
-        return redirect("/messages")
-    except Exception as e:
-        conn.rollback()
-        session.pop("messages_google_drive_oauth_state", None)
-        session.pop("messages_google_drive_code_verifier", None)
-        return jsonify({"ok": False, "error": f"Google Drive callback failed: {str(e)}"}), 500
-    finally:
-        conn.close()
-
-
-@messages_bp.route("/api/messages/google-drive/disconnect", methods=["POST"])
-@login_required
-@require_module("MESSAGES")
-def api_messages_google_drive_disconnect():
-    conn = db()
-    delete_user_message_token(conn, int(session.get("uid")))
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True})
+    return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
 def get_general_drive_root_folder_id():
@@ -531,38 +297,11 @@ def ensure_conversation_drive_folder(service, conn, conversation_id: int):
     return folder_id
 
 
-def refresh_conversation_folder_sharing(conn, conversation_id: int, preferred_user_id=None, attachment_owner_user_id=None):
-    candidate_user_ids = get_drive_candidates_for_conversation(
-        conn,
-        conversation_id,
-        preferred_user_id=preferred_user_id,
-        attachment_owner_user_id=attachment_owner_user_id,
-    )
-    last_error = None
-
-    for candidate_user_id in candidate_user_ids:
-        try:
-            service = get_user_oauth_drive_service(conn, candidate_user_id)
-            ensure_conversation_drive_folder(service, conn, conversation_id)
-            return
-        except Exception as e:
-            last_error = e
-
-    if last_error:
-        raise last_error
-
-    raise ValueError("No connected Google Drive account is available for this conversation.")
-
-
-def upload_message_attachment_to_drive(conn, file_storage, conversation_id: int, acting_user_id: int):
+def upload_message_attachment_to_drive(conn, file_storage, conversation_id: int):
     if not file_storage or not getattr(file_storage, "filename", ""):
         return None
 
-    service = get_user_oauth_drive_service(
-        conn,
-        acting_user_id,
-        fail_message="Connect your Google Drive in Messages before sending attachments.",
-    )
+    service = get_oauth_drive_service()
     parent_drive_id = ensure_conversation_drive_folder(service, conn, conversation_id)
 
     safe_name = secure_filename(file_storage.filename) or "attachment"
@@ -592,73 +331,40 @@ def upload_message_attachment_to_drive(conn, file_storage, conversation_id: int,
     }
 
 
-def download_drive_file(conn, drive_file_id: str, conversation_id: int, preferred_user_id=None, attachment_owner_user_id=None):
-    candidate_user_ids = get_drive_candidates_for_conversation(
-        conn,
-        conversation_id,
-        preferred_user_id=preferred_user_id,
-        attachment_owner_user_id=attachment_owner_user_id,
-    )
-    last_error = None
+def download_drive_file(drive_file_id: str):
+    service = get_oauth_drive_service()
 
-    for candidate_user_id in candidate_user_ids:
-        try:
-            service = get_user_oauth_drive_service(conn, candidate_user_id)
+    meta = service.files().get(
+        fileId=drive_file_id,
+        fields="id,name,mimeType",
+        supportsAllDrives=True,
+    ).execute()
 
-            meta = service.files().get(
-                fileId=drive_file_id,
-                fields="id,name,mimeType",
-                supportsAllDrives=True,
-            ).execute()
+    request_obj = service.files().get_media(fileId=drive_file_id, supportsAllDrives=True)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request_obj)
 
-            request_obj = service.files().get_media(fileId=drive_file_id, supportsAllDrives=True)
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, request_obj)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
 
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
-
-            fh.seek(0)
-            return {
-                "bytes": fh.read(),
-                "name": meta.get("name") or "attachment",
-                "mime": meta.get("mimeType") or "application/octet-stream",
-            }
-        except Exception as e:
-            last_error = e
-
-    if last_error:
-        raise last_error
-
-    raise ValueError("No connected Google Drive account can open this attachment.")
+    fh.seek(0)
+    return {
+        "bytes": fh.read(),
+        "name": meta.get("name") or "attachment",
+        "mime": meta.get("mimeType") or "application/octet-stream",
+    }
 
 
-def delete_drive_file_safe(conn, drive_file_id: str, conversation_id: int = None, preferred_user_id=None, attachment_owner_user_id=None):
+def delete_drive_file_safe(drive_file_id: str):
     if not drive_file_id:
         return
 
-    candidate_user_ids = []
-
-    if conversation_id is not None:
-        candidate_user_ids = get_drive_candidates_for_conversation(
-            conn,
-            conversation_id,
-            preferred_user_id=preferred_user_id,
-            attachment_owner_user_id=attachment_owner_user_id,
-        )
-    else:
-        for uid in (preferred_user_id, attachment_owner_user_id):
-            if uid:
-                candidate_user_ids.append(int(uid))
-
-    for candidate_user_id in candidate_user_ids:
-        try:
-            service = get_user_oauth_drive_service(conn, candidate_user_id)
-            service.files().delete(fileId=drive_file_id, supportsAllDrives=True).execute()
-            return
-        except Exception:
-            continue
+    try:
+        service = get_oauth_drive_service()
+        service.files().delete(fileId=drive_file_id, supportsAllDrives=True).execute()
+    except Exception:
+        pass
 
 
 # ======================
@@ -1151,8 +857,10 @@ def api_messages_group_add_members(conversation_id):
             WHERE conversation_id=? AND user_id=?
         """, (conversation_id, member_uid))
 
+    # refresh Drive folder sharing if folder already exists
     try:
-        refresh_conversation_folder_sharing(conn, conversation_id, preferred_user_id=uid)
+        service = get_oauth_drive_service()
+        ensure_conversation_drive_folder(service, conn, conversation_id)
     except Exception:
         pass
 
@@ -1290,18 +998,11 @@ def api_messages_send(conversation_id):
         file = request.files.get("file")
 
         if file and getattr(file, "filename", ""):
-            try:
-                uploaded = upload_message_attachment_to_drive(conn, file, conversation_id, uid)
-                if uploaded:
-                    attachment_name = uploaded["attachment_name"]
-                    attachment_mime = uploaded["attachment_mime"]
-                    attachment_drive_id = uploaded["attachment_drive_id"]
-            except ValueError as e:
-                conn.close()
-                return jsonify({"ok": False, "error": str(e)}), 400
-            except Exception as e:
-                conn.close()
-                return jsonify({"ok": False, "error": f"Attachment upload failed: {str(e)}"}), 500
+            uploaded = upload_message_attachment_to_drive(conn, file, conversation_id)
+            if uploaded:
+                attachment_name = uploaded["attachment_name"]
+                attachment_mime = uploaded["attachment_mime"]
+                attachment_drive_id = uploaded["attachment_drive_id"]
     else:
         data = request.json or {}
         message_text = (data.get("message_text") or "").strip()
@@ -1331,9 +1032,8 @@ def api_messages_send(conversation_id):
             attachment_url,
             attachment_mime,
             attachment_drive_id,
-            attachment_owner_user_id,
             created_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?)
     """, (
         conversation_id,
         uid,
@@ -1343,7 +1043,6 @@ def api_messages_send(conversation_id):
         None,
         attachment_mime,
         attachment_drive_id,
-        uid if attachment_drive_id else None,
         now
     ))
 
@@ -1383,12 +1082,7 @@ def api_messages_attachment_download(message_id):
     uid = int(session.get("uid"))
 
     row = conn.execute("""
-        SELECT mm.id,
-               mm.conversation_id,
-               mm.attachment_name,
-               mm.attachment_mime,
-               mm.attachment_drive_id,
-               mm.attachment_owner_user_id
+        SELECT mm.id, mm.conversation_id, mm.attachment_name, mm.attachment_mime, mm.attachment_drive_id
         FROM message_messages mm
         WHERE mm.id=?
         LIMIT 1
@@ -1409,23 +1103,17 @@ def api_messages_attachment_download(message_id):
     drive_file_id = row["attachment_drive_id"]
     download_name = row["attachment_name"] or "attachment"
     download_mime = row["attachment_mime"] or "application/octet-stream"
+    conn.close()
+
     try:
-        file_data = download_drive_file(
-            conn,
-            drive_file_id,
-            int(row["conversation_id"]),
-            preferred_user_id=uid,
-            attachment_owner_user_id=row["attachment_owner_user_id"],
-        )
+        file_data = download_drive_file(drive_file_id)
         final_name = file_data.get("name") or download_name
         final_mime = file_data.get("mime") or download_mime
 
         response = Response(file_data["bytes"], mimetype=final_mime)
         response.headers["Content-Disposition"] = f'inline; filename="{final_name}"'
-        conn.close()
         return response
     except Exception as e:
-        conn.close()
         return jsonify({"ok": False, "error": f"Could not open attachment: {str(e)}"}), 500
 
 
@@ -1461,13 +1149,7 @@ def api_messages_delete(message_id):
         return jsonify({"ok": False, "error": "Delete window expired"}), 400
 
     if row["attachment_drive_id"]:
-        delete_drive_file_safe(
-            conn,
-            row["attachment_drive_id"],
-            conversation_id=int(row["conversation_id"]),
-            preferred_user_id=uid,
-            attachment_owner_user_id=row["attachment_owner_user_id"],
-        )
+        delete_drive_file_safe(row["attachment_drive_id"])
 
     conn.execute("""
         UPDATE message_messages
@@ -1477,8 +1159,7 @@ def api_messages_delete(message_id):
             attachment_name=NULL,
             attachment_url=NULL,
             attachment_mime=NULL,
-            attachment_drive_id=NULL,
-            attachment_owner_user_id=NULL
+            attachment_drive_id=NULL
         WHERE id=?
     """, (now_iso(), session["user"], message_id))
 
@@ -1582,7 +1263,7 @@ def api_messages_permanent_delete_conversation(conversation_id):
     conn = db()
 
     rows = conn.execute("""
-        SELECT attachment_drive_id, attachment_owner_user_id
+        SELECT attachment_drive_id
         FROM message_messages
         WHERE conversation_id=?
           AND attachment_drive_id IS NOT NULL
@@ -1590,12 +1271,7 @@ def api_messages_permanent_delete_conversation(conversation_id):
 
     for r in rows:
         if r["attachment_drive_id"]:
-            delete_drive_file_safe(
-                conn,
-                r["attachment_drive_id"],
-                conversation_id=conversation_id,
-                attachment_owner_user_id=r["attachment_owner_user_id"],
-            )
+            delete_drive_file_safe(r["attachment_drive_id"])
 
     conn.execute("DELETE FROM message_conversation_deleted WHERE conversation_id=?", (conversation_id,))
     conn.execute("DELETE FROM message_conversation_members WHERE conversation_id=?", (conversation_id,))
@@ -1658,11 +1334,6 @@ def api_messages_leave_group(conversation_id):
                 active
             ) VALUES (?,?,?,?,1)
         """, (conversation_id, uid, now_iso(), session["user"]))
-
-    try:
-        refresh_conversation_folder_sharing(conn, conversation_id)
-    except Exception:
-        pass
 
     conn.commit()
     conn.close()
