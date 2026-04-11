@@ -562,6 +562,8 @@ def init_db():
     msg_cols = {r["name"] for r in cur.fetchall()}
     if "reply_to" not in msg_cols:
         cur.execute("ALTER TABLE message_messages ADD COLUMN reply_to INTEGER")
+    if "attachment_drive_id" not in msg_cols:
+        cur.execute("ALTER TABLE message_messages ADD COLUMN attachment_drive_id TEXT")
 
     conn.commit()
 

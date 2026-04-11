@@ -1,14 +1,24 @@
-from flask import Blueprint, request, session, jsonify, current_app, url_for
+from flask import Blueprint, request, session, jsonify, current_app, url_for, Response
 from functools import wraps
 from datetime import datetime
+import io
 import os
+import shutil
 import uuid
 
 from werkzeug.utils import secure_filename
 
 from .db_compat import sqlite3
 
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+from googleapiclient.errors import HttpError
+
 messages_bp = Blueprint("messages", __name__)
+
+DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
 # ======================
@@ -16,7 +26,12 @@ messages_bp = Blueprint("messages", __name__)
 # ======================
 def db():
     database_url = current_app.config["DATABASE_URL"]
-    return sqlite3.connect(database_url)
+    conn = sqlite3.connect(database_url)
+    try:
+        conn.row_factory = sqlite3.Row
+    except Exception:
+        pass
+    return conn
 
 
 def now_iso():
@@ -57,32 +72,232 @@ def require_module(module: str, need_edit: bool = False):
     return deco
 
 
-def ensure_message_upload_dir():
-    upload_dir = os.path.join(current_app.root_path, "static", "uploads", "messages")
-    os.makedirs(upload_dir, exist_ok=True)
-    return upload_dir
+# ======================
+# GOOGLE DRIVE HELPERS
+# Reuses the same OAuth token used by document storage
+# ======================
+def _ensure_tmp_dir():
+    os.makedirs("/tmp/erp_google", exist_ok=True)
+    return "/tmp/erp_google"
 
 
-def save_message_attachment(file_storage):
+def _looks_like_json(text: str) -> bool:
+    if not text:
+        return False
+    s = text.strip()
+    return s.startswith("{") and s.endswith("}")
+
+
+def _materialize_json_or_path(value, tmp_filename, fallback_secret_path=None, required=False):
+    tmp_dir = _ensure_tmp_dir()
+    out_path = os.path.join(tmp_dir, tmp_filename)
+
+    if value:
+      القيمة = str(value).strip()
+      if os.path.exists(القيمة):
+          return القيمة
+      if _looks_like_json(القيمة):
+          with open(out_path, "w", encoding="utf-8") as f:
+              f.write(القيمة)
+          return out_path
+
+    if fallback_secret_path and os.path.exists(fallback_secret_path):
+        shutil.copyfile(fallback_secret_path, out_path)
+        return out_path
+
+    if required:
+        raise ValueError(f"Required Google secret not found: {tmp_filename}")
+
+    return out_path
+
+
+def oauth_token_file():
+    token_path = (
+        current_app.config.get("GOOGLE_OAUTH_TOKEN_FILE")
+        or os.environ.get("GOOGLE_OAUTH_TOKEN_FILE")
+        or "/tmp/google-oauth-token.json"
+    ).strip()
+
+    parent = os.path.dirname(token_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+    return token_path
+
+
+def oauth_token_secret_file():
+    return "/etc/secrets/google-oauth-token.json"
+
+
+def restore_token_from_secret_if_needed():
+    token_path = oauth_token_file()
+    secret_path = oauth_token_secret_file()
+
+    if os.path.exists(token_path):
+        return token_path
+
+    if os.path.exists(secret_path):
+        shutil.copyfile(secret_path, token_path)
+        return token_path
+
+    raise ValueError("Google Drive is not connected yet. Please connect Google Drive first.")
+
+
+def save_runtime_token(token_json: str):
+    token_path = oauth_token_file()
+    with open(token_path, "w", encoding="utf-8") as f:
+        f.write(token_json)
+
+
+def get_oauth_drive_service():
+    token_path = restore_token_from_secret_if_needed()
+
+    try:
+        creds = Credentials.from_authorized_user_file(token_path, DRIVE_SCOPES)
+    except Exception:
+        raise ValueError("Google Drive token file is invalid. Please reconnect Google Drive.")
+
+    try:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            save_runtime_token(creds.to_json())
+        elif not creds.valid:
+            raise ValueError("Google Drive connection is invalid. Please reconnect Google Drive.")
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError("Google Drive connection expired or was revoked. Please reconnect Google Drive.")
+
+    return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+
+def get_root_drive_folder_id():
+    root_id = current_app.config.get("GOOGLE_DRIVE_ROOT_FOLDER_ID") or os.environ.get("GOOGLE_DRIVE_ROOT_FOLDER_ID")
+    if not root_id or root_id == "PASTE_YOUR_ROOT_FOLDER_ID_HERE":
+        raise RuntimeError("GOOGLE_DRIVE_ROOT_FOLDER_ID is not configured")
+    return root_id.strip()
+
+
+def find_child_folder(service, parent_id: str, folder_name: str):
+    safe_name = folder_name.replace("'", "\\'")
+    query = (
+        f"name = '{safe_name}' and "
+        f"mimeType = 'application/vnd.google-apps.folder' and "
+        f"'{parent_id}' in parents and trashed = false"
+    )
+
+    result = service.files().list(
+        q=query,
+        fields="files(id,name)",
+        pageSize=10,
+        includeItemsFromAllDrives=True,
+        supportsAllDrives=True,
+    ).execute()
+
+    files = result.get("files", [])
+    return files[0] if files else None
+
+
+def ensure_drive_folder(service, parent_id: str, folder_name: str):
+    found = find_child_folder(service, parent_id, folder_name)
+    if found:
+        return found["id"]
+
+    created = service.files().create(
+        body={
+            "name": folder_name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_id],
+        },
+        fields="id,name",
+        supportsAllDrives=True,
+    ).execute()
+
+    return created["id"]
+
+
+def ensure_messages_root_folder(service):
+    return ensure_drive_folder(service, get_root_drive_folder_id(), "Messages")
+
+
+def ensure_conversation_drive_folder(service, conversation_id: int):
+    root_folder_id = ensure_messages_root_folder(service)
+    return ensure_drive_folder(service, root_folder_id, f"conversation_{conversation_id}")
+
+
+def upload_message_attachment_to_drive(file_storage, conversation_id: int):
     if not file_storage or not getattr(file_storage, "filename", ""):
         return None
 
-    upload_dir = ensure_message_upload_dir()
-    safe_name = secure_filename(file_storage.filename) or "attachment"
-    ext = os.path.splitext(safe_name)[1]
-    stored_name = f"{uuid.uuid4().hex}{ext}"
-    abs_path = os.path.join(upload_dir, stored_name)
-    file_storage.save(abs_path)
+    service = get_oauth_drive_service()
+    parent_drive_id = ensure_conversation_drive_folder(service, conversation_id)
 
-    rel_path = f"uploads/messages/{stored_name}"
+    safe_name = secure_filename(file_storage.filename) or "attachment"
+    file_bytes = file_storage.read()
+
+    media = MediaIoBaseUpload(
+        io.BytesIO(file_bytes),
+        mimetype=file_storage.mimetype or "application/octet-stream",
+        resumable=False,
+    )
+
+    uploaded = service.files().create(
+        body={
+            "name": safe_name,
+            "parents": [parent_drive_id],
+        },
+        media_body=media,
+        fields="id,name,mimeType,size",
+        supportsAllDrives=True,
+    ).execute()
 
     return {
-        "attachment_name": safe_name,
-        "attachment_url": url_for("static", filename=rel_path),
-        "attachment_mime": (file_storage.mimetype or "application/octet-stream"),
+        "attachment_drive_id": uploaded.get("id"),
+        "attachment_name": uploaded.get("name") or safe_name,
+        "attachment_mime": uploaded.get("mimeType") or (file_storage.mimetype or "application/octet-stream"),
+        "attachment_size": int(uploaded.get("size") or 0),
     }
 
 
+def download_drive_file(drive_file_id: str):
+    service = get_oauth_drive_service()
+
+    meta = service.files().get(
+        fileId=drive_file_id,
+        fields="id,name,mimeType",
+        supportsAllDrives=True,
+    ).execute()
+
+    request_obj = service.files().get_media(fileId=drive_file_id, supportsAllDrives=True)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request_obj)
+
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+
+    fh.seek(0)
+    return {
+        "bytes": fh.read(),
+        "name": meta.get("name") or "attachment",
+        "mime": meta.get("mimeType") or "application/octet-stream",
+    }
+
+
+def delete_drive_file_safe(drive_file_id: str):
+    if not drive_file_id:
+        return
+
+    try:
+        service = get_oauth_drive_service()
+        service.files().delete(fileId=drive_file_id, supportsAllDrives=True).execute()
+    except Exception:
+        pass
+
+
+# ======================
+# MESSAGE HELPERS
+# ======================
 def get_active_user_brief_rows(conn):
     return conn.execute("""
         SELECT id, username, role, active, full_name
@@ -114,8 +329,6 @@ def ensure_direct_conversation(conn, user_a: int, user_b: int):
           ON m2.conversation_id = mc.id AND m2.user_id=? AND m2.active=1
         WHERE mc.conversation_type='DIRECT' AND mc.active=1
         GROUP BY mc.id
-        HAVING COUNT(DISTINCT CASE WHEN m1.user_id IS NOT NULL THEN m1.user_id END) >= 1
-           AND COUNT(DISTINCT CASE WHEN m2.user_id IS NOT NULL THEN m2.user_id END) >= 1
         ORDER BY mc.id ASC
         LIMIT 1
     """, (low, high)).fetchone()
@@ -145,7 +358,7 @@ def ensure_direct_conversation(conn, user_a: int, user_b: int):
 def get_conversation_last_message(conn, conversation_id: int):
     return conn.execute("""
         SELECT mm.id, mm.message_text, mm.created_at, mm.sender_user_id,
-               mm.attachment_name, mm.attachment_url,
+               mm.attachment_name, mm.attachment_mime, mm.attachment_drive_id, mm.deleted_at,
                u.username AS sender_username, u.full_name AS sender_full_name
         FROM message_messages mm
         LEFT JOIN users u ON u.id = mm.sender_user_id
@@ -174,8 +387,57 @@ def get_conversation_unread_count(conn, conversation_id: int, user_id: int) -> i
     return int(row["c"] or 0)
 
 
-def serialize_conversation(conn, conversation_row, user_id: int):
+def get_direct_other_user(conn, conversation_id: int, current_user_id: int):
+    return conn.execute("""
+        SELECT u.id, u.username, u.full_name, u.role
+        FROM message_conversation_members m
+        JOIN users u ON u.id = m.user_id
+        WHERE m.conversation_id=?
+          AND m.active=1
+          AND u.id<>?
+        LIMIT 1
+    """, (conversation_id, current_user_id)).fetchone()
+
+
+def serialize_sidebar_conversation(conn, conversation_row, user_id: int):
     convo = dict(conversation_row)
+
+    last_msg = get_conversation_last_message(conn, convo["id"])
+    unread_count = get_conversation_unread_count(conn, convo["id"], user_id)
+
+    payload = {
+        "id": convo["id"],
+        "conversation_type": convo["conversation_type"],
+        "title": convo.get("title") or "",
+        "created_at": convo["created_at"],
+        "created_by": convo["created_by"],
+        "active": convo["active"],
+        "unread_count": unread_count,
+        "last_message": dict(last_msg) if last_msg else None,
+        "last_message_text": "",
+        "last_message_at": "",
+        "display_name": "",
+        "other_user_name": None,
+    }
+
+    if last_msg:
+        payload["last_message_text"] = last_msg["message_text"] or last_msg["attachment_name"] or "Attachment"
+        payload["last_message_at"] = last_msg["created_at"] or ""
+
+    if (convo["conversation_type"] or "").upper() == "DIRECT":
+        other = get_direct_other_user(conn, convo["id"], user_id)
+        display_name = (other["full_name"] or other["username"]) if other else "Direct Chat"
+        payload["display_name"] = display_name
+        payload["other_user_name"] = display_name
+        payload["title"] = display_name
+    else:
+        payload["display_name"] = convo.get("title") or "Group Chat"
+
+    return payload
+
+
+def serialize_conversation_detail(conn, conversation_row, user_id: int):
+    convo = serialize_sidebar_conversation(conn, conversation_row, user_id)
 
     members = conn.execute("""
         SELECT u.id, u.username, u.full_name, u.role
@@ -187,21 +449,6 @@ def serialize_conversation(conn, conversation_row, user_id: int):
 
     convo["members"] = [dict(r) for r in members]
     convo["member_count"] = len(convo["members"])
-
-    last_msg = get_conversation_last_message(conn, convo["id"])
-    convo["last_message"] = dict(last_msg) if last_msg else None
-    convo["unread_count"] = get_conversation_unread_count(conn, convo["id"], user_id)
-
-    if convo["conversation_type"] == "DIRECT":
-        other = None
-        for m in convo["members"]:
-            if int(m["id"]) != int(user_id):
-                other = m
-                break
-        convo["display_name"] = (other or {}).get("full_name") or (other or {}).get("username") or "Direct Chat"
-    else:
-        convo["display_name"] = convo.get("title") or "Group Chat"
-
     return convo
 
 
@@ -229,6 +476,21 @@ def can_delete_message(message_row, current_user_id: int) -> bool:
         age_seconds = (datetime.now() - created_at).total_seconds()
         return age_seconds <= 900
     return is_admin()
+
+
+def enrich_message_row(row):
+    item = dict(row)
+    attachment_drive_id = item.get("attachment_drive_id")
+    attachment_url = item.get("attachment_url")
+
+    if attachment_drive_id:
+        item["attachment_url"] = url_for("messages.api_messages_attachment_download", message_id=item["id"])
+    elif attachment_url:
+        item["attachment_url"] = attachment_url
+    else:
+        item["attachment_url"] = None
+
+    return item
 
 
 # ==========================
@@ -270,9 +532,11 @@ def api_messages_unread_count():
           )
     """, (uid, uid)).fetchall()
 
-    total = sum(get_conversation_unread_count(conn, int(r["id"]), uid) for r in rows)
-    conn.close()
+    total = 0
+    for r in rows:
+        total += get_conversation_unread_count(conn, int(r["id"]), uid)
 
+    conn.close()
     return jsonify({"ok": True, "data": {"unread_count": total}})
 
 
@@ -301,30 +565,9 @@ def api_messages_conversations():
         ORDER BY mc.id DESC
     """, (uid, uid)).fetchall()
 
-    data = []
-    for r in rows:
-        item = serialize_conversation(conn, r, uid)
-
-        if (r["conversation_type"] or "").upper() == "DIRECT":
-            other = conn.execute("""
-                SELECT u.username, u.full_name
-                FROM message_conversation_members m
-                JOIN users u ON u.id = m.user_id
-                WHERE m.conversation_id=?
-                  AND m.active=1
-                  AND u.id<>?
-                LIMIT 1
-            """, (r["id"], uid)).fetchone()
-
-            if other:
-                display_name = other["full_name"] or other["username"]
-                item["other_user_name"] = display_name
-                item["title"] = display_name
-
-        data.append(item)
-
+    data = [serialize_sidebar_conversation(conn, r, uid) for r in rows]
     data.sort(
-        key=lambda x: (x["last_message"]["created_at"] if x.get("last_message") else x["created_at"]),
+        key=lambda x: (x["last_message_at"] or x["created_at"] or ""),
         reverse=True
     )
 
@@ -376,7 +619,7 @@ def api_messages_create_direct():
         WHERE id=?
     """, (conversation_id,)).fetchone()
 
-    payload = serialize_conversation(conn, row, uid)
+    payload = serialize_conversation_detail(conn, row, uid)
     payload["other_user_name"] = target["full_name"] or target["username"]
     payload["title"] = target["full_name"] or target["username"]
 
@@ -457,7 +700,7 @@ def api_messages_create_group():
         WHERE id=?
     """, (cid,)).fetchone()
 
-    payload = serialize_conversation(conn, row, int(session.get("uid")))
+    payload = serialize_conversation_detail(conn, row, int(session.get("uid")))
     conn.close()
 
     return jsonify({"ok": True, "data": payload})
@@ -572,22 +815,7 @@ def api_messages_conversation_get(conversation_id):
         conn.close()
         return jsonify({"ok": False, "error": "Conversation not found"}), 404
 
-    payload = serialize_conversation(conn, row, uid)
-
-    if (row["conversation_type"] or "").upper() == "DIRECT":
-        other = conn.execute("""
-            SELECT u.username, u.full_name
-            FROM message_conversation_members m
-            JOIN users u ON u.id = m.user_id
-            WHERE m.conversation_id=?
-              AND m.active=1
-              AND u.id<>?
-            LIMIT 1
-        """, (conversation_id, uid)).fetchone()
-        if other:
-            payload["other_user_name"] = other["full_name"] or other["username"]
-            payload["title"] = other["full_name"] or other["username"]
-
+    payload = serialize_conversation_detail(conn, row, uid)
     conn.close()
     return jsonify({"ok": True, "data": payload})
 
@@ -637,7 +865,7 @@ def api_messages_list(conversation_id):
           ON u.id = mm.sender_user_id
         WHERE mm.conversation_id=?
         ORDER BY mm.id ASC
-        LIMIT 2000
+        LIMIT 500
     """, (conversation_id,)).fetchall()
 
     mark_conversation_read(conn, conversation_id, uid)
@@ -645,7 +873,7 @@ def api_messages_list(conversation_id):
 
     data = []
     for r in rows:
-        item = dict(r)
+        item = enrich_message_row(r)
         item["can_delete"] = False if item.get("deleted_at") else can_delete_message(r, uid)
         data.append(item)
 
@@ -684,27 +912,25 @@ def api_messages_send(conversation_id):
 
     message_text = ""
     attachment_name = None
-    attachment_url = None
     attachment_mime = None
+    attachment_drive_id = None
     reply_to = None
 
     if request.content_type and request.content_type.startswith("multipart/form-data"):
         message_text = (request.form.get("message_text") or "").strip()
         reply_to = request.form.get("reply_to")
         file = request.files.get("file")
-        att = save_message_attachment(file) if file else None
 
-        if att:
-            attachment_name = att["attachment_name"]
-            attachment_url = att["attachment_url"]
-            attachment_mime = att["attachment_mime"]
+        if file and getattr(file, "filename", ""):
+            uploaded = upload_message_attachment_to_drive(file, conversation_id)
+            if uploaded:
+                attachment_name = uploaded["attachment_name"]
+                attachment_mime = uploaded["attachment_mime"]
+                attachment_drive_id = uploaded["attachment_drive_id"]
     else:
         data = request.json or {}
         message_text = (data.get("message_text") or "").strip()
         reply_to = data.get("reply_to")
-        attachment_name = (data.get("attachment_name") or "").strip() or None
-        attachment_url = (data.get("attachment_url") or "").strip() or None
-        attachment_mime = (data.get("attachment_mime") or "").strip() or None
 
     if reply_to in ("", None):
         reply_to = None
@@ -714,7 +940,7 @@ def api_messages_send(conversation_id):
         except Exception:
             reply_to = None
 
-    if not message_text and not attachment_url:
+    if not message_text and not attachment_drive_id:
         conn.close()
         return jsonify({"ok": False, "error": "Message or attachment is required"}), 400
 
@@ -729,16 +955,18 @@ def api_messages_send(conversation_id):
             attachment_name,
             attachment_url,
             attachment_mime,
+            attachment_drive_id,
             created_at
-        ) VALUES (?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?)
     """, (
         conversation_id,
         uid,
         message_text,
         reply_to,
         attachment_name,
-        attachment_url,
+        None,
         attachment_mime,
+        attachment_drive_id,
         now
     ))
 
@@ -763,11 +991,54 @@ def api_messages_send(conversation_id):
         WHERE mm.id=?
     """, (message_id,)).fetchone()
 
-    payload = dict(row)
+    payload = enrich_message_row(row)
     payload["can_delete"] = can_delete_message(row, uid)
 
     conn.close()
     return jsonify({"ok": True, "data": payload})
+
+
+@messages_bp.route("/api/messages/attachments/<int:message_id>/download", methods=["GET"])
+@login_required
+@require_module("MESSAGES")
+def api_messages_attachment_download(message_id):
+    conn = db()
+    uid = int(session.get("uid"))
+
+    row = conn.execute("""
+        SELECT mm.id, mm.conversation_id, mm.attachment_name, mm.attachment_mime, mm.attachment_drive_id
+        FROM message_messages mm
+        WHERE mm.id=?
+        LIMIT 1
+    """, (message_id,)).fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "Attachment not found"}), 404
+
+    if not row["attachment_drive_id"]:
+        conn.close()
+        return jsonify({"ok": False, "error": "No secure attachment stored for this message"}), 404
+
+    if not message_can_access_conversation(conn, int(row["conversation_id"]), uid):
+        conn.close()
+        return jsonify({"ok": False, "error": "Not allowed"}), 403
+
+    drive_file_id = row["attachment_drive_id"]
+    download_name = row["attachment_name"] or "attachment"
+    download_mime = row["attachment_mime"] or "application/octet-stream"
+    conn.close()
+
+    try:
+        file_data = download_drive_file(drive_file_id)
+        final_name = file_data.get("name") or download_name
+        final_mime = file_data.get("mime") or download_mime
+
+        response = Response(file_data["bytes"], mimetype=final_mime)
+        response.headers["Content-Disposition"] = f'inline; filename="{final_name}"'
+        return response
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not open attachment: {str(e)}"}), 500
 
 
 @messages_bp.route("/api/messages/messages/<int:message_id>", methods=["DELETE"])
@@ -801,6 +1072,9 @@ def api_messages_delete(message_id):
         conn.close()
         return jsonify({"ok": False, "error": "Delete window expired"}), 400
 
+    if row.get("attachment_drive_id"):
+        delete_drive_file_safe(row["attachment_drive_id"])
+
     conn.execute("""
         UPDATE message_messages
         SET deleted_at=?,
@@ -808,7 +1082,8 @@ def api_messages_delete(message_id):
             message_text='This message was deleted',
             attachment_name=NULL,
             attachment_url=NULL,
-            attachment_mime=NULL
+            attachment_mime=NULL,
+            attachment_drive_id=NULL
         WHERE id=?
     """, (now_iso(), session["user"], message_id))
 
@@ -875,23 +1150,8 @@ def api_messages_trash():
 
     data = []
     for r in rows:
-        item = serialize_conversation(conn, r, uid)
+        item = serialize_sidebar_conversation(conn, r, uid)
         item["user_deleted_at"] = r["user_deleted_at"]
-
-        if (r["conversation_type"] or "").upper() == "DIRECT":
-            other = conn.execute("""
-                SELECT u.username, u.full_name
-                FROM message_conversation_members m
-                JOIN users u ON u.id = m.user_id
-                WHERE m.conversation_id=?
-                  AND m.active=1
-                  AND u.id<>?
-                LIMIT 1
-            """, (r["id"], uid)).fetchone()
-            if other:
-                item["other_user_name"] = other["full_name"] or other["username"]
-                item["title"] = other["full_name"] or other["username"]
-
         data.append(item)
 
     conn.close()
@@ -925,6 +1185,18 @@ def api_messages_permanent_delete_conversation(conversation_id):
         return jsonify({"ok": False, "error": "Admin only"}), 403
 
     conn = db()
+
+    rows = conn.execute("""
+        SELECT attachment_drive_id
+        FROM message_messages
+        WHERE conversation_id=?
+          AND attachment_drive_id IS NOT NULL
+    """, (conversation_id,)).fetchall()
+
+    for r in rows:
+        if r["attachment_drive_id"]:
+            delete_drive_file_safe(r["attachment_drive_id"])
+
     conn.execute("DELETE FROM message_conversation_deleted WHERE conversation_id=?", (conversation_id,))
     conn.execute("DELETE FROM message_conversation_members WHERE conversation_id=?", (conversation_id,))
     conn.execute("DELETE FROM message_messages WHERE conversation_id=?", (conversation_id,))

@@ -6,11 +6,20 @@ let CONVERSATIONS = [];
 let ACTIVE_CONVO_ID = null;
 let ACTIVE_CONVO = null;
 let MESSAGES = [];
-let AUTO_REFRESH_TIMER = null;
+
+let SIDEBAR_REFRESH_TIMER = null;
+let CHAT_REFRESH_TIMER = null;
+
 let SENDING = false;
 let REPLY_TO_ID = null;
 let REPLY_TO_TEXT = "";
-let HAS_OPENED_CURRENT_CHAT = false;
+
+let LOADING_CONVERSATIONS = false;
+let LOADING_MESSAGES = false;
+let LOADING_MEMBERS = false;
+
+const SIDEBAR_REFRESH_MS = 30000;
+const ACTIVE_CHAT_REFRESH_MS = 4000;
 
 async function safeJson(res) {
   try {
@@ -85,7 +94,6 @@ function updateScrollBottomButton() {
   if (!box || !btn) return;
 
   const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight;
-
   if (distanceFromBottom > 120) {
     btn.classList.add("show");
   } else {
@@ -163,19 +171,28 @@ function renderGroupMembers() {
   `).join("");
 }
 
-async function loadConversations(keepSelection = true) {
-  const out = await api("/api/messages/conversations");
-  CONVERSATIONS = out.data || [];
+async function loadConversations(keepSelection = true, silent = false) {
+  if (LOADING_CONVERSATIONS) return;
+  LOADING_CONVERSATIONS = true;
 
-  if (keepSelection && ACTIVE_CONVO_ID) {
-    ACTIVE_CONVO = CONVERSATIONS.find((x) => Number(x.id) === Number(ACTIVE_CONVO_ID)) || ACTIVE_CONVO;
-  } else if (!keepSelection) {
-    ACTIVE_CONVO_ID = null;
-    ACTIVE_CONVO = null;
+  try {
+    const out = await api("/api/messages/conversations");
+    CONVERSATIONS = out.data || [];
+
+    if (keepSelection && ACTIVE_CONVO_ID) {
+      ACTIVE_CONVO = CONVERSATIONS.find((x) => Number(x.id) === Number(ACTIVE_CONVO_ID)) || ACTIVE_CONVO;
+    } else if (!keepSelection) {
+      ACTIVE_CONVO_ID = null;
+      ACTIVE_CONVO = null;
+    }
+
+    renderConversations();
+    renderChatHeader();
+  } catch (err) {
+    if (!silent) showMsg("leftMsg", err.message, false);
+  } finally {
+    LOADING_CONVERSATIONS = false;
   }
-
-  renderConversations();
-  renderChatHeader();
 }
 
 function renderConversations() {
@@ -245,7 +262,6 @@ async function startDirectChat(userId) {
 
     ACTIVE_CONVO_ID = Number(out.data.id);
     ACTIVE_CONVO = out.data;
-    HAS_OPENED_CURRENT_CHAT = false;
 
     await loadConversations(true);
     await openConversation(ACTIVE_CONVO_ID);
@@ -286,7 +302,6 @@ async function createGroup() {
 
     ACTIVE_CONVO_ID = Number(out.data.id);
     ACTIVE_CONVO = out.data;
-    HAS_OPENED_CURRENT_CHAT = false;
 
     await loadConversations(true);
     await openConversation(ACTIVE_CONVO_ID);
@@ -301,16 +316,15 @@ async function createGroup() {
 async function openConversation(conversationId) {
   ACTIVE_CONVO_ID = Number(conversationId);
   ACTIVE_CONVO = CONVERSATIONS.find((c) => Number(c.id) === Number(ACTIVE_CONVO_ID)) || ACTIVE_CONVO;
-  HAS_OPENED_CURRENT_CHAT = false;
 
   renderConversations();
   renderChatHeader();
 
-  await loadMessages({ forceBottom: true });
+  await loadMessages({ forceBottom: true, silent: false });
   await markConversationRead(false);
-  await loadConversationMembers();
+  await loadConversationMembers(false);
 
-  HAS_OPENED_CURRENT_CHAT = true;
+  restartRefreshLoops();
 }
 
 function renderChatHeader() {
@@ -344,16 +358,21 @@ function renderChatHeader() {
   }
 }
 
-async function loadConversationMembers() {
+async function loadConversationMembers(silent = true) {
   if (!ACTIVE_CONVO_ID || !ACTIVE_CONVO) return;
   if ((ACTIVE_CONVO.conversation_type || "").toUpperCase() !== "GROUP") return;
+  if (LOADING_MEMBERS) return;
 
+  LOADING_MEMBERS = true;
   try {
     const out = await api(`/api/messages/conversations/${ACTIVE_CONVO_ID}/members`);
     const names = (out.data || []).map((x) => x.full_name || x.username).join(", ");
     $("chatSub").textContent = names || "Group conversation";
   } catch (err) {
     $("chatSub").textContent = "Group conversation";
+    if (!silent) showMsg("rightMsg", err.message, false);
+  } finally {
+    LOADING_MEMBERS = false;
   }
 }
 
@@ -363,17 +382,26 @@ async function loadMessages(opts = {}) {
     return;
   }
 
-  const box = getMessagesBox();
-  const wasNearBottom = box ? isNearBottom() : true;
+  if (LOADING_MESSAGES) return;
+  LOADING_MESSAGES = true;
 
-  const out = await api(`/api/messages/conversations/${ACTIVE_CONVO_ID}/messages`);
-  MESSAGES = out.data || [];
+  try {
+    const box = getMessagesBox();
+    const wasNearBottom = box ? isNearBottom() : true;
 
-  renderMessages(MESSAGES, {
-    preserveScroll: true,
-    forceBottom: !!opts.forceBottom,
-    wasNearBottom
-  });
+    const out = await api(`/api/messages/conversations/${ACTIVE_CONVO_ID}/messages`);
+    MESSAGES = out.data || [];
+
+    renderMessages(MESSAGES, {
+      preserveScroll: true,
+      forceBottom: !!opts.forceBottom,
+      wasNearBottom
+    });
+  } catch (err) {
+    if (!opts.silent) showMsg("rightMsg", err.message, false);
+  } finally {
+    LOADING_MESSAGES = false;
+  }
 }
 
 function findMessageText(id) {
@@ -471,6 +499,8 @@ function upsertConversationFromMessage(messageRow) {
   if (!ACTIVE_CONVO_ID || !ACTIVE_CONVO || !messageRow) return;
 
   ACTIVE_CONVO.last_message = messageRow;
+  ACTIVE_CONVO.last_message_text = messageRow.message_text || messageRow.attachment_name || "Attachment";
+  ACTIVE_CONVO.last_message_at = messageRow.created_at || "";
   ACTIVE_CONVO.unread_count = 0;
 
   const idx = CONVERSATIONS.findIndex((c) => Number(c.id) === Number(ACTIVE_CONVO_ID));
@@ -478,6 +508,8 @@ function upsertConversationFromMessage(messageRow) {
     CONVERSATIONS[idx] = {
       ...CONVERSATIONS[idx],
       last_message: messageRow,
+      last_message_text: messageRow.message_text || messageRow.attachment_name || "Attachment",
+      last_message_at: messageRow.created_at || "",
       unread_count: 0
     };
   }
@@ -530,8 +562,8 @@ async function sendMessage() {
       renderConversations();
       renderChatHeader();
     } else {
-      await loadMessages({ forceBottom: true });
-      await loadConversations(true);
+      await loadMessages({ forceBottom: true, silent: false });
+      await loadConversations(true, true);
     }
 
     scrollMessagesToBottom(true);
@@ -556,8 +588,8 @@ async function deleteMessage(messageId) {
       method: "DELETE"
     });
 
-    await loadMessages();
-    await loadConversations(true);
+    await loadMessages({ silent: false });
+    await loadConversations(true, true);
     showMsg("rightMsg", "Message deleted.", true);
   } catch (err) {
     showMsg("rightMsg", err.message, false);
@@ -577,13 +609,13 @@ async function deleteConversation() {
     ACTIVE_CONVO = null;
     MESSAGES = [];
     clearReplyPreview();
-    HAS_OPENED_CURRENT_CHAT = false;
 
-    await loadConversations(false);
+    await loadConversations(false, false);
     renderMessages([], { preserveScroll: false, forceBottom: false });
     renderChatHeader();
 
     showMsg("leftMsg", "Conversation moved to trash.", true);
+    restartRefreshLoops();
   } catch (err) {
     showMsg("leftMsg", err.message, false);
   }
@@ -605,13 +637,13 @@ async function leaveGroup() {
     ACTIVE_CONVO = null;
     MESSAGES = [];
     clearReplyPreview();
-    HAS_OPENED_CURRENT_CHAT = false;
 
-    await loadConversations(false);
+    await loadConversations(false, false);
     renderMessages([], { preserveScroll: false, forceBottom: false });
     renderChatHeader();
 
     showMsg("leftMsg", "You left the group.", true);
+    restartRefreshLoops();
   } catch (err) {
     showMsg("leftMsg", err.message, false);
   }
@@ -666,8 +698,8 @@ async function addMembersToGroup() {
     });
 
     $("addMemberModal").style.display = "none";
-    await loadConversationMembers();
-    await loadConversations(true);
+    await loadConversationMembers(false);
+    await loadConversations(true, true);
     showMsg("leftMsg", "Members added successfully.", true);
   } catch (err) {
     showMsg("addMemberMsg", err.message, false);
@@ -716,7 +748,7 @@ async function restoreConversation(conversationId) {
   try {
     await api(`/api/messages/conversations/${conversationId}/restore`, { method: "POST" });
     await loadTrash();
-    await loadConversations(false);
+    await loadConversations(false, true);
     showMsg("trashMsg", "Conversation restored.", true);
   } catch (err) {
     showMsg("trashMsg", err.message, false);
@@ -728,7 +760,7 @@ async function permanentlyDeleteConversation(conversationId) {
     if (!confirm("Delete this chat permanently?")) return;
     await api(`/api/messages/conversations/${conversationId}/permanent-delete`, { method: "POST" });
     await loadTrash();
-    await loadConversations(false);
+    await loadConversations(false, true);
     showMsg("trashMsg", "Conversation permanently deleted.", true);
   } catch (err) {
     showMsg("trashMsg", err.message, false);
@@ -744,7 +776,7 @@ async function markConversationRead(refreshList = true) {
     });
 
     if (refreshList) {
-      await loadConversations(true);
+      await loadConversations(true, true);
       ACTIVE_CONVO =
         CONVERSATIONS.find((c) => Number(c.id) === Number(ACTIVE_CONVO_ID)) ||
         ACTIVE_CONVO;
@@ -778,32 +810,47 @@ function bindEmojiButtons() {
   });
 }
 
-function startAutoRefresh() {
-  stopAutoRefresh();
-  AUTO_REFRESH_TIMER = setInterval(async () => {
-    try {
-      await loadConversations(true);
-
-      if (ACTIVE_CONVO_ID) {
-        const wasNearBottom = isNearBottom();
-        await loadMessages({ forceBottom: false });
-
-        if (wasNearBottom) {
-          scrollMessagesToBottom(true);
-        } else {
-          updateScrollBottomButton();
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  }, 5000);
+async function refreshSidebarOnce() {
+  if (document.hidden) return;
+  await loadConversations(true, true);
 }
 
-function stopAutoRefresh() {
-  if (AUTO_REFRESH_TIMER) {
-    clearInterval(AUTO_REFRESH_TIMER);
-    AUTO_REFRESH_TIMER = null;
+async function refreshActiveChatOnce() {
+  if (document.hidden) return;
+  if (!ACTIVE_CONVO_ID) return;
+
+  const wasNearBottom = isNearBottom();
+  await loadMessages({ forceBottom: false, silent: true });
+
+  if (wasNearBottom) {
+    scrollMessagesToBottom(true);
+  } else {
+    updateScrollBottomButton();
+  }
+}
+
+function stopRefreshLoops() {
+  if (SIDEBAR_REFRESH_TIMER) {
+    clearInterval(SIDEBAR_REFRESH_TIMER);
+    SIDEBAR_REFRESH_TIMER = null;
+  }
+  if (CHAT_REFRESH_TIMER) {
+    clearInterval(CHAT_REFRESH_TIMER);
+    CHAT_REFRESH_TIMER = null;
+  }
+}
+
+function restartRefreshLoops() {
+  stopRefreshLoops();
+
+  SIDEBAR_REFRESH_TIMER = setInterval(async () => {
+    await refreshSidebarOnce();
+  }, SIDEBAR_REFRESH_MS);
+
+  if (ACTIVE_CONVO_ID) {
+    CHAT_REFRESH_TIMER = setInterval(async () => {
+      await refreshActiveChatOnce();
+    }, ACTIVE_CHAT_REFRESH_MS);
   }
 }
 
@@ -813,8 +860,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   await loadMe();
   await loadUsers();
-  await loadConversations(false);
-  startAutoRefresh();
+  await loadConversations(false, false);
+  restartRefreshLoops();
 
   $("conversationSearch")?.addEventListener("input", () => {
     renderUserPicker();
@@ -822,8 +869,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   $("refreshConvosBtn")?.addEventListener("click", async () => {
-    await loadConversations(true);
-    if (ACTIVE_CONVO_ID) await loadMessages();
+    await loadConversations(true, false);
+    if (ACTIVE_CONVO_ID) await loadMessages({ silent: false });
   });
 
   $("newGroupBtn")?.addEventListener("click", () => {
@@ -875,6 +922,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("scrollBottomBtn")?.addEventListener("click", () => {
     scrollMessagesToBottom(true);
   });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopRefreshLoops();
+    } else {
+      restartRefreshLoops();
+      refreshSidebarOnce();
+      refreshActiveChatOnce();
+    }
+  });
 });
 
-window.addEventListener("beforeunload", stopAutoRefresh);
+window.addEventListener("beforeunload", stopRefreshLoops);
