@@ -249,7 +249,12 @@ def ensure_calendar_tables():
 def get_me(conn):
     return fetchone(
         conn,
-        "SELECT id, username, role, full_name FROM users WHERE username=%s LIMIT 1",
+        """
+        SELECT id, username, role, full_name, created_at
+        FROM users
+        WHERE username=%s
+        LIMIT 1
+        """,
         (session.get("user"),)
     )
 
@@ -1514,6 +1519,13 @@ def api_calendar_reminders_pending():
         me = get_me(conn)
         now = datetime.now(APP_TZ).replace(tzinfo=None)
 
+        user_created_at = None
+        try:
+            if me and me.get("created_at"):
+                user_created_at = datetime.fromisoformat(str(me["created_at"]).replace("T", " "))
+        except Exception:
+            user_created_at = None
+
         month_start = (now - timedelta(days=60)).date().isoformat()
 
         rows = fetchall(conn, """
@@ -1536,22 +1548,30 @@ def api_calendar_reminders_pending():
                 if not remind_dt:
                     continue
 
-                if remind_dt <= now:
-                    remind_at_value = remind_dt.isoformat(timespec="seconds")
-                    ack = fetchone(conn, """
-                        SELECT 1
-                        FROM calendar_event_acks
-                        WHERE event_id=%s AND user_id=%s AND remind_at=%s
-                        LIMIT 1
-                    """, (e["id"], me["id"], remind_at_value))
+                if remind_dt > now:
+                    continue
 
-                    if not ack:
-                        pending.append({
-                            "event_id": e["id"],
-                            "title": e["title"],
-                            "event_date": e["event_date"],
-                            "remind_at": remind_at_value,
-                        })
+                # Important fix:
+                # If this user was created AFTER the reminder time,
+                # they should not receive this old reminder.
+                if user_created_at and remind_dt < user_created_at:
+                    continue
+
+                remind_at_value = remind_dt.isoformat(timespec="seconds")
+                ack = fetchone(conn, """
+                    SELECT 1
+                    FROM calendar_event_acks
+                    WHERE event_id=%s AND user_id=%s AND remind_at=%s
+                    LIMIT 1
+                """, (e["id"], me["id"], remind_at_value))
+
+                if not ack:
+                    pending.append({
+                        "event_id": e["id"],
+                        "title": e["title"],
+                        "event_date": e["event_date"],
+                        "remind_at": remind_at_value,
+                    })
 
         pending.sort(key=lambda x: x["remind_at"])
         return jsonify({"ok": True, "data": pending})
