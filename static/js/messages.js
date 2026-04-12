@@ -6,6 +6,7 @@ let CONVERSATIONS = [];
 let ACTIVE_CONVO_ID = null;
 let ACTIVE_CONVO = null;
 let MESSAGES = [];
+let GROUP_MEMBERS_CACHE = {};
 
 let SIDEBAR_REFRESH_TIMER = null;
 let CHAT_REFRESH_TIMER = null;
@@ -327,7 +328,7 @@ async function openConversation(conversationId) {
 
   await loadMessages({ forceBottom: true, silent: false });
   await markConversationRead(false);
-  await loadConversationMembers(false);
+  await loadConversationMembers(false, false);
 
   startChatRefreshLoop();
 }
@@ -379,15 +380,31 @@ function renderChatHeader() {
   }
 }
 
-async function loadConversationMembers(silent = true) {
+async function loadConversationMembers(silent = true, force = false) {
   if (!ACTIVE_CONVO_ID || !ACTIVE_CONVO) return;
   if ((ACTIVE_CONVO.conversation_type || "").toUpperCase() !== "GROUP") return;
+
+  const cacheKey = ACTIVE_CONVO_ID;
+
+  if (!force && GROUP_MEMBERS_CACHE[cacheKey]) {
+    const names = GROUP_MEMBERS_CACHE[cacheKey]
+      .map((x) => x.full_name || x.username)
+      .join(", ");
+    $("chatSub").textContent = names || "Group conversation";
+    return;
+  }
+
   if (LOADING_MEMBERS) return;
 
   LOADING_MEMBERS = true;
+
   try {
     const out = await api(`/api/messages/conversations/${ACTIVE_CONVO_ID}/members`);
-    const names = (out.data || []).map((x) => x.full_name || x.username).join(", ");
+    const members = out.data || [];
+
+    GROUP_MEMBERS_CACHE[cacheKey] = members;
+
+    const names = members.map((x) => x.full_name || x.username).join(", ");
     $("chatSub").textContent = names || "Group conversation";
   } catch (err) {
     $("chatSub").textContent = "Group conversation";
@@ -687,6 +704,8 @@ async function leaveGroup() {
     }
     if (!confirm("Leave this group?")) return;
 
+    delete GROUP_MEMBERS_CACHE[ACTIVE_CONVO_ID];
+
     await api(`/api/messages/groups/${ACTIVE_CONVO_ID}/leave`, {
       method: "POST"
     });
@@ -751,8 +770,10 @@ async function addMembersToGroup() {
       body: JSON.stringify({ member_user_ids: ids })
     });
 
+    delete GROUP_MEMBERS_CACHE[ACTIVE_CONVO_ID];
+
     $("addMemberModal").style.display = "none";
-    await loadConversationMembers(false);
+    await loadConversationMembers(false, true);
     await loadConversations(true, true);
     showMsg("leftMsg", "Members added successfully.", true);
   } catch (err) {
