@@ -1383,5 +1383,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   if ($("evDate")) $("evDate").value = SELECTED_DATE;
   if ($("holidayDate")) $("holidayDate").value = SELECTED_DATE;
 
-  setInterval(loadPendingReminders, 15000);
+  setInterval(loadPendingReminders, 30000);
 });
