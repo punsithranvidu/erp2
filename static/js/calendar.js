@@ -2,13 +2,26 @@ const $ = (id) => document.getElementById(id);
 
 let ME = null;
 let USERS = [];
-let CURRENT_MONTH = new Date().toISOString().slice(0, 7);
-let SELECTED_DATE = new Date().toISOString().slice(0, 10);
 let MONTH_DATA = [];
 let REQUESTS = [];
 let EDIT_EVENT_ID = null;
 let EDIT_HOLIDAY_ID = null;
 let SHOWN_REMINDERS = new Set();
+
+function localDateParts() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return {
+    month: `${year}-${month}`,
+    date: `${year}-${month}-${day}`
+  };
+}
+
+const LOCAL_NOW = localDateParts();
+let CURRENT_MONTH = LOCAL_NOW.month;
+let SELECTED_DATE = LOCAL_NOW.date;
 
 async function safeJson(res) {
   try {
@@ -1355,8 +1368,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("nextMonthBtn")?.addEventListener("click", () => shiftMonth(1));
 
   $("todayBtn")?.addEventListener("click", async () => {
-    CURRENT_MONTH = new Date().toISOString().slice(0, 7);
-    SELECTED_DATE = new Date().toISOString().slice(0, 10);
+    const now = localDateParts();
+    CURRENT_MONTH = now.month;
+    SELECTED_DATE = now.date;
     updateHistoryMonthNote();
     await loadMonth();
     await loadRequests();
