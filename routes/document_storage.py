@@ -157,6 +157,15 @@ def restore_token_from_secret_if_needed():
     if os.path.exists(token_path):
         return token_path
 
+    db_token = get_saved_oauth_token_from_db()
+    if db_token:
+        try:
+            with open(token_path, "w", encoding="utf-8") as f:
+                f.write(db_token)
+            return token_path
+        except Exception as e:
+            raise ValueError(f"Could not restore Google token from database: {str(e)}")
+
     if os.path.exists(secret_path):
         try:
             shutil.copyfile(secret_path, token_path)
@@ -171,6 +180,44 @@ def save_runtime_token(token_json: str):
     token_path = oauth_token_file()
     with open(token_path, "w", encoding="utf-8") as f:
         f.write(token_json)
+
+    save_oauth_token_to_db(token_json, session.get("user", "system"))
+
+def get_saved_oauth_token_from_db():
+    conn = db()
+    row = conn.execute("""
+        SELECT token_json
+        FROM google_oauth_tokens
+        WHERE service_name=?
+        LIMIT 1
+    """, ("google_drive",)).fetchone()
+    conn.close()
+    return row["token_json"] if row and row["token_json"] else None
+
+
+def save_oauth_token_to_db(token_json: str, updated_by: str):
+    conn = db()
+    existing = conn.execute("""
+        SELECT id
+        FROM google_oauth_tokens
+        WHERE service_name=?
+        LIMIT 1
+    """, ("google_drive",)).fetchone()
+
+    if existing:
+        conn.execute("""
+            UPDATE google_oauth_tokens
+            SET token_json=?, updated_at=?, updated_by=?
+            WHERE service_name=?
+        """, (token_json, now_iso(), updated_by, "google_drive"))
+    else:
+        conn.execute("""
+            INSERT INTO google_oauth_tokens (service_name, token_json, updated_at, updated_by)
+            VALUES (?, ?, ?, ?)
+        """, ("google_drive", token_json, now_iso(), updated_by))
+
+    conn.commit()
+    conn.close()
 
 
 def get_oauth_drive_service():

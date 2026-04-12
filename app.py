@@ -705,6 +705,17 @@ def init_db():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS google_oauth_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_name TEXT NOT NULL UNIQUE,
+            token_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT NOT NULL
+        )
+    """)
+
+    conn.commit()
     conn.close()
 
 
