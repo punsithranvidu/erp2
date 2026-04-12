@@ -379,6 +379,24 @@ def parse_reminder_entry(value: str):
     return None
 
 
+def parse_user_created_at(me):
+    try:
+        if me and me.get("created_at"):
+            return datetime.fromisoformat(str(me["created_at"]).replace("T", " "))
+    except Exception:
+        pass
+    return None
+
+
+def date_is_before_user_created(date_text, user_created_at):
+    if not user_created_at or not date_text:
+        return False
+    try:
+        return datetime.fromisoformat(str(date_text)).date() < user_created_at.date()
+    except Exception:
+        return False
+
+
 @calendar_bp.before_app_request
 def _ensure_tables_once():
     if not current_app.config.get("CALENDAR_TABLES_READY"):
@@ -1189,6 +1207,7 @@ def api_calendar_month():
     conn = db()
     try:
         me = get_me(conn)
+        user_created_at = parse_user_created_at(me)
 
         month = request.args.get("month") or datetime.now().strftime("%Y-%m")
         view = (request.args.get("view") or "ACTIVE").upper()
@@ -1294,6 +1313,9 @@ def api_calendar_month():
                         })
 
         for h in holidays:
+            if date_is_before_user_created(h["holiday_date"], user_created_at):
+                continue
+
             key = h["holiday_date"]
             if key in days:
                 days[key]["holidays"].append({
@@ -1307,8 +1329,16 @@ def api_calendar_month():
         for r in unavailability:
             cur = datetime.fromisoformat(r["start_date"])
             end = datetime.fromisoformat(r["end_date"])
+
+            if user_created_at and end.date() < user_created_at.date():
+                continue
+
             while cur <= end:
                 key = cur.date().isoformat()
+                if date_is_before_user_created(key, user_created_at):
+                    cur += timedelta(days=1)
+                    continue
+
                 if key in days:
                     days[key]["unavailability"].append({
                         "id": r["id"],
@@ -1333,6 +1363,9 @@ def api_calendar_month():
             else:
                 if not event_visible_to_user(e, int(me["id"]), me["role"]):
                     continue
+
+            if date_is_before_user_created(e["event_date"], user_created_at):
+                continue
 
             key = e["event_date"]
             if key in days:
@@ -1369,6 +1402,7 @@ def api_calendar_requests():
     conn = db()
     try:
         me = get_me(conn)
+        user_created_at = parse_user_created_at(me)
 
         month = request.args.get("month") or datetime.now().strftime("%Y-%m")
         year, month_num = parse_month(month)
@@ -1396,6 +1430,14 @@ def api_calendar_requests():
         data = []
 
         for r in rows:
+            if user_created_at:
+                try:
+                    requested_at_dt = datetime.fromisoformat(str(r["requested_at"]).replace("T", " "))
+                    if requested_at_dt < user_created_at:
+                        continue
+                except Exception:
+                    pass
+
             item = dict(r)
             item["user_name"] = users.get(r["user_id"], f"User {r['user_id']}")
             data.append(item)
@@ -1518,13 +1560,7 @@ def api_calendar_reminders_pending():
     try:
         me = get_me(conn)
         now = datetime.now(APP_TZ).replace(tzinfo=None)
-
-        user_created_at = None
-        try:
-            if me and me.get("created_at"):
-                user_created_at = datetime.fromisoformat(str(me["created_at"]).replace("T", " "))
-        except Exception:
-            user_created_at = None
+        user_created_at = parse_user_created_at(me)
 
         month_start = (now - timedelta(days=60)).date().isoformat()
 
