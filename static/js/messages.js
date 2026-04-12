@@ -18,8 +18,10 @@ let LOADING_CONVERSATIONS = false;
 let LOADING_MESSAGES = false;
 let LOADING_MEMBERS = false;
 
-const SIDEBAR_REFRESH_MS = 30000;
-const ACTIVE_CHAT_REFRESH_MS = 4000;
+const GROUP_MEMBERS_CACHE = {};
+
+const SIDEBAR_REFRESH_MS = 20000;
+const ACTIVE_CHAT_REFRESH_MS = 6000;
 
 async function safeJson(res) {
   try {
@@ -68,6 +70,46 @@ function formatDateTime(v) {
 
 function getMessagesBox() {
   return $("messagesBox");
+}
+
+function getAttachedFileEl() {
+  return $("attachedFileName");
+}
+
+function getCurrentSelectedFile() {
+  return $("messageFileInput")?.files?.[0] || null;
+}
+
+function clearSelectedFile() {
+  const input = $("messageFileInput");
+  if (input) input.value = "";
+  renderSelectedFile();
+}
+
+function renderSelectedFile() {
+  const el = getAttachedFileEl();
+  const input = $("messageFileInput");
+  if (!el || !input) return;
+
+  const file = input.files && input.files[0] ? input.files[0] : null;
+
+  if (!file) {
+    el.innerHTML = "";
+    return;
+  }
+
+  el.innerHTML = `
+    <span>${escapeHtml(file.name)}</span>
+    <button
+      type="button"
+      id="clearSelectedFileBtn"
+      class="btn ghost mini"
+      style="margin-left:8px; padding:2px 8px; line-height:1.1;"
+      title="Remove selected file"
+    >✕</button>
+  `;
+
+  $("clearSelectedFileBtn")?.addEventListener("click", clearSelectedFile);
 }
 
 function isNearBottom() {
@@ -171,6 +213,18 @@ function renderGroupMembers() {
   `).join("");
 }
 
+function getGroupMemberText(conversationId) {
+  return GROUP_MEMBERS_CACHE[String(conversationId)] || "";
+}
+
+function setGroupMemberText(conversationId, text) {
+  GROUP_MEMBERS_CACHE[String(conversationId)] = text || "";
+}
+
+function clearGroupMemberText(conversationId) {
+  delete GROUP_MEMBERS_CACHE[String(conversationId)];
+}
+
 async function loadConversations(keepSelection = true, silent = false) {
   if (LOADING_CONVERSATIONS) return;
   LOADING_CONVERSATIONS = true;
@@ -263,7 +317,7 @@ async function startDirectChat(userId) {
     ACTIVE_CONVO_ID = Number(out.data.id);
     ACTIVE_CONVO = out.data;
 
-    await loadConversations(true);
+    await loadConversations(true, true);
     await openConversation(ACTIVE_CONVO_ID);
 
     showMsg("leftMsg", "Direct chat opened.", true);
@@ -302,8 +356,9 @@ async function createGroup() {
 
     ACTIVE_CONVO_ID = Number(out.data.id);
     ACTIVE_CONVO = out.data;
+    clearGroupMemberText(ACTIVE_CONVO_ID);
 
-    await loadConversations(true);
+    await loadConversations(true, true);
     await openConversation(ACTIVE_CONVO_ID);
 
     showMsg("leftMsg", "Group created.", true);
@@ -314,15 +369,21 @@ async function createGroup() {
 }
 
 async function openConversation(conversationId) {
-  ACTIVE_CONVO_ID = Number(conversationId);
-  ACTIVE_CONVO = CONVERSATIONS.find((c) => Number(c.id) === Number(ACTIVE_CONVO_ID)) || ACTIVE_CONVO;
+  const nextId = Number(conversationId);
+  const changedConversation = Number(ACTIVE_CONVO_ID) !== nextId;
+
+  ACTIVE_CONVO_ID = nextId;
+  ACTIVE_CONVO = CONVERSATIONS.find((c) => Number(c.id) === nextId) || ACTIVE_CONVO;
 
   renderConversations();
   renderChatHeader();
 
   await loadMessages({ forceBottom: true, silent: false });
   await markConversationRead(false);
-  await loadConversationMembers(false);
+
+  if (changedConversation) {
+    await loadConversationMembers(false, { force: false });
+  }
 
   restartRefreshLoops();
 }
@@ -348,7 +409,8 @@ function renderChatHeader() {
   const isGroup = (ACTIVE_CONVO.conversation_type || "").toUpperCase() === "GROUP";
 
   if (isGroup) {
-    sub.textContent = "Loading group members...";
+    const cached = getGroupMemberText(ACTIVE_CONVO.id);
+    sub.textContent = cached || "Loading group members...";
     if (addBtn) addBtn.style.display = "";
     if (leaveBtn) leaveBtn.style.display = "";
   } else {
@@ -358,18 +420,29 @@ function renderChatHeader() {
   }
 }
 
-async function loadConversationMembers(silent = true) {
+async function loadConversationMembers(silent = true, opts = {}) {
   if (!ACTIVE_CONVO_ID || !ACTIVE_CONVO) return;
   if ((ACTIVE_CONVO.conversation_type || "").toUpperCase() !== "GROUP") return;
   if (LOADING_MEMBERS) return;
+
+  const force = !!opts.force;
+  const cached = getGroupMemberText(ACTIVE_CONVO_ID);
+
+  if (cached && !force) {
+    $("chatSub").textContent = cached;
+    return;
+  }
 
   LOADING_MEMBERS = true;
   try {
     const out = await api(`/api/messages/conversations/${ACTIVE_CONVO_ID}/members`);
     const names = (out.data || []).map((x) => x.full_name || x.username).join(", ");
-    $("chatSub").textContent = names || "Group conversation";
+    const finalText = names || "Group conversation";
+    setGroupMemberText(ACTIVE_CONVO_ID, finalText);
+    $("chatSub").textContent = finalText;
   } catch (err) {
-    $("chatSub").textContent = "Group conversation";
+    const fallback = cached || "Group conversation";
+    $("chatSub").textContent = fallback;
     if (!silent) showMsg("rightMsg", err.message, false);
   } finally {
     LOADING_MEMBERS = false;
@@ -515,13 +588,21 @@ function upsertConversationFromMessage(messageRow) {
   }
 }
 
+function sortConversationsLocal() {
+  CONVERSATIONS.sort((a, b) => {
+    const aTime = a.last_message_at || a.created_at || "";
+    const bTime = b.last_message_at || b.created_at || "";
+    return String(bTime).localeCompare(String(aTime));
+  });
+}
+
 async function sendMessage() {
   try {
     if (SENDING) return;
     if (!ACTIVE_CONVO_ID) throw new Error("Select a conversation first.");
 
     const text = ($("messageInput")?.value || "").trim();
-    const file = $("messageFileInput")?.files?.[0] || null;
+    const file = getCurrentSelectedFile();
 
     if (!text && !file) {
       throw new Error("Type a message or attach a file.");
@@ -550,8 +631,7 @@ async function sendMessage() {
     if (!res.ok) throw new Error(out.error || "Send failed");
 
     $("messageInput").value = "";
-    $("messageFileInput").value = "";
-    $("attachedFileName").textContent = "";
+    clearSelectedFile();
     clearReplyPreview();
 
     const newMsg = out.data || null;
@@ -559,6 +639,7 @@ async function sendMessage() {
       MESSAGES.push(newMsg);
       renderMessages(MESSAGES, { forceBottom: true, preserveScroll: false, wasNearBottom: true });
       upsertConversationFromMessage(newMsg);
+      sortConversationsLocal();
       renderConversations();
       renderChatHeader();
     } else {
@@ -633,6 +714,8 @@ async function leaveGroup() {
       method: "POST"
     });
 
+    clearGroupMemberText(ACTIVE_CONVO_ID);
+
     ACTIVE_CONVO_ID = null;
     ACTIVE_CONVO = null;
     MESSAGES = [];
@@ -698,7 +781,8 @@ async function addMembersToGroup() {
     });
 
     $("addMemberModal").style.display = "none";
-    await loadConversationMembers(false);
+    clearGroupMemberText(ACTIVE_CONVO_ID);
+    await loadConversationMembers(false, { force: true });
     await loadConversations(true, true);
     showMsg("leftMsg", "Members added successfully.", true);
   } catch (err) {
@@ -775,6 +859,15 @@ async function markConversationRead(refreshList = true) {
       method: "POST"
     });
 
+    const idx = CONVERSATIONS.findIndex((c) => Number(c.id) === Number(ACTIVE_CONVO_ID));
+    if (idx >= 0) {
+      CONVERSATIONS[idx].unread_count = 0;
+      ACTIVE_CONVO = CONVERSATIONS[idx];
+    }
+
+    renderConversations();
+    renderChatHeader();
+
     if (refreshList) {
       await loadConversations(true, true);
       ACTIVE_CONVO =
@@ -783,11 +876,6 @@ async function markConversationRead(refreshList = true) {
 
       renderConversations();
       renderChatHeader();
-    } else {
-      const idx = CONVERSATIONS.findIndex((c) => Number(c.id) === Number(ACTIVE_CONVO_ID));
-      if (idx >= 0) {
-        CONVERSATIONS[idx].unread_count = 0;
-      }
     }
   } catch (err) {
     console.error(err);
@@ -861,6 +949,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadMe();
   await loadUsers();
   await loadConversations(false, false);
+  renderSelectedFile();
   restartRefreshLoops();
 
   $("conversationSearch")?.addEventListener("input", () => {
@@ -913,8 +1002,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("emojiToggleBtn")?.addEventListener("click", toggleEmojiBox);
 
   $("messageFileInput")?.addEventListener("change", () => {
-    const file = $("messageFileInput").files[0];
-    $("attachedFileName").textContent = file ? file.name : "";
+    renderSelectedFile();
   });
 
   $("markReadBtn")?.addEventListener("click", () => markConversationRead(true));

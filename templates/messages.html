@@ -162,7 +162,6 @@
       scroll-behavior: smooth;
     }
 
-    /* Change this if you want message width smaller or bigger */
     .bubble-wrap {
       display: flex;
       flex-direction: column;
@@ -187,7 +186,6 @@
       line-height: 1.15;
     }
 
-    /* Main message bubble - FIXED */
     .bubble {
       display: inline-block;
       width: auto;
@@ -198,7 +196,7 @@
       border-radius: 12px;
       padding: 7px 10px;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-      white-space: normal; /* important fix */
+      white-space: normal;
       overflow-wrap: break-word;
       word-break: break-word;
       line-height: 1.28;
@@ -207,12 +205,10 @@
       vertical-align: top;
     }
 
-    /* remove template spacing effect */
     .bubble > div {
       margin: 0;
     }
 
-    /* actual message text inside bubble */
     .bubble > div:not(.bubble-reply):not(.bubble-file) {
       white-space: pre-wrap;
       line-height: 1.28;
@@ -297,6 +293,47 @@
       flex-wrap: wrap;
       margin-top: 10px;
       align-items: center;
+    }
+
+    .attached-file-wrap {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 28px;
+    }
+
+    .attached-file-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #374151;
+      max-width: 100%;
+    }
+
+    .attached-file-name {
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    .attached-file-remove {
+      border: none;
+      background: transparent;
+      color: #dc2626;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+      padding: 0;
     }
 
     .emoji-box {
@@ -408,7 +445,6 @@
       display: inline-flex;
     }
 
-    /* Keep New Group button blue always */
     #newGroupBtn {
       background: rgba(37, 99, 235, .10);
       color: var(--accent);
@@ -443,6 +479,10 @@
 
       .msg-messages {
         height: 55vh;
+      }
+
+      .attached-file-name {
+        max-width: 160px;
       }
     }
   </style>
@@ -525,7 +565,7 @@
               <button id="emojiToggleBtn" class="btn ghost mini" type="button">Emoji</button>
               <label class="btn ghost mini" for="messageFileInput" style="cursor:pointer;">Attach File</label>
               <input id="messageFileInput" type="file" style="display:none;" />
-              <span id="attachedFileName" class="tiny muted"></span>
+              <span id="attachedFileName" class="attached-file-wrap tiny muted"></span>
             </div>
 
             <div id="emojiBox" class="emoji-box">
