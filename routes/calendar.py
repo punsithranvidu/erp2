@@ -397,15 +397,6 @@ def date_is_before_user_created(date_text, user_created_at):
         return False
 
 
-def timestamp_is_before_user_created(timestamp_text, user_created_at):
-    if not user_created_at or not timestamp_text:
-        return False
-    try:
-        return datetime.fromisoformat(str(timestamp_text).replace("T", " ")) < user_created_at
-    except Exception:
-        return False
-
-
 @calendar_bp.before_app_request
 def _ensure_tables_once():
     if not current_app.config.get("CALENDAR_TABLES_READY"):
@@ -1322,9 +1313,7 @@ def api_calendar_month():
                         })
 
         for h in holidays:
-            if timestamp_is_before_user_created(h.get("created_at"), user_created_at):
-                continue
-            if not h.get("created_at") and date_is_before_user_created(h["holiday_date"], user_created_at):
+            if date_is_before_user_created(h["holiday_date"], user_created_at):
                 continue
 
             key = h["holiday_date"]
@@ -1341,14 +1330,12 @@ def api_calendar_month():
             cur = datetime.fromisoformat(r["start_date"])
             end = datetime.fromisoformat(r["end_date"])
 
-            if timestamp_is_before_user_created(r.get("requested_at"), user_created_at):
-                continue
-            if not r.get("requested_at") and user_created_at and end.date() < user_created_at.date():
+            if user_created_at and end.date() < user_created_at.date():
                 continue
 
             while cur <= end:
                 key = cur.date().isoformat()
-                if not r.get("requested_at") and date_is_before_user_created(key, user_created_at):
+                if date_is_before_user_created(key, user_created_at):
                     cur += timedelta(days=1)
                     continue
 
@@ -1377,9 +1364,7 @@ def api_calendar_month():
                 if not event_visible_to_user(e, int(me["id"]), me["role"]):
                     continue
 
-            if timestamp_is_before_user_created(e.get("created_at"), user_created_at):
-                continue
-            if not e.get("created_at") and date_is_before_user_created(e["event_date"], user_created_at):
+            if date_is_before_user_created(e["event_date"], user_created_at):
                 continue
 
             key = e["event_date"]
@@ -1602,14 +1587,10 @@ def api_calendar_reminders_pending():
                 if remind_dt > now:
                     continue
 
-                # Strict fix:
-                # New users should not receive reminders that were already due
-                # before they joined, or reminders belonging to events created
-                # before they joined.
+                # Important fix:
+                # If this user was created AFTER the reminder time,
+                # they should not receive this old reminder.
                 if user_created_at and remind_dt < user_created_at:
-                    continue
-
-                if timestamp_is_before_user_created(e.get("created_at"), user_created_at):
                     continue
 
                 remind_at_value = remind_dt.isoformat(timespec="seconds")
