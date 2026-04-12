@@ -370,7 +370,17 @@ function renderChatHeader() {
   const isGroup = (ACTIVE_CONVO.conversation_type || "").toUpperCase() === "GROUP";
 
   if (isGroup) {
-    sub.textContent = "Loading group members...";
+    const cacheKey = ACTIVE_CONVO_ID;
+    const cachedMembers = GROUP_MEMBERS_CACHE[cacheKey] || [];
+
+    if (cachedMembers.length) {
+      sub.textContent = cachedMembers
+        .map((x) => x.full_name || x.username)
+        .join(", ");
+    } else if (!LOADING_MEMBERS) {
+      sub.textContent = "Group conversation";
+    }
+
     if (addBtn) addBtn.style.display = "";
     if (leaveBtn) leaveBtn.style.display = "";
   } else {
