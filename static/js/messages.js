@@ -20,7 +20,7 @@ let LOADING_MESSAGES = false;
 let LOADING_MEMBERS = false;
 
 const SIDEBAR_REFRESH_MS = 15000;
-const ACTIVE_CHAT_REFRESH_MS = 60000;
+const ACTIVE_CHAT_REFRESH_MS = 5000;
 
 async function safeJson(res) {
   try {
