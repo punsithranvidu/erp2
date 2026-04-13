@@ -383,7 +383,7 @@ def api_finance_create():
                 paid_date, folder_link, proof_link, invoice_link, po_link, quotation_link,
                 created_at, created_by,
                 deleted_at, deleted_by
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)
         """, (
             int(data["bank_id"]),
             data["type"],
