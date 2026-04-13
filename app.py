@@ -320,9 +320,17 @@ def init_db():
 
     cur.execute("PRAGMA table_info(users)")
     ucols = {r["name"] for r in cur.fetchall()}
+
     if "google_email" not in ucols:
         cur.execute("ALTER TABLE users ADD COLUMN google_email TEXT")
-        conn.commit()
+
+    if "file_name" not in ucols:
+        cur.execute("ALTER TABLE users ADD COLUMN file_name TEXT")
+
+    if "file_link" not in ucols:
+        cur.execute("ALTER TABLE users ADD COLUMN file_link TEXT")
+
+    conn.commit()
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS bank_accounts (
@@ -556,6 +564,8 @@ def init_db():
         cur.execute("ALTER TABLE finance_records ADD COLUMN deleted_by TEXT")
     if "bank_id" not in cols:
         cur.execute("ALTER TABLE finance_records ADD COLUMN bank_id INTEGER")
+    if "po_link" not in cols:
+        cur.execute("ALTER TABLE finance_records ADD COLUMN po_link TEXT")    
 
     cur.execute("PRAGMA table_info(month_balances)")
     bcols = {r["name"] for r in cur.fetchall()}
