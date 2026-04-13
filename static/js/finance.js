@@ -544,6 +544,10 @@
    
    $("loadBalanceBtn").addEventListener("click", loadBalance);
    $("saveBalanceBtn").addEventListener("click", saveBalance);
+
+   $("clearBtn")?.addEventListener("click", () => {
+    resetForm();
+  });
    
    /* Bank selector change (left form) */
    $("bankSelect").addEventListener("change", async ()=>{
