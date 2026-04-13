@@ -54,6 +54,27 @@ async function api(url, opts={}){
   return data;
 }
 
+function normalizeUrl(url){
+  const u = (url || "").trim();
+  if(!u) return "";
+  if(/^https?:\/\//i.test(u)) return u;
+  if(/^(mailto:|tel:)/i.test(u)) return u;
+  return "https://" + u;
+}
+
+function rowFileCell(row){
+  const name = row.file_name || "";
+  const link = normalizeUrl(row.file_link || "");
+
+  if(!name) return "";
+
+  if(link){
+    return `<a class="linkText" href="${link}" target="_blank" rel="noopener">${name}</a>`;
+  }
+
+  return name;
+}
+
 function renderPermissionModules(){
   const wrap = document.getElementById("permModules");
   if(!wrap) return;
@@ -72,6 +93,8 @@ function fillEditForm(row){
   document.getElementById("eJobRole").value = row.job_role || "";
   document.getElementById("eAddress").value = row.address || "";
   document.getElementById("eGoogleEmail").value = row.google_email || "";
+  document.getElementById("eFileName").value = row.file_name || "";
+  document.getElementById("eFileLink").value = row.file_link || "";
 
   document.getElementById("editRole").value = row.role;
   document.getElementById("editActive").value = String(row.active);
@@ -137,6 +160,7 @@ function renderUsers(rows){
       <td>${r.active ? "YES" : "NO"}</td>
       <td>${r.full_name || ""}</td>
       <td>${r.google_email || ""}</td>
+      <td>${rowFileCell(r)}</td>
       <td>${r.job_role || ""}</td>
       <td>${r.join_date || ""}</td>
       <td>${r.created_at || ""}</td>
@@ -180,7 +204,9 @@ async function createUser(){
       join_date: document.getElementById("uJoinDate").value,
       job_role: document.getElementById("uJobRole").value.trim(),
       address: document.getElementById("uAddress").value.trim(),
-      google_email: document.getElementById("uGoogleEmail").value.trim().toLowerCase()
+      google_email: document.getElementById("uGoogleEmail").value.trim().toLowerCase(),
+      file_name: document.getElementById("uFileName").value.trim(),
+      file_link: normalizeUrl(document.getElementById("uFileLink").value.trim())
     };
     const out = await api("/api/users", { method:"POST", body: JSON.stringify(payload) });
     showMsg("createMsg", `User created: ${out.data.username}`, true);
@@ -192,6 +218,8 @@ async function createUser(){
     document.getElementById("uJobRole").value = "";
     document.getElementById("uAddress").value = "";
     document.getElementById("uGoogleEmail").value = "";
+    document.getElementById("uFileName").value = "";
+    document.getElementById("uFileLink").value = "";
     await loadUsers();
   }catch(e){
     showMsg("createMsg", e.message, false);
@@ -239,7 +267,9 @@ async function saveUser(){
       join_date: document.getElementById("eJoinDate").value,
       job_role: document.getElementById("eJobRole").value.trim(),
       address: document.getElementById("eAddress").value.trim(),
-      google_email: document.getElementById("eGoogleEmail").value.trim().toLowerCase()
+      google_email: document.getElementById("eGoogleEmail").value.trim().toLowerCase(),
+      file_name: document.getElementById("eFileName").value.trim(),
+      file_link: normalizeUrl(document.getElementById("eFileLink").value.trim())
     };
 
     const out = await api(`/api/users/${SELECTED_USER_ID}`, {

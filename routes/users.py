@@ -53,6 +53,16 @@ def require_module(module: str, need_edit: bool = False):
         return wrapped
     return deco
 
+def normalize_url(url: str) -> str:
+    u = (url or "").strip()
+    if not u:
+        return ""
+    low = u.lower()
+    if low.startswith("http://") or low.startswith("https://"):
+        return u
+    if low.startswith("mailto:") or low.startswith("tel:"):
+        return u
+    return "https://" + u
 
 def count_active_admins(conn):
     row = conn.execute("""
@@ -240,7 +250,7 @@ def api_user_permissions_set(uid):
 def api_users_list():
     conn = db()
     rows = conn.execute("""
-        SELECT id, username, role, active, full_name, nic, join_date, job_role, address, google_email, created_at
+        SELECT id, username, role, active, full_name, nic, join_date, job_role, address, google_email, file_name, file_link, created_at
         FROM users
         ORDER BY id DESC
         LIMIT 2000
@@ -274,15 +284,17 @@ def api_users_create():
     job_role = (data.get("job_role") or "").strip() or None
     address = (data.get("address") or "").strip() or None
     google_email = (data.get("google_email") or "").strip().lower() or None
+    file_name = (data.get("file_name") or "").strip() or None
+    file_link = normalize_url(data.get("file_link", "")) or None
 
     conn = db()
     try:
         conn.execute("""
             INSERT INTO users (
                 username, password_hash, role, active,
-                full_name, nic, join_date, job_role, address, google_email,
+                full_name, nic, join_date, job_role, address, google_email, file_name, file_link,
                 created_at, created_by
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             username,
             generate_password_hash(password),
@@ -294,6 +306,8 @@ def api_users_create():
             job_role,
             address,
             google_email,
+            file_name,
+            file_link,
             now_iso(),
             session["user"]
         ))
@@ -336,7 +350,7 @@ def api_users_create():
         conn.commit()
 
         row = conn.execute("""
-            SELECT id, username, role, active, full_name, nic, join_date, job_role, address, google_email, created_at
+            SELECT id, username, role, active, full_name, nic, join_date, job_role, address, google_email, file_name, file_link, created_at
             FROM users
             WHERE username=?
             LIMIT 1
@@ -366,6 +380,8 @@ def api_users_update(uid):
     job_role = (data.get("job_role") or "").strip() if "job_role" in data else None
     address = (data.get("address") or "").strip() if "address" in data else None
     google_email = (data.get("google_email") or "").strip().lower() if "google_email" in data else None
+    file_name = (data.get("file_name") or "").strip() if "file_name" in data else None
+    file_link = normalize_url(data.get("file_link", "")) if "file_link" in data else None
 
     if role and role not in ("ADMIN", "EMP"):
         return jsonify({"ok": False, "error": "role must be ADMIN or EMP"}), 400
@@ -416,6 +432,12 @@ def api_users_update(uid):
     if "google_email" in data:
         sets.append("google_email=?")
         vals.append(google_email or None)
+    if "file_name" in data:
+        sets.append("file_name=?")
+        vals.append(file_name or None)
+    if "file_link" in data:
+        sets.append("file_link=?")
+        vals.append(file_link or None)    
 
     if not sets:
         conn.close()
@@ -448,7 +470,7 @@ def api_users_update(uid):
         conn.commit()
 
     row = conn.execute("""
-        SELECT id, username, role, active, full_name, nic, join_date, job_role, address, google_email, created_at
+        SELECT id, username, role, active, full_name, nic, join_date, job_role, address, google_email, file_name, file_link, created_at
         FROM users
         WHERE id=?
         LIMIT 1

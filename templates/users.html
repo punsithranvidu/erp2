@@ -58,6 +58,13 @@
         <input id="uGoogleEmail" type="email" placeholder="emp@gmail.com" />
         <p class="sub small">Used for Google Drive sharing. Leave blank if this user should not open Drive links directly.</p>
 
+        <label>File Name</label>
+        <input id="uFileName" placeholder="CV / NIC Copy / Agreement" />
+
+        <label>File Link</label>
+        <input id="uFileLink" placeholder="drive.google.com/..." />
+        <p class="sub small">If link is added, the file name will be clickable in the table.</p>
+
         <button id="createUserBtn" class="btn" type="button">Create User</button>
         <p id="createMsg" class="msg"></p>
       </div>
@@ -90,6 +97,13 @@
         <label>Personal Google Email</label>
         <input id="eGoogleEmail" type="email" placeholder="emp@gmail.com" />
         <p class="sub small">This Google email will be shared automatically on folders/files when ERP permissions are given.</p>
+
+        <label>File Name</label>
+        <input id="eFileName" placeholder="CV / NIC Copy / Agreement" />
+
+        <label>File Link</label>
+        <input id="eFileLink" placeholder="drive.google.com/..." />
+        <p class="sub small">If link is added, the file name will become clickable in the users table.</p>
 
         <div class="hr"></div>
 
@@ -169,6 +183,7 @@
               <th>Active</th>
               <th>Full Name</th>
               <th>Google Email</th>
+              <th>File</th>
               <th>Job Role</th>
               <th>Join Date</th>
               <th>Created At</th>
