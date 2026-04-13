@@ -241,6 +241,7 @@
      $("folderLink").value=safeText(r.folder_link);
      $("proofLink").value=safeText(r.proof_link);
      $("invoiceLink").value=safeText(r.invoice_link);
+     $("poLink").value=safeText(r.po_link);
      $("quotationLink").value=safeText(r.quotation_link);
    
      if(r.bank_id !== undefined && r.bank_id !== null && r.bank_id !== ""){
@@ -304,7 +305,7 @@
          <td><span class="pill">${safeText(r.status)}</span></td>
          <td>${openLink(r.proof_of_payment, r.proof_link)}</td>
          <td>${openLink("OPEN", r.invoice_link)}</td>
-         <td class="mono">${safeText(r.po_number)}</td>
+         <td>${openLink(safeText(r.po_number || "OPEN"), r.po_link)}</td>
          <td>${openLink(safeText(r.quotation_number || "OPEN"), r.quotation_link)}</td>
          <td class="mono">${safeText(r.paid_date)}</td>
          <td class="mono">${safeText(r.created_at)}</td>
@@ -449,6 +450,7 @@
        folder_link:$("folderLink").value.trim(),
        proof_link:$("proofLink").value.trim(),
        invoice_link:$("invoiceLink").value.trim(),
+       po_link:$("poLink").value.trim(),
        quotation_link:$("quotationLink").value.trim(),
      };
    }
@@ -462,6 +464,7 @@
      payload.folder_link = normalizeUrl(payload.folder_link);
      payload.proof_link = normalizeUrl(payload.proof_link);
      payload.invoice_link = normalizeUrl(payload.invoice_link);
+     payload.po_link = normalizeUrl(payload.po_link);
      payload.quotation_link = normalizeUrl(payload.quotation_link);
    
      const res=await fetch("/api/finance",{
@@ -481,6 +484,7 @@
      payload.folder_link = normalizeUrl(payload.folder_link);
      payload.proof_link = normalizeUrl(payload.proof_link);
      payload.invoice_link = normalizeUrl(payload.invoice_link);
+     payload.po_link = normalizeUrl(payload.po_link);
      payload.quotation_link = normalizeUrl(payload.quotation_link);
    
      const res=await fetch(`/api/finance/${id}`,{

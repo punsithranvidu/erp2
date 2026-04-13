@@ -185,16 +185,21 @@
         </div>
 
         <h4 class="miniTitle">Drive Links</h4>
-        <label>Client Folder Link (Drive)</label>
-        <input id="folderLink" placeholder="drive.google.com/..." />
-        <label>Proof Link (Drive)</label>
-        <input id="proofLink" placeholder="drive.google.com/..." />
-        <label>Invoice Link (Drive)</label>
-        <input id="invoiceLink" placeholder="drive.google.com/..." />
-        <label>Quotation Link (Drive)</label>
-        <input id="quotationLink" placeholder="drive.google.com/..." />
+        <label>Client Folder Link</label>
+        <input id="folderLink" placeholder="" />
+        <label>Payment Proof Link</label>
+        <input id="proofLink" placeholder="" />
+        <label>Invoice Link </label>
+        <input id="invoiceLink" placeholder="" />
+        <label>PO Link (Drive)</label>
+        <input id="poLink" placeholder="" />
+        <label>Quotation Link </label>
+        <input id="quotationLink" placeholder="" />
 
-        <button class="btn" type="submit">Save Record</button>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn" type="submit">Save Record</button>
+          <button class="btn ghost" type="button" id="clearBtn">Clear</button>
+        </div>
         <p id="msg" class="msg"></p>
       </form>
     </div>

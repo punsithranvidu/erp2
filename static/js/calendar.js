@@ -1327,6 +1327,27 @@ function shiftMonth(delta) {
   loadRequests();
 }
 
+$("clearBtn").addEventListener("click", () => {
+  const form = $("financeForm");
+
+  // reset all inputs
+  form.reset();
+
+  // clear edit mode (VERY IMPORTANT)
+  CURRENT_EDIT_ID = null;
+
+  // reset bank if needed
+  if (SELECTED_BANK_ID) {
+    $("bankSelect").value = SELECTED_BANK_ID;
+  }
+
+  // clear messages
+  $("msg").textContent = "";
+
+  // optional: scroll to top
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
 document.addEventListener("DOMContentLoaded", async () => {
   await loadMe();
   await loadUsers();

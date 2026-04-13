@@ -380,7 +380,7 @@ def api_finance_create():
                 bank_id,
                 type, client_name, category, description, currency, amount,
                 payment_type, status, proof_of_payment, invoice_ref, po_number, quotation_number,
-                paid_date, folder_link, proof_link, invoice_link, quotation_link,
+                paid_date, folder_link, proof_link, invoice_link, po_link, quotation_link,
                 created_at, created_by,
                 deleted_at, deleted_by
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)
@@ -402,6 +402,7 @@ def api_finance_create():
             normalize_url(data.get("folder_link", "")),
             normalize_url(data.get("proof_link", "")),
             normalize_url(data.get("invoice_link", "")),
+            normalize_url(data.get("po_link", "")),
             normalize_url(data.get("quotation_link", "")),
             now_iso(),
             session["user"],
@@ -429,7 +430,7 @@ def api_finance_update(rid):
         "type", "client_name", "category", "description", "currency", "amount",
         "payment_type", "status", "proof_of_payment", "invoice_ref", "po_number",
         "quotation_number", "paid_date", "folder_link", "proof_link",
-        "invoice_link", "quotation_link"
+        "invoice_link", "po_link", "quotation_link"
     ]
 
     sets = []
@@ -708,6 +709,7 @@ def api_finance_export_csv():
             fr.folder_link,
             fr.proof_link,
             fr.invoice_link,
+            fr.po_link,
             fr.quotation_link
         FROM finance_records fr
         LEFT JOIN bank_accounts ba ON ba.id = fr.bank_id
@@ -726,7 +728,7 @@ def api_finance_export_csv():
         "ID", "Bank", "Type", "Client", "Category", "Description", "Currency", "Amount",
         "Payment Type", "Status", "Proof Of Payment", "Invoice Ref", "PO Number", "Quotation Number",
         "Paid Date", "Created At", "Created By", "Edited At", "Edited By",
-        "Client Folder Link", "Proof Link", "Invoice Link", "Quotation Link"
+        "Client Folder Link", "Proof Link", "Invoice Link","PO Link", "Quotation Link"
     ])
 
     for r in rows:
@@ -754,6 +756,7 @@ def api_finance_export_csv():
             r.get("folder_link"),
             r.get("proof_link"),
             r.get("invoice_link"),
+            r.get("po_link"),
             r.get("quotation_link")
         ])
 
