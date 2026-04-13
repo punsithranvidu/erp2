@@ -47,16 +47,16 @@
         <h3>Create Folder</h3>
 
         <label>Folder Name</label>
-        <input id="folderName" placeholder="Example: Kamal / Shipment 001 / VAT" />
+        <input id="folderName" placeholder="" />
 
         <label>Notes</label>
-        <textarea id="folderNotes" rows="3" placeholder="Optional note"></textarea>
+        <textarea id="folderNotes" rows="3" placeholder=""></textarea>
 
         <div class="hr"></div>
 
         <h4 class="miniTitle">Who Can Access</h4>
         <p class="sub small">Creator and admins are auto-added with edit access.</p>
-        <input id="shareSearch" placeholder="Search users..." />
+        <input id="shareSearch" placeholder="Search users" />
         <div id="shareUserBox" class="doc-share-box"></div>
 
         <button id="createFolderBtn" class="btn" type="button">Create Folder</button>
@@ -68,14 +68,14 @@
       <div class="doc-section">
         <h3>Upload Document</h3>
 
-        <label>Display Name (optional)</label>
-        <input id="uploadDisplayName" placeholder="Leave blank to use file name" />
+        <label>Display Name</label>
+        <input id="uploadDisplayName" placeholder="" />
 
         <label>Choose File</label>
         <input id="uploadFile" type="file" />
 
         <label>Notes</label>
-        <textarea id="uploadNotes" rows="3" placeholder="Optional note"></textarea>
+        <textarea id="uploadNotes" rows="3" placeholder=""></textarea>
 
         <button id="uploadBtn" class="btn" type="button">Upload Document</button>
         <p id="uploadMsg" class="msg"></p>
@@ -130,7 +130,7 @@
         </div>
 
         <div class="row">
-          <input id="listSearch" placeholder="Search current view..." class="doc-search" />
+          <input id="listSearch" placeholder="Search current view" class="doc-search" />
           {% if role == "ADMIN" %}
           <button id="trashSelectAllBtn" class="btn ghost mini" type="button" style="display:none;">Select All</button>
           <button id="trashClearAllBtn" class="btn ghost mini" type="button" style="display:none;">Clear</button>
