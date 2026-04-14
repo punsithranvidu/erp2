@@ -7,7 +7,7 @@ import shutil
 
 from werkzeug.utils import secure_filename
 
-from .db_compat import sqlite3
+from .db import connect, placeholders
 
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -24,12 +24,7 @@ DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 # ======================
 def db():
     database_url = current_app.config["DATABASE_URL"]
-    conn = sqlite3.connect(database_url)
-    try:
-        conn.row_factory = sqlite3.Row
-    except Exception:
-        pass
-    return conn
+    return connect(database_url)
 
 
 def now_iso():
@@ -144,7 +139,7 @@ def get_saved_oauth_token_from_db():
     row = conn.execute("""
         SELECT token_json
         FROM google_oauth_tokens
-        WHERE service_name=?
+        WHERE service_name=%s
         LIMIT 1
     """, ("google_drive",)).fetchone()
     conn.close()
@@ -156,20 +151,20 @@ def save_oauth_token_to_db(token_json: str, updated_by: str):
     existing = conn.execute("""
         SELECT id
         FROM google_oauth_tokens
-        WHERE service_name=?
+        WHERE service_name=%s
         LIMIT 1
     """, ("google_drive",)).fetchone()
 
     if existing:
         conn.execute("""
             UPDATE google_oauth_tokens
-            SET token_json=?, updated_at=?, updated_by=?
-            WHERE service_name=?
+            SET token_json=%s, updated_at=%s, updated_by=%s
+            WHERE service_name=%s
         """, (token_json, now_iso(), updated_by, "google_drive"))
     else:
         conn.execute("""
             INSERT INTO google_oauth_tokens (service_name, token_json, updated_at, updated_by)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """, ("google_drive", token_json, now_iso(), updated_by))
 
     conn.commit()
@@ -270,7 +265,7 @@ def get_conversation_google_emails(conn, conversation_id: int):
         SELECT DISTINCT LOWER(TRIM(u.google_email)) AS google_email
         FROM message_conversation_members m
         JOIN users u ON u.id = m.user_id
-        WHERE m.conversation_id=?
+        WHERE m.conversation_id=%s
           AND m.active=1
           AND u.active=1
           AND u.google_email IS NOT NULL
@@ -430,7 +425,7 @@ def message_can_access_conversation(conn, conversation_id: int, user_id: int) ->
     row = conn.execute("""
         SELECT 1
         FROM message_conversation_members
-        WHERE conversation_id=? AND user_id=? AND active=1
+        WHERE conversation_id=%s AND user_id=%s AND active=1
         LIMIT 1
     """, (conversation_id, user_id)).fetchone()
     return row is not None
@@ -443,9 +438,9 @@ def ensure_direct_conversation(conn, user_a: int, user_b: int):
         SELECT mc.id
         FROM message_conversations mc
         JOIN message_conversation_members m1
-          ON m1.conversation_id = mc.id AND m1.user_id=? AND m1.active=1
+          ON m1.conversation_id = mc.id AND m1.user_id=%s AND m1.active=1
         JOIN message_conversation_members m2
-          ON m2.conversation_id = mc.id AND m2.user_id=? AND m2.active=1
+          ON m2.conversation_id = mc.id AND m2.user_id=%s AND m2.active=1
         WHERE mc.conversation_type='DIRECT' AND mc.active=1
         GROUP BY mc.id
         ORDER BY mc.id ASC
@@ -457,18 +452,19 @@ def ensure_direct_conversation(conn, user_a: int, user_b: int):
 
     now = now_iso()
 
-    conn.execute("""
+    row = conn.execute("""
         INSERT INTO message_conversations (conversation_type, title, created_at, created_by, active)
-        VALUES ('DIRECT', '', ?, ?, 1)
-    """, (now, session["user"]))
+        VALUES ('DIRECT', '', %s, %s, 1)
+        RETURNING id
+    """, (now, session["user"])).fetchone()
 
-    conversation_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+    conversation_id = row["id"]
 
     for uid in (low, high):
         conn.execute("""
             INSERT INTO message_conversation_members (
                 conversation_id, user_id, joined_at, active, last_read_message_id
-            ) VALUES (?,?,?,?,NULL)
+            ) VALUES (%s,%s,%s,%s,NULL)
         """, (conversation_id, uid, now, 1))
 
     return int(conversation_id)
@@ -481,7 +477,7 @@ def get_conversation_last_message(conn, conversation_id: int):
                u.username AS sender_username, u.full_name AS sender_full_name
         FROM message_messages mm
         LEFT JOIN users u ON u.id = mm.sender_user_id
-        WHERE mm.conversation_id=? AND mm.deleted_at IS NULL
+        WHERE mm.conversation_id=%s AND mm.deleted_at IS NULL
         ORDER BY mm.id DESC
         LIMIT 1
     """, (conversation_id,)).fetchone()
@@ -491,7 +487,7 @@ def get_conversation_unread_count(conn, conversation_id: int, user_id: int) -> i
     member = conn.execute("""
         SELECT last_read_message_id
         FROM message_conversation_members
-        WHERE conversation_id=? AND user_id=? AND active=1
+        WHERE conversation_id=%s AND user_id=%s AND active=1
         LIMIT 1
     """, (conversation_id, user_id)).fetchone()
 
@@ -500,7 +496,7 @@ def get_conversation_unread_count(conn, conversation_id: int, user_id: int) -> i
     row = conn.execute("""
         SELECT COUNT(*) AS c
         FROM message_messages
-        WHERE conversation_id=? AND deleted_at IS NULL AND id>? AND sender_user_id<>?
+        WHERE conversation_id=%s AND deleted_at IS NULL AND id>%s AND sender_user_id<>%s
     """, (conversation_id, last_read, user_id)).fetchone()
 
     return int(row["c"] or 0)
@@ -511,9 +507,9 @@ def get_direct_other_user(conn, conversation_id: int, current_user_id: int):
         SELECT u.id, u.username, u.full_name, u.role, u.google_email
         FROM message_conversation_members m
         JOIN users u ON u.id = m.user_id
-        WHERE m.conversation_id=?
+        WHERE m.conversation_id=%s
           AND m.active=1
-          AND u.id<>?
+          AND u.id<>%s
         LIMIT 1
     """, (conversation_id, current_user_id)).fetchone()
 
@@ -562,7 +558,7 @@ def serialize_conversation_detail(conn, conversation_row, user_id: int):
         SELECT u.id, u.username, u.full_name, u.role, u.google_email
         FROM message_conversation_members m
         JOIN users u ON u.id = m.user_id
-        WHERE m.conversation_id=? AND m.active=1
+        WHERE m.conversation_id=%s AND m.active=1
         ORDER BY u.role DESC, COALESCE(u.full_name, u.username) ASC
     """, (convo["id"],)).fetchall()
 
@@ -575,7 +571,7 @@ def mark_conversation_read(conn, conversation_id: int, user_id: int):
     last_msg = conn.execute("""
         SELECT id
         FROM message_messages
-        WHERE conversation_id=? AND deleted_at IS NULL
+        WHERE conversation_id=%s AND deleted_at IS NULL
         ORDER BY id DESC
         LIMIT 1
     """, (conversation_id,)).fetchone()
@@ -584,8 +580,8 @@ def mark_conversation_read(conn, conversation_id: int, user_id: int):
 
     conn.execute("""
         UPDATE message_conversation_members
-        SET last_read_message_id=?
-        WHERE conversation_id=? AND user_id=?
+        SET last_read_message_id=%s
+        WHERE conversation_id=%s AND user_id=%s
     """, (last_id, conversation_id, user_id))
 
 
@@ -640,13 +636,13 @@ def api_messages_unread_count():
         JOIN message_conversation_members m
           ON m.conversation_id = mc.id
         WHERE mc.active=1
-          AND m.user_id=?
+          AND m.user_id=%s
           AND m.active=1
           AND NOT EXISTS (
               SELECT 1
               FROM message_conversation_deleted d
               WHERE d.conversation_id = mc.id
-                AND d.user_id = ?
+                AND d.user_id = %s
                 AND COALESCE(d.active,1)=1
           )
     """, (uid, uid)).fetchall()
@@ -672,13 +668,13 @@ def api_messages_conversations():
         JOIN message_conversation_members m
           ON m.conversation_id = mc.id
         WHERE mc.active=1
-          AND m.user_id=?
+          AND m.user_id=%s
           AND m.active=1
           AND NOT EXISTS (
               SELECT 1
               FROM message_conversation_deleted d
               WHERE d.conversation_id = mc.id
-                AND d.user_id = ?
+                AND d.user_id = %s
                 AND COALESCE(d.active,1)=1
           )
         ORDER BY mc.id DESC
@@ -711,7 +707,7 @@ def api_messages_create_direct():
     target = conn.execute("""
         SELECT id, active, username, full_name
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (target_user_id,)).fetchone()
 
@@ -724,7 +720,7 @@ def api_messages_create_direct():
     conn.execute("""
         UPDATE message_conversation_deleted
         SET active=0
-        WHERE conversation_id=? AND user_id=?
+        WHERE conversation_id=%s AND user_id=%s
     """, (conversation_id, uid))
 
     conn.commit()
@@ -732,7 +728,7 @@ def api_messages_create_direct():
     row = conn.execute("""
         SELECT *
         FROM message_conversations
-        WHERE id=?
+        WHERE id=%s
     """, (conversation_id,)).fetchone()
 
     payload = serialize_conversation_detail(conn, row, uid)
@@ -769,12 +765,12 @@ def api_messages_create_group():
         conn.close()
         return jsonify({"ok": False, "error": "No members selected"}), 400
 
-    placeholders = ",".join("?" for _ in clean_ids)
+    in_clause = placeholders(len(clean_ids))
     existing = conn.execute(f"""
         SELECT id
         FROM users
         WHERE active=1
-          AND id IN ({placeholders})
+          AND id IN ({in_clause})
     """, tuple(clean_ids)).fetchall()
 
     existing_ids = {int(r["id"]) for r in existing}
@@ -785,17 +781,18 @@ def api_messages_create_group():
 
     now = now_iso()
 
-    conn.execute("""
+    row = conn.execute("""
         INSERT INTO message_conversations (
             conversation_type,
             title,
             created_at,
             created_by,
             active
-        ) VALUES ('GROUP', ?, ?, ?, 1)
-    """, (title, now, session["user"]))
+        ) VALUES ('GROUP', %s, %s, %s, 1)
+        RETURNING id
+    """, (title, now, session["user"])).fetchone()
 
-    cid = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+    cid = row["id"]
 
     for member_uid in sorted(existing_ids):
         conn.execute("""
@@ -805,7 +802,7 @@ def api_messages_create_group():
                 joined_at,
                 active,
                 last_read_message_id
-            ) VALUES (?,?,?,?,NULL)
+            ) VALUES (%s,%s,%s,%s,NULL)
         """, (cid, member_uid, now, 1))
 
     conn.commit()
@@ -813,7 +810,7 @@ def api_messages_create_group():
     row = conn.execute("""
         SELECT *
         FROM message_conversations
-        WHERE id=?
+        WHERE id=%s
     """, (cid,)).fetchone()
 
     payload = serialize_conversation_detail(conn, row, int(session.get("uid")))
@@ -832,7 +829,7 @@ def api_messages_group_add_members(conversation_id):
     convo = conn.execute("""
         SELECT *
         FROM message_conversations
-        WHERE id=? AND active=1
+        WHERE id=%s AND active=1
         LIMIT 1
     """, (conversation_id,)).fetchone()
 
@@ -862,12 +859,12 @@ def api_messages_group_add_members(conversation_id):
         conn.close()
         return jsonify({"ok": False, "error": "No members selected"}), 400
 
-    placeholders = ",".join("?" for _ in clean_ids)
+    in_clause = placeholders(len(clean_ids))
     rows = conn.execute(f"""
         SELECT id
         FROM users
         WHERE active=1
-          AND id IN ({placeholders})
+          AND id IN ({in_clause})
     """, tuple(clean_ids)).fetchall()
 
     valid_ids = {int(r["id"]) for r in rows}
@@ -877,7 +874,7 @@ def api_messages_group_add_members(conversation_id):
         exists = conn.execute("""
             SELECT id
             FROM message_conversation_members
-            WHERE conversation_id=? AND user_id=?
+            WHERE conversation_id=%s AND user_id=%s
             LIMIT 1
         """, (conversation_id, member_uid)).fetchone()
 
@@ -885,23 +882,23 @@ def api_messages_group_add_members(conversation_id):
             conn.execute("""
                 UPDATE message_conversation_members
                 SET active=1
-                WHERE conversation_id=? AND user_id=?
+                WHERE conversation_id=%s AND user_id=%s
             """, (conversation_id, member_uid))
         else:
             conn.execute("""
                 INSERT INTO message_conversation_members (
                     conversation_id,
                     user_id,
-                    joined_at,
-                    active,
-                    last_read_message_id
-                ) VALUES (?,?,?,?,NULL)
+                joined_at,
+                active,
+                last_read_message_id
+                ) VALUES (%s,%s,%s,%s,NULL)
             """, (conversation_id, member_uid, now, 1))
 
         conn.execute("""
             UPDATE message_conversation_deleted
             SET active=0
-            WHERE conversation_id=? AND user_id=?
+            WHERE conversation_id=%s AND user_id=%s
         """, (conversation_id, member_uid))
 
     # refresh Drive folder sharing if folder already exists
@@ -930,7 +927,7 @@ def api_messages_conversation_get(conversation_id):
     row = conn.execute("""
         SELECT *
         FROM message_conversations
-        WHERE id=?
+        WHERE id=%s
           AND active=1
     """, (conversation_id,)).fetchone()
 
@@ -958,7 +955,7 @@ def api_messages_conversation_members(conversation_id):
         SELECT u.id, u.username, u.full_name, u.role, u.google_email
         FROM message_conversation_members m
         JOIN users u ON u.id = m.user_id
-        WHERE m.conversation_id=?
+        WHERE m.conversation_id=%s
           AND m.active=1
         ORDER BY COALESCE(u.full_name, u.username) ASC
     """, (conversation_id,)).fetchall()
@@ -986,7 +983,7 @@ def api_messages_list(conversation_id):
         FROM message_messages mm
         JOIN users u
           ON u.id = mm.sender_user_id
-        WHERE mm.conversation_id=?
+        WHERE mm.conversation_id=%s
         ORDER BY mm.id ASC
         LIMIT 500
     """, (conversation_id,)).fetchall()
@@ -1069,7 +1066,7 @@ def api_messages_send(conversation_id):
 
     now = now_iso()
 
-    conn.execute("""
+    row = conn.execute("""
         INSERT INTO message_messages (
             conversation_id,
             sender_user_id,
@@ -1080,7 +1077,8 @@ def api_messages_send(conversation_id):
             attachment_mime,
             attachment_drive_id,
             created_at
-        ) VALUES (?,?,?,?,?,?,?,?,?)
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        RETURNING id
     """, (
         conversation_id,
         uid,
@@ -1091,14 +1089,14 @@ def api_messages_send(conversation_id):
         attachment_mime,
         attachment_drive_id,
         now
-    ))
+    )).fetchone()
 
-    message_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+    message_id = row["id"]
 
     conn.execute("""
         UPDATE message_conversation_members
-        SET last_read_message_id=?
-        WHERE conversation_id=? AND user_id=?
+        SET last_read_message_id=%s
+        WHERE conversation_id=%s AND user_id=%s
     """, (message_id, conversation_id, uid))
 
     conn.commit()
@@ -1111,7 +1109,7 @@ def api_messages_send(conversation_id):
         FROM message_messages mm
         JOIN users u
           ON u.id = mm.sender_user_id
-        WHERE mm.id=?
+        WHERE mm.id=%s
     """, (message_id,)).fetchone()
 
     payload = enrich_message_row(row)
@@ -1131,7 +1129,7 @@ def api_messages_attachment_download(message_id):
     row = conn.execute("""
         SELECT mm.id, mm.conversation_id, mm.attachment_name, mm.attachment_mime, mm.attachment_drive_id
         FROM message_messages mm
-        WHERE mm.id=?
+        WHERE mm.id=%s
         LIMIT 1
     """, (message_id,)).fetchone()
 
@@ -1173,7 +1171,7 @@ def api_messages_delete(message_id):
     row = conn.execute("""
         SELECT *
         FROM message_messages
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (message_id,)).fetchone()
 
@@ -1200,14 +1198,14 @@ def api_messages_delete(message_id):
 
     conn.execute("""
         UPDATE message_messages
-        SET deleted_at=?,
-            deleted_by=?,
+        SET deleted_at=%s,
+            deleted_by=%s,
             message_text='This message was deleted',
             attachment_name=NULL,
             attachment_url=NULL,
             attachment_mime=NULL,
             attachment_drive_id=NULL
-        WHERE id=?
+        WHERE id=%s
     """, (now_iso(), session["user"], message_id))
 
     conn.commit()
@@ -1229,15 +1227,15 @@ def api_messages_delete_conversation(conversation_id):
     exists = conn.execute("""
         SELECT id
         FROM message_conversation_deleted
-        WHERE conversation_id=? AND user_id=?
+        WHERE conversation_id=%s AND user_id=%s
         LIMIT 1
     """, (conversation_id, uid)).fetchone()
 
     if exists:
         conn.execute("""
             UPDATE message_conversation_deleted
-            SET deleted_at=?, deleted_by=?, active=1
-            WHERE conversation_id=? AND user_id=?
+            SET deleted_at=%s, deleted_by=%s, active=1
+            WHERE conversation_id=%s AND user_id=%s
         """, (now_iso(), session["user"], conversation_id, uid))
     else:
         conn.execute("""
@@ -1247,7 +1245,7 @@ def api_messages_delete_conversation(conversation_id):
                 deleted_at,
                 deleted_by,
                 active
-            ) VALUES (?,?,?,?,1)
+            ) VALUES (%s,%s,%s,%s,1)
         """, (conversation_id, uid, now_iso(), session["user"]))
 
     conn.commit()
@@ -1266,7 +1264,7 @@ def api_messages_trash():
         SELECT mc.*, d.deleted_at AS user_deleted_at
         FROM message_conversation_deleted d
         JOIN message_conversations mc ON mc.id = d.conversation_id
-        WHERE d.user_id=?
+        WHERE d.user_id=%s
           AND COALESCE(d.active,1)=1
         ORDER BY d.deleted_at DESC, mc.id DESC
     """, (uid,)).fetchall()
@@ -1291,7 +1289,7 @@ def api_messages_restore_conversation(conversation_id):
     conn.execute("""
         UPDATE message_conversation_deleted
         SET active=0
-        WHERE conversation_id=? AND user_id=?
+        WHERE conversation_id=%s AND user_id=%s
     """, (conversation_id, uid))
 
     conn.commit()
@@ -1312,7 +1310,7 @@ def api_messages_permanent_delete_conversation(conversation_id):
     rows = conn.execute("""
         SELECT attachment_drive_id
         FROM message_messages
-        WHERE conversation_id=?
+        WHERE conversation_id=%s
           AND attachment_drive_id IS NOT NULL
     """, (conversation_id,)).fetchall()
 
@@ -1320,10 +1318,10 @@ def api_messages_permanent_delete_conversation(conversation_id):
         if r["attachment_drive_id"]:
             delete_drive_file_safe(r["attachment_drive_id"])
 
-    conn.execute("DELETE FROM message_conversation_deleted WHERE conversation_id=?", (conversation_id,))
-    conn.execute("DELETE FROM message_conversation_members WHERE conversation_id=?", (conversation_id,))
-    conn.execute("DELETE FROM message_messages WHERE conversation_id=?", (conversation_id,))
-    conn.execute("DELETE FROM message_conversations WHERE id=?", (conversation_id,))
+    conn.execute("DELETE FROM message_conversation_deleted WHERE conversation_id=%s", (conversation_id,))
+    conn.execute("DELETE FROM message_conversation_members WHERE conversation_id=%s", (conversation_id,))
+    conn.execute("DELETE FROM message_messages WHERE conversation_id=%s", (conversation_id,))
+    conn.execute("DELETE FROM message_conversations WHERE id=%s", (conversation_id,))
     conn.commit()
     conn.close()
 
@@ -1340,7 +1338,7 @@ def api_messages_leave_group(conversation_id):
     convo = conn.execute("""
         SELECT *
         FROM message_conversations
-        WHERE id=? AND active=1
+        WHERE id=%s AND active=1
         LIMIT 1
     """, (conversation_id,)).fetchone()
 
@@ -1355,21 +1353,21 @@ def api_messages_leave_group(conversation_id):
     conn.execute("""
         UPDATE message_conversation_members
         SET active=0
-        WHERE conversation_id=? AND user_id=?
+        WHERE conversation_id=%s AND user_id=%s
     """, (conversation_id, uid))
 
     exists = conn.execute("""
         SELECT id
         FROM message_conversation_deleted
-        WHERE conversation_id=? AND user_id=?
+        WHERE conversation_id=%s AND user_id=%s
         LIMIT 1
     """, (conversation_id, uid)).fetchone()
 
     if exists:
         conn.execute("""
             UPDATE message_conversation_deleted
-            SET deleted_at=?, deleted_by=?, active=1
-            WHERE conversation_id=? AND user_id=?
+            SET deleted_at=%s, deleted_by=%s, active=1
+            WHERE conversation_id=%s AND user_id=%s
         """, (now_iso(), session["user"], conversation_id, uid))
     else:
         conn.execute("""
@@ -1379,7 +1377,7 @@ def api_messages_leave_group(conversation_id):
                 deleted_at,
                 deleted_by,
                 active
-            ) VALUES (?,?,?,?,1)
+            ) VALUES (%s,%s,%s,%s,1)
         """, (conversation_id, uid, now_iso(), session["user"]))
 
     conn.commit()

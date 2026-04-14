@@ -1,15 +1,13 @@
 from flask import Blueprint, request, jsonify, session, current_app
 from datetime import datetime
 import pytz
-from .db_compat import sqlite3
+from .db import connect
 
 invoices_bp = Blueprint("invoices", __name__, url_prefix="/api/invoices")
 
 
 def db():
-    conn = sqlite3.connect(current_app.config["DATABASE_URL"])
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(current_app.config["DATABASE_URL"])
 
 
 def now_local():
@@ -27,7 +25,7 @@ def get_next_number(doc_type):
     c.execute("""
         SELECT number
         FROM document_numbers
-        WHERE doc_type=? AND year=? AND status='RESTORED'
+        WHERE doc_type=%s AND year=%s AND status='RESTORED'
         ORDER BY number ASC
         LIMIT 1
     """, (doc_type, year))
@@ -41,7 +39,7 @@ def get_next_number(doc_type):
     c.execute("""
         SELECT MAX(number) AS max_num
         FROM document_numbers
-        WHERE doc_type=? AND year=?
+        WHERE doc_type=%s AND year=%s
     """, (doc_type, year))
 
     max_row = c.fetchone()
@@ -86,7 +84,7 @@ def reserve():
     c.execute("""
         SELECT id
         FROM document_numbers
-        WHERE doc_type=? AND year=? AND number=? AND status='RESTORED'
+        WHERE doc_type=%s AND year=%s AND number=%s AND status='RESTORED'
     """, (doc_type, year, num))
 
     restored = c.fetchone()
@@ -95,10 +93,10 @@ def reserve():
         c.execute("""
             UPDATE document_numbers
             SET status='RESERVED',
-                reserved_by=?,
-                reserved_at=?,
+                reserved_by=%s,
+                reserved_at=%s,
                 restored_at=NULL
-            WHERE id=?
+            WHERE id=%s
         """, (
             session.get("user"),
             now_local().isoformat(),
@@ -108,7 +106,7 @@ def reserve():
         c.execute("""
             INSERT INTO document_numbers
             (doc_type, year, month, number, status, reserved_by, reserved_at)
-            VALUES (?, ?, ?, ?, 'RESERVED', ?, ?)
+            VALUES (%s, %s, %s, %s, 'RESERVED', %s, %s)
         """, (
             doc_type,
             year,
@@ -151,8 +149,8 @@ def restore():
     c.execute("""
         UPDATE document_numbers
         SET status='RESTORED',
-            restored_at=?
-        WHERE doc_type=? AND year=? AND month=? AND number=?
+            restored_at=%s
+        WHERE doc_type=%s AND year=%s AND month=%s AND number=%s
     """, (
         now_local().isoformat(),
         doc_type,
@@ -195,8 +193,8 @@ def use():
     c.execute("""
         UPDATE document_numbers
         SET status='USED',
-            used_at=?
-        WHERE doc_type=? AND year=? AND month=? AND number=?
+            used_at=%s
+        WHERE doc_type=%s AND year=%s AND month=%s AND number=%s
     """, (
         now_local().isoformat(),
         doc_type,
@@ -228,7 +226,7 @@ def search():
     c.execute("""
         SELECT doc_type, year, month, number, status
         FROM document_numbers
-        WHERE doc_type || '-' || year::text || '/' || LPAD(month::text, 2, '0') || '-' || LPAD(number::text, 3, '0') = ?
+        WHERE doc_type || '-' || year::text || '/' || LPAD(month::text, 2, '0') || '-' || LPAD(number::text, 3, '0') = %s
         LIMIT 1
     """, (q,))
 

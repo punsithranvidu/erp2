@@ -3,7 +3,7 @@ from functools import wraps
 from io import StringIO
 import csv
 
-from .db_compat import sqlite3
+from .db import connect
 
 cash_advances_bp = Blueprint("cash_advances", __name__)
 
@@ -13,9 +13,7 @@ cash_advances_bp = Blueprint("cash_advances", __name__)
 # ======================
 def db():
     database_url = current_app.config["DATABASE_URL"]
-    conn = sqlite3.connect(database_url)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(database_url)
 
 
 def now_iso():
@@ -86,13 +84,13 @@ def _advance_money_total(conn, adv_id: int) -> float:
     base = conn.execute("""
         SELECT COALESCE(amount_given,0) AS a
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
     """, (adv_id,)).fetchone()["a"]
 
     top = conn.execute("""
         SELECT COALESCE(SUM(amount),0) AS s
         FROM cash_advance_topups
-        WHERE advance_id=?
+        WHERE advance_id=%s
     """, (adv_id,)).fetchone()["s"]
 
     return float(base or 0) + float(top or 0)
@@ -102,7 +100,7 @@ def _advance_spent_total(conn, adv_id: int) -> float:
     spent = conn.execute("""
         SELECT COALESCE(SUM(amount),0) AS s
         FROM cash_advance_expenses
-        WHERE advance_id=?
+        WHERE advance_id=%s
     """, (adv_id,)).fetchone()["s"]
 
     return float(spent or 0)
@@ -114,19 +112,19 @@ def _advance_row_with_balance(conn, adv_row):
     topups = conn.execute("""
         SELECT COALESCE(SUM(amount),0) AS s
         FROM cash_advance_topups
-        WHERE advance_id=?
+        WHERE advance_id=%s
     """, (adv_id,)).fetchone()["s"]
 
     spent_company = conn.execute("""
         SELECT COALESCE(SUM(amount),0) AS s
         FROM cash_advance_expenses
-        WHERE advance_id=? AND COALESCE(paid_by,'COMPANY_ADVANCE')='COMPANY_ADVANCE'
+        WHERE advance_id=%s AND COALESCE(paid_by,'COMPANY_ADVANCE')='COMPANY_ADVANCE'
     """, (adv_id,)).fetchone()["s"]
 
     spent_personal = conn.execute("""
         SELECT COALESCE(SUM(amount),0) AS s
         FROM cash_advance_expenses
-        WHERE advance_id=? AND COALESCE(paid_by,'COMPANY_ADVANCE')='EMPLOYEE_PERSONAL'
+        WHERE advance_id=%s AND COALESCE(paid_by,'COMPANY_ADVANCE')='EMPLOYEE_PERSONAL'
     """, (adv_id,)).fetchone()["s"]
 
     total_given = float(adv_row["amount_given"]) + float(topups)
@@ -167,7 +165,7 @@ def api_advances_list():
             SELECT ca.*, ba.name AS bank_name
             FROM cash_advances ca
             LEFT JOIN bank_accounts ba ON ba.id = ca.bank_id
-            WHERE ca.employee_username=?
+            WHERE ca.employee_username=%s
             ORDER BY ca.id DESC
             LIMIT 1000
         """, (user,)).fetchall()
@@ -199,7 +197,7 @@ def api_advances_create():
     emp = conn.execute("""
         SELECT username, role
         FROM users
-        WHERE username=? AND active=1
+        WHERE username=%s AND active=1
         LIMIT 1
     """, (employee_username,)).fetchone()
 
@@ -222,12 +220,13 @@ def api_advances_create():
     if bank_id is None or str(bank_id).strip() == "":
         bank_id = get_default_bank_id()
 
-    conn.execute("""
+    new_row = conn.execute("""
         INSERT INTO cash_advances (
             employee_username, bank_id, currency, amount_given,
             purpose, given_date, proof_link,
             created_at, created_by, closed, closed_at, closed_by
-        ) VALUES (?,?,?,?,?,?,?,?,?,0,NULL,NULL)
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0,NULL,NULL)
+        RETURNING id
     """, (
         employee_username,
         int(bank_id) if bank_id else None,
@@ -238,16 +237,15 @@ def api_advances_create():
         proof_link,
         now_iso(),
         session["user"]
-    ))
+    )).fetchone()
+    new_id = new_row["id"]
     conn.commit()
-
-    new_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
 
     row = conn.execute("""
         SELECT ca.*, ba.name AS bank_name
         FROM cash_advances ca
         LEFT JOIN bank_accounts ba ON ba.id=ca.bank_id
-        WHERE ca.id=?
+        WHERE ca.id=%s
     """, (new_id,)).fetchone()
 
     out = _advance_row_with_balance(conn, row)
@@ -265,7 +263,7 @@ def api_advances_close(aid):
     row = conn.execute("""
         SELECT id, closed
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
     """, (aid,)).fetchone()
 
     if not row:
@@ -278,8 +276,8 @@ def api_advances_close(aid):
 
     conn.execute("""
         UPDATE cash_advances
-        SET closed=1, closed_at=?, closed_by=?
-        WHERE id=?
+        SET closed=1, closed_at=%s, closed_by=%s
+        WHERE id=%s
     """, (now_iso(), session["user"], aid))
     conn.commit()
     conn.close()
@@ -298,7 +296,7 @@ def api_advances_reopen(aid):
     row = conn.execute("""
         SELECT id
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
     """, (aid,)).fetchone()
 
     if not row:
@@ -308,7 +306,7 @@ def api_advances_reopen(aid):
     conn.execute("""
         UPDATE cash_advances
         SET closed=0, closed_at=NULL, closed_by=NULL
-        WHERE id=?
+        WHERE id=%s
     """, (aid,))
     conn.commit()
     conn.close()
@@ -328,7 +326,7 @@ def api_topups_list(aid):
     adv = conn.execute("""
         SELECT *
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
     """, (aid,)).fetchone()
 
     if not adv:
@@ -342,7 +340,7 @@ def api_topups_list(aid):
     rows = conn.execute("""
         SELECT *
         FROM cash_advance_topups
-        WHERE advance_id=?
+        WHERE advance_id=%s
         ORDER BY id DESC
         LIMIT 2000
     """, (aid,)).fetchall()
@@ -378,17 +376,18 @@ def api_topups_add(aid):
     adv = conn.execute("""
         SELECT id
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
     """, (aid,)).fetchone()
 
     if not adv:
         conn.close()
         return jsonify({"ok": False, "error": "Advance not found"}), 404
 
-    conn.execute("""
+    new_row = conn.execute("""
         INSERT INTO cash_advance_topups
         (advance_id, amount, topup_date, proof_link, ref_type, ref_id, note, created_at, created_by)
-        VALUES (?,?,?,?,?,?,?,?,?)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        RETURNING id
     """, (
         aid,
         float(amt),
@@ -399,14 +398,13 @@ def api_topups_add(aid):
         note,
         now_iso(),
         session["user"]
-    ))
+    )).fetchone()
+    new_id = new_row["id"]
     conn.commit()
-
-    new_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
     row = conn.execute("""
         SELECT *
         FROM cash_advance_topups
-        WHERE id=?
+        WHERE id=%s
     """, (new_id,)).fetchone()
 
     conn.close()
@@ -425,7 +423,7 @@ def api_topups_delete(tid):
     row = conn.execute("""
         SELECT id
         FROM cash_advance_topups
-        WHERE id=?
+        WHERE id=%s
     """, (tid,)).fetchone()
 
     if not row:
@@ -434,7 +432,7 @@ def api_topups_delete(tid):
 
     conn.execute("""
         DELETE FROM cash_advance_topups
-        WHERE id=?
+        WHERE id=%s
     """, (tid,))
     conn.commit()
     conn.close()
@@ -454,7 +452,7 @@ def api_advances_expenses_list(aid):
     adv = conn.execute("""
         SELECT *
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
     """, (aid,)).fetchone()
 
     if not adv:
@@ -468,7 +466,7 @@ def api_advances_expenses_list(aid):
     rows = conn.execute("""
         SELECT *
         FROM cash_advance_expenses
-        WHERE advance_id=?
+        WHERE advance_id=%s
         ORDER BY id DESC
         LIMIT 2000
     """, (aid,)).fetchall()
@@ -508,7 +506,7 @@ def api_advances_expenses_add(aid):
     adv = conn.execute("""
         SELECT *
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
     """, (aid,)).fetchone()
 
     if not adv:
@@ -527,13 +525,13 @@ def api_advances_expenses_add(aid):
         topups = conn.execute("""
             SELECT COALESCE(SUM(amount),0) AS s
             FROM cash_advance_topups
-            WHERE advance_id=?
+            WHERE advance_id=%s
         """, (aid,)).fetchone()["s"]
 
         spent_company = conn.execute("""
             SELECT COALESCE(SUM(amount),0) AS s
             FROM cash_advance_expenses
-            WHERE advance_id=? AND COALESCE(paid_by,'COMPANY_ADVANCE')='COMPANY_ADVANCE'
+            WHERE advance_id=%s AND COALESCE(paid_by,'COMPANY_ADVANCE')='COMPANY_ADVANCE'
         """, (aid,)).fetchone()["s"]
 
         remaining_company = (float(adv["amount_given"]) + float(topups)) - float(spent_company)
@@ -545,11 +543,12 @@ def api_advances_expenses_add(aid):
                 "error": f"Not enough COMPANY balance. Remaining: {round(float(remaining_company), 2)}"
             }), 400
 
-    conn.execute("""
+    new_row = conn.execute("""
         INSERT INTO cash_advance_expenses (
             advance_id, category, description, paid_by, amount, proof_link, spent_date,
             created_at, created_by
-        ) VALUES (?,?,?,?,?,?,?,?,?)
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        RETURNING id
     """, (
         aid,
         category,
@@ -560,14 +559,13 @@ def api_advances_expenses_add(aid):
         spent_date,
         now_iso(),
         session["user"]
-    ))
+    )).fetchone()
+    new_id = new_row["id"]
     conn.commit()
-
-    new_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
     row = conn.execute("""
         SELECT *
         FROM cash_advance_expenses
-        WHERE id=?
+        WHERE id=%s
     """, (new_id,)).fetchone()
 
     conn.close()
@@ -605,7 +603,7 @@ def api_expense_update(eid):
     exp = conn.execute("""
         SELECT id, advance_id
         FROM cash_advance_expenses
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (eid,)).fetchone()
 
@@ -616,7 +614,7 @@ def api_expense_update(eid):
     adv = conn.execute("""
         SELECT *
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (exp["advance_id"],)).fetchone()
 
@@ -636,13 +634,13 @@ def api_expense_update(eid):
         topups = conn.execute("""
             SELECT COALESCE(SUM(amount),0) AS s
             FROM cash_advance_topups
-            WHERE advance_id=?
+            WHERE advance_id=%s
         """, (exp["advance_id"],)).fetchone()["s"]
 
         spent_company_other = conn.execute("""
             SELECT COALESCE(SUM(amount),0) AS s
             FROM cash_advance_expenses
-            WHERE advance_id=? AND id<>? AND COALESCE(paid_by,'COMPANY_ADVANCE')='COMPANY_ADVANCE'
+            WHERE advance_id=%s AND id<>%s AND COALESCE(paid_by,'COMPANY_ADVANCE')='COMPANY_ADVANCE'
         """, (exp["advance_id"], eid)).fetchone()["s"]
 
         remaining_company = (float(adv["amount_given"]) + float(topups)) - float(spent_company_other)
@@ -656,8 +654,8 @@ def api_expense_update(eid):
 
     conn.execute("""
         UPDATE cash_advance_expenses
-        SET category=?, description=?, paid_by=?, amount=?, spent_date=?, proof_link=?
-        WHERE id=?
+        SET category=%s, description=%s, paid_by=%s, amount=%s, spent_date=%s, proof_link=%s
+        WHERE id=%s
     """, (category, description, paid_by, float(amt), spent_date, proof_link, eid))
     conn.commit()
     conn.close()
@@ -674,7 +672,7 @@ def api_expense_delete(eid):
     exp = conn.execute("""
         SELECT id, advance_id
         FROM cash_advance_expenses
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (eid,)).fetchone()
 
@@ -685,7 +683,7 @@ def api_expense_delete(eid):
     adv = conn.execute("""
         SELECT *
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (exp["advance_id"],)).fetchone()
 
@@ -703,7 +701,7 @@ def api_expense_delete(eid):
 
     conn.execute("""
         DELETE FROM cash_advance_expenses
-        WHERE id=?
+        WHERE id=%s
     """, (eid,))
     conn.commit()
     conn.close()
@@ -748,7 +746,7 @@ def api_advances_update(aid):
     adv = conn.execute("""
         SELECT id
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (aid,)).fetchone()
 
@@ -759,7 +757,7 @@ def api_advances_update(aid):
     emp = conn.execute("""
         SELECT username
         FROM users
-        WHERE username=? AND active=1
+        WHERE username=%s AND active=1
         LIMIT 1
     """, (employee_username,)).fetchone()
 
@@ -772,9 +770,9 @@ def api_advances_update(aid):
 
     conn.execute("""
         UPDATE cash_advances
-        SET employee_username=?, bank_id=?, currency=?, amount_given=?,
-            purpose=?, given_date=?, proof_link=?
-        WHERE id=?
+        SET employee_username=%s, bank_id=%s, currency=%s, amount_given=%s,
+            purpose=%s, given_date=%s, proof_link=%s
+        WHERE id=%s
     """, (
         employee_username,
         int(bank_id) if bank_id else None,
@@ -803,7 +801,7 @@ def api_advances_delete(aid):
     row = conn.execute("""
         SELECT id
         FROM cash_advances
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (aid,)).fetchone()
 
@@ -811,9 +809,9 @@ def api_advances_delete(aid):
         conn.close()
         return jsonify({"ok": False, "error": "Advance not found"}), 404
 
-    conn.execute("DELETE FROM cash_advance_expenses WHERE advance_id=?", (aid,))
-    conn.execute("DELETE FROM cash_advance_topups WHERE advance_id=?", (aid,))
-    conn.execute("DELETE FROM cash_advances WHERE id=?", (aid,))
+    conn.execute("DELETE FROM cash_advance_expenses WHERE advance_id=%s", (aid,))
+    conn.execute("DELETE FROM cash_advance_topups WHERE advance_id=%s", (aid,))
+    conn.execute("DELETE FROM cash_advances WHERE id=%s", (aid,))
     conn.commit()
     conn.close()
 
@@ -835,15 +833,15 @@ def api_advances_summary():
     params = []
 
     if employee and employee.upper() != "ALL":
-        where.append("ca.employee_username = ?")
+        where.append("ca.employee_username = %s")
         params.append(employee)
 
     if month:
-        where.append("substr(COALESCE(NULLIF(ca.given_date,''), ca.created_at), 1, 7) = ?")
+        where.append("substr(COALESCE(NULLIF(ca.given_date,''), ca.created_at), 1, 7) = %s")
         params.append(month)
 
     if status in ("OPEN", "CLOSED"):
-        where.append("ca.closed = ?")
+        where.append("ca.closed = %s")
         params.append(1 if status == "CLOSED" else 0)
 
     conn = db()
@@ -912,15 +910,15 @@ def api_advances_summary_csv():
     params = []
 
     if employee and employee.upper() != "ALL":
-        where.append("ca.employee_username = ?")
+        where.append("ca.employee_username = %s")
         params.append(employee)
 
     if month:
-        where.append("substr(COALESCE(NULLIF(ca.given_date,''), ca.created_at), 1, 7) = ?")
+        where.append("substr(COALESCE(NULLIF(ca.given_date,''), ca.created_at), 1, 7) = %s")
         params.append(month)
 
     if status in ("OPEN", "CLOSED"):
-        where.append("ca.closed = ?")
+        where.append("ca.closed = %s")
         params.append(1 if status == "CLOSED" else 0)
 
     conn = db()

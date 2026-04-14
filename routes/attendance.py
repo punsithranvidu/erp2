@@ -1,15 +1,13 @@
 from flask import Blueprint, render_template, request, jsonify, session, current_app
 from functools import wraps
 from datetime import datetime, timedelta
-from .db_compat import sqlite3
+from .db import connect, get_table_columns as db_get_table_columns, table_exists
 
 attendance_bp = Blueprint("attendance", __name__)
 
 
 def db():
-    conn = sqlite3.connect(current_app.config["DATABASE_URL"])
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(current_app.config["DATABASE_URL"])
 
 
 def now_iso():
@@ -37,21 +35,10 @@ def require_module(module: str, need_edit: bool = False):
     return deco
 
 
-def table_exists(conn, table_name):
-    row = conn.execute("""
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name = ?
-        LIMIT 1
-    """, (table_name,)).fetchone()
-    return row is not None
-
-
 def get_table_columns(conn, table_name):
     if not table_exists(conn, table_name):
         return set()
-    return {r["name"] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+    return db_get_table_columns(conn, table_name)
 
 
 def has_unique_user_date(conn):
@@ -65,8 +52,8 @@ def rebuild_attendance_table(conn):
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS attendance_entries_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
             attendance_date TEXT NOT NULL,
             marked_status TEXT NOT NULL DEFAULT 'UNMARKED',
             employee_note TEXT,
@@ -142,8 +129,8 @@ def ensure_attendance_tables():
     if not table_exists(conn, "attendance_entries"):
         conn.execute("""
             CREATE TABLE attendance_entries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
                 attendance_date TEXT NOT NULL,
                 marked_status TEXT NOT NULL DEFAULT 'UNMARKED',
                 employee_note TEXT,
@@ -195,7 +182,7 @@ def get_me(conn):
     return conn.execute("""
         SELECT id, username, role, full_name
         FROM users
-        WHERE username=?
+        WHERE username=%s
         LIMIT 1
     """, (session.get("user"),)).fetchone()
 
@@ -246,7 +233,7 @@ def get_schedule_map(conn, user_id):
     rows = conn.execute("""
         SELECT weekday, is_working, start_time, end_time
         FROM employee_schedules
-        WHERE user_id=?
+        WHERE user_id=%s
     """, (user_id,)).fetchall()
 
     out = {}
@@ -278,8 +265,8 @@ def build_month_rows(conn, user_id, month_str):
     existing = conn.execute("""
         SELECT *
         FROM attendance_entries
-        WHERE user_id=?
-          AND substr(attendance_date, 1, 7)=?
+        WHERE user_id=%s
+          AND substr(attendance_date, 1, 7)=%s
         ORDER BY attendance_date ASC
     """, (user_id, month_str)).fetchall()
 
@@ -388,7 +375,7 @@ def api_attendance_admin_month():
     target = conn.execute("""
         SELECT id
         FROM users
-        WHERE id=? AND active=1
+        WHERE id=%s AND active=1
         LIMIT 1
     """, (user_id,)).fetchone()
 
@@ -424,7 +411,7 @@ def api_attendance_my_save():
     existing = conn.execute("""
         SELECT *
         FROM attendance_entries
-        WHERE user_id=? AND attendance_date=?
+        WHERE user_id=%s AND attendance_date=%s
         LIMIT 1
     """, (me["id"], attendance_date)).fetchone()
 
@@ -435,11 +422,11 @@ def api_attendance_my_save():
     if existing:
         conn.execute("""
             UPDATE attendance_entries
-            SET marked_status=?,
-                employee_note=?,
-                employee_saved_at=?,
-                employee_saved_by=?
-            WHERE id=?
+            SET marked_status=%s,
+                employee_note=%s,
+                employee_saved_at=%s,
+                employee_saved_by=%s
+            WHERE id=%s
         """, (
             marked_status,
             employee_note,
@@ -453,7 +440,7 @@ def api_attendance_my_save():
                 user_id, attendance_date, marked_status, employee_note,
                 admin_confirmed, employee_saved_at, employee_saved_by
             )
-            VALUES (?, ?, ?, ?, 0, ?, ?)
+            VALUES (%s, %s, %s, %s, 0, %s, %s)
         """, (
             int(me["id"]),
             attendance_date,
@@ -498,7 +485,7 @@ def api_attendance_admin_action():
     target = conn.execute("""
         SELECT id
         FROM users
-        WHERE id=? AND active=1
+        WHERE id=%s AND active=1
         LIMIT 1
     """, (user_id,)).fetchone()
 
@@ -509,13 +496,13 @@ def api_attendance_admin_action():
     existing = conn.execute("""
         SELECT *
         FROM attendance_entries
-        WHERE user_id=? AND attendance_date=?
+        WHERE user_id=%s AND attendance_date=%s
         LIMIT 1
     """, (user_id, attendance_date)).fetchone()
 
     if action == "DELETE":
         if existing:
-            conn.execute("DELETE FROM attendance_entries WHERE id=?", (int(existing["id"]),))
+            conn.execute("DELETE FROM attendance_entries WHERE id=%s", (int(existing["id"]),))
         conn.commit()
         conn.close()
         return jsonify({"ok": True, "message": "Attendance deleted"})
@@ -537,12 +524,12 @@ def api_attendance_admin_action():
     if existing:
         conn.execute("""
             UPDATE attendance_entries
-            SET marked_status=?,
-                employee_note=?,
-                admin_confirmed=?,
-                admin_action_at=?,
-                admin_action_by=?
-            WHERE id=?
+            SET marked_status=%s,
+                employee_note=%s,
+                admin_confirmed=%s,
+                admin_action_at=%s,
+                admin_action_by=%s
+            WHERE id=%s
         """, (
             new_status,
             employee_note if employee_note else (existing["employee_note"] or ""),
@@ -558,7 +545,7 @@ def api_attendance_admin_action():
                 admin_confirmed, employee_saved_at, employee_saved_by,
                 admin_action_at, admin_action_by
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             user_id,
             attendance_date,

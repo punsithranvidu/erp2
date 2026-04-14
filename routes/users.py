@@ -1,8 +1,9 @@
 from flask import Blueprint, request, session, jsonify, current_app
+import psycopg
 from werkzeug.security import generate_password_hash
 from functools import wraps
 
-from .db_compat import sqlite3
+from .db import connect
 
 users_bp = Blueprint("users", __name__)
 
@@ -12,7 +13,7 @@ users_bp = Blueprint("users", __name__)
 # ======================
 def db():
     database_url = current_app.config["DATABASE_URL"]
-    return sqlite3.connect(database_url)
+    return connect(database_url)
 
 
 def now_iso():
@@ -77,7 +78,7 @@ def would_remove_last_admin(conn, target_user_id: int) -> bool:
     target = conn.execute("""
         SELECT id, role, active
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (target_user_id,)).fetchone()
 
@@ -126,7 +127,7 @@ def api_user_permissions_get(uid):
     u = conn.execute("""
         SELECT id, username, role
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (uid,)).fetchone()
 
@@ -137,7 +138,7 @@ def api_user_permissions_get(uid):
     rows = conn.execute("""
         SELECT module, can_access, can_edit
         FROM user_permissions
-        WHERE user_id=?
+        WHERE user_id=%s
         ORDER BY module ASC
     """, (uid,)).fetchall()
     conn.close()
@@ -182,7 +183,7 @@ def api_user_permissions_set(uid):
     u = conn.execute("""
         SELECT id, username, role
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (uid,)).fetchone()
 
@@ -194,7 +195,7 @@ def api_user_permissions_set(uid):
         for m in modules:
             conn.execute("""
                 INSERT INTO user_permissions (user_id, module, can_access, can_edit)
-                VALUES (?,?,1,1)
+                VALUES (%s,%s,1,1)
                 ON CONFLICT(user_id, module)
                 DO UPDATE SET can_access=1, can_edit=1
             """, (uid, m))
@@ -223,7 +224,7 @@ def api_user_permissions_set(uid):
 
         conn.execute("""
             INSERT INTO user_permissions (user_id, module, can_access, can_edit)
-            VALUES (?,?,?,?)
+            VALUES (%s,%s,%s,%s)
             ON CONFLICT(user_id, module)
             DO UPDATE SET can_access=excluded.can_access, can_edit=excluded.can_edit
         """, (uid, m, can_access, can_edit))
@@ -294,7 +295,7 @@ def api_users_create():
                 username, password_hash, role, active,
                 full_name, nic, join_date, job_role, address, google_email, file_name, file_link,
                 created_at, created_by
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             username,
             generate_password_hash(password),
@@ -316,7 +317,7 @@ def api_users_create():
         new_row = conn.execute("""
             SELECT id, role
             FROM users
-            WHERE username=?
+            WHERE username=%s
             LIMIT 1
         """, (username,)).fetchone()
 
@@ -327,7 +328,7 @@ def api_users_create():
             if new_role == "ADMIN":
                 conn.execute("""
                     INSERT INTO user_permissions (user_id, module, can_access, can_edit)
-                    VALUES (?,?,1,1)
+                    VALUES (%s,%s,1,1)
                     ON CONFLICT(user_id, module)
                     DO UPDATE SET can_access=1, can_edit=1
                 """, (new_id, m))
@@ -335,14 +336,14 @@ def api_users_create():
                 if m in ("FINANCE", "CASH_ADVANCES"):
                     conn.execute("""
                         INSERT INTO user_permissions (user_id, module, can_access, can_edit)
-                        VALUES (?,?,1,1)
+                        VALUES (%s,%s,1,1)
                         ON CONFLICT(user_id, module)
                         DO UPDATE SET can_access=1, can_edit=1
                     """, (new_id, m))
                 else:
                     conn.execute("""
                         INSERT INTO user_permissions (user_id, module, can_access, can_edit)
-                        VALUES (?,?,0,0)
+                        VALUES (%s,%s,0,0)
                         ON CONFLICT(user_id, module)
                         DO UPDATE SET can_access=0, can_edit=0
                     """, (new_id, m))
@@ -352,14 +353,14 @@ def api_users_create():
         row = conn.execute("""
             SELECT id, username, role, active, full_name, nic, join_date, job_role, address, google_email, file_name, file_link, created_at
             FROM users
-            WHERE username=?
+            WHERE username=%s
             LIMIT 1
         """, (username,)).fetchone()
 
         conn.close()
         return jsonify({"ok": True, "data": dict(row)})
 
-    except sqlite3.IntegrityError:
+    except psycopg.IntegrityError:
         conn.close()
         return jsonify({"ok": False, "error": "This username already exists"}), 400
 
@@ -408,55 +409,55 @@ def api_users_update(uid):
     vals = []
 
     if role:
-        sets.append("role=?")
+        sets.append("role=%s")
         vals.append(role)
     if active is not None:
-        sets.append("active=?")
+        sets.append("active=%s")
         vals.append(active)
 
     if "full_name" in data:
-        sets.append("full_name=?")
+        sets.append("full_name=%s")
         vals.append(full_name or None)
     if "nic" in data:
-        sets.append("nic=?")
+        sets.append("nic=%s")
         vals.append(nic or None)
     if "join_date" in data:
-        sets.append("join_date=?")
+        sets.append("join_date=%s")
         vals.append(join_date or None)
     if "job_role" in data:
-        sets.append("job_role=?")
+        sets.append("job_role=%s")
         vals.append(job_role or None)
     if "address" in data:
-        sets.append("address=?")
+        sets.append("address=%s")
         vals.append(address or None)
     if "google_email" in data:
-        sets.append("google_email=?")
+        sets.append("google_email=%s")
         vals.append(google_email or None)
     if "file_name" in data:
-        sets.append("file_name=?")
+        sets.append("file_name=%s")
         vals.append(file_name or None)
     if "file_link" in data:
-        sets.append("file_link=?")
+        sets.append("file_link=%s")
         vals.append(file_link or None)    
 
     if not sets:
         conn.close()
         return jsonify({"ok": False, "error": "Nothing to update"}), 400
 
-    sets.append("edited_at=?")
-    sets.append("edited_by=?")
+    sets.append("edited_at=%s")
+    sets.append("edited_by=%s")
     vals.append(now_iso())
     vals.append(session["user"])
     vals.append(uid)
 
-    conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id=?", vals)
+    conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id=%s", vals)
     conn.commit()
 
     if role in ("ADMIN", "EMP"):
         for m in modules:
             conn.execute("""
                 INSERT INTO user_permissions (user_id, module, can_access, can_edit)
-                VALUES (?,?,0,0)
+                VALUES (%s,%s,0,0)
                 ON CONFLICT(user_id, module) DO NOTHING
             """, (uid, m))
 
@@ -465,14 +466,14 @@ def api_users_update(uid):
                 conn.execute("""
                     UPDATE user_permissions
                     SET can_access=1, can_edit=1
-                    WHERE user_id=? AND module=?
+                    WHERE user_id=%s AND module=%s
                 """, (uid, m))
         conn.commit()
 
     row = conn.execute("""
         SELECT id, username, role, active, full_name, nic, join_date, job_role, address, google_email, file_name, file_link, created_at
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (uid,)).fetchone()
 
@@ -494,7 +495,7 @@ def api_users_reset_password(uid):
     row = conn.execute("""
         SELECT username
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (uid,)).fetchone()
 
@@ -504,8 +505,8 @@ def api_users_reset_password(uid):
 
     conn.execute("""
         UPDATE users
-        SET password_hash=?, edited_at=?, edited_by=?
-        WHERE id=?
+        SET password_hash=%s, edited_at=%s, edited_by=%s
+        WHERE id=%s
     """, (generate_password_hash(pw), now_iso(), session["user"], uid))
     conn.commit()
     conn.close()
@@ -527,7 +528,7 @@ def api_users_rename(uid):
     old = conn.execute("""
         SELECT username
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (uid,)).fetchone()
 
@@ -540,18 +541,18 @@ def api_users_rename(uid):
     try:
         conn.execute("""
             UPDATE users
-            SET username=?, edited_at=?, edited_by=?
-            WHERE id=?
+            SET username=%s, edited_at=%s, edited_by=%s
+            WHERE id=%s
         """, (new_username, now_iso(), session["user"], uid))
 
         conn.execute("""
             UPDATE cash_advances
-            SET employee_username=?
-            WHERE employee_username=?
+            SET employee_username=%s
+            WHERE employee_username=%s
         """, (new_username, old_username))
 
         conn.commit()
-    except sqlite3.IntegrityError:
+    except psycopg.IntegrityError:
         conn.close()
         return jsonify({"ok": False, "error": "That username already exists"}), 400
 
@@ -572,7 +573,7 @@ def api_users_disable(uid):
     row = conn.execute("""
         SELECT id, username
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (uid,)).fetchone()
 
@@ -582,8 +583,8 @@ def api_users_disable(uid):
 
     conn.execute("""
         UPDATE users
-        SET active=0, edited_at=?, edited_by=?
-        WHERE id=?
+        SET active=0, edited_at=%s, edited_by=%s
+        WHERE id=%s
     """, (now_iso(), session["user"], uid))
     conn.commit()
     conn.close()
@@ -611,7 +612,7 @@ def api_users_delete(uid):
     row = conn.execute("""
         SELECT id, username
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (uid,)).fetchone()
 
@@ -624,8 +625,8 @@ def api_users_delete(uid):
         conn.close()
         return jsonify({"ok": False, "error": "You cannot delete your own account."}), 400
 
-    conn.execute("DELETE FROM user_permissions WHERE user_id=?", (uid,))
-    conn.execute("DELETE FROM users WHERE id=?", (uid,))
+    conn.execute("DELETE FROM user_permissions WHERE user_id=%s", (uid,))
+    conn.execute("DELETE FROM users WHERE id=%s", (uid,))
     conn.commit()
     conn.close()
 

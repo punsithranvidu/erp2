@@ -2,8 +2,9 @@ from flask import Blueprint, request, session, jsonify, Response, current_app
 from functools import wraps
 from io import StringIO
 import csv
+import psycopg
 
-from .db_compat import sqlite3
+from .db import connect
 
 finance_bp = Blueprint("finance", __name__)
 
@@ -13,7 +14,7 @@ finance_bp = Blueprint("finance", __name__)
 # ======================
 def db():
     database_url = current_app.config["DATABASE_URL"]
-    return sqlite3.connect(database_url)
+    return connect(database_url)
 
 
 def now_iso():
@@ -175,14 +176,14 @@ def api_banks_create():
         conn = db()
         conn.execute("""
             INSERT INTO bank_accounts (name, created_at, created_by, active)
-            VALUES (?,?,?,1)
+            VALUES (%s,%s,%s,1)
         """, (name, now_iso(), session["user"]))
         conn.commit()
 
         row = conn.execute("""
             SELECT id, name, active
             FROM bank_accounts
-            WHERE name=?
+            WHERE name=%s
             LIMIT 1
         """, (name,)).fetchone()
         conn.close()
@@ -193,7 +194,7 @@ def api_banks_create():
             "name": row["name"],
             "active": row["active"]
         })
-    except sqlite3.IntegrityError:
+    except psycopg.IntegrityError:
         try:
             if conn:
                 conn.close()
@@ -226,7 +227,7 @@ def api_banks_rename(bid):
         exists = conn.execute("""
             SELECT id
             FROM bank_accounts
-            WHERE id=?
+            WHERE id=%s
         """, (bid,)).fetchone()
 
         if not exists:
@@ -236,7 +237,7 @@ def api_banks_rename(bid):
         dupe = conn.execute("""
             SELECT id
             FROM bank_accounts
-            WHERE name=? AND id<>?
+            WHERE name=%s AND id<>%s
         """, (new_name, bid)).fetchone()
 
         if dupe:
@@ -245,14 +246,14 @@ def api_banks_rename(bid):
 
         conn.execute("""
             UPDATE bank_accounts
-            SET name=?
-            WHERE id=?
+            SET name=%s
+            WHERE id=%s
         """, (new_name, bid))
         conn.commit()
         conn.close()
 
         return jsonify({"ok": True, "id": bid, "name": new_name})
-    except sqlite3.IntegrityError:
+    except psycopg.IntegrityError:
         try:
             if conn:
                 conn.close()
@@ -277,7 +278,7 @@ def api_banks_delete(bid):
     bank = conn.execute("""
         SELECT id, name, active
         FROM bank_accounts
-        WHERE id=?
+        WHERE id=%s
     """, (bid,)).fetchone()
 
     if not bank:
@@ -291,7 +292,7 @@ def api_banks_delete(bid):
     cnt = conn.execute("""
         SELECT COUNT(*) AS c
         FROM finance_records
-        WHERE bank_id=?
+        WHERE bank_id=%s
     """, (bid,)).fetchone()["c"]
 
     if cnt > 0:
@@ -304,7 +305,7 @@ def api_banks_delete(bid):
     conn.execute("""
         UPDATE bank_accounts
         SET active=0
-        WHERE id=?
+        WHERE id=%s
     """, (bid,))
     conn.commit()
     conn.close()
@@ -332,15 +333,15 @@ def api_finance_list():
     params = []
 
     if not is_all_banks(bank_id):
-        where.append("fr.bank_id = ?")
+        where.append("fr.bank_id = %s")
         params.append(bank_id)
 
     if ftype in ("INCOME", "OUTCOME"):
-        where.append("fr.type = ?")
+        where.append("fr.type = %s")
         params.append(ftype)
 
     if month:
-        where.append("substr(COALESCE(NULLIF(fr.paid_date,''), fr.created_at), 1, 7) = ?")
+        where.append("substr(COALESCE(NULLIF(fr.paid_date,''), fr.created_at), 1, 7) = %s")
         params.append(month)
 
     sql = f"""
@@ -383,7 +384,7 @@ def api_finance_create():
                 paid_date, folder_link, proof_link, invoice_link, po_link, quotation_link,
                 created_at, created_by,
                 deleted_at, deleted_by
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NULL,NULL)
         """, (
             int(data["bank_id"]),
             data["type"],
@@ -441,14 +442,14 @@ def api_finance_update(rid):
             v = data[k]
             if k.endswith("_link") or k in ("folder_link", "proof_link", "invoice_link", "quotation_link"):
                 v = normalize_url(v)
-            sets.append(f"{k}=?")
+            sets.append(f"{k}=%s")
             vals.append(v)
 
     if not sets:
         return jsonify({"ok": False, "error": "No fields to update"}), 400
 
-    sets.append("edited_at=?")
-    sets.append("edited_by=?")
+    sets.append("edited_at=%s")
+    sets.append("edited_by=%s")
     vals.append(now_iso())
     vals.append(session["user"])
 
@@ -457,14 +458,14 @@ def api_finance_update(rid):
     if is_admin():
         vals.append(rid)
         cur = conn.execute(
-            f"UPDATE finance_records SET {', '.join(sets)} WHERE id=? AND deleted_at IS NULL",
+            f"UPDATE finance_records SET {', '.join(sets)} WHERE id=%s AND deleted_at IS NULL",
             vals
         )
     else:
         vals.append(rid)
         vals.append(session["user"])
         cur = conn.execute(
-            f"UPDATE finance_records SET {', '.join(sets)} WHERE id=? AND deleted_at IS NULL AND created_by=?",
+            f"UPDATE finance_records SET {', '.join(sets)} WHERE id=%s AND deleted_at IS NULL AND created_by=%s",
             vals
         )
 
@@ -487,14 +488,14 @@ def api_finance_soft_delete(rid):
     if is_admin():
         cur = conn.execute("""
             UPDATE finance_records
-            SET deleted_at=?, deleted_by=?
-            WHERE id=? AND deleted_at IS NULL
+            SET deleted_at=%s, deleted_by=%s
+            WHERE id=%s AND deleted_at IS NULL
         """, (now_iso(), session["user"], rid))
     else:
         cur = conn.execute("""
             UPDATE finance_records
-            SET deleted_at=?, deleted_by=?
-            WHERE id=? AND deleted_at IS NULL AND created_by=?
+            SET deleted_at=%s, deleted_by=%s
+            WHERE id=%s AND deleted_at IS NULL AND created_by=%s
         """, (now_iso(), session["user"], rid, session["user"]))
 
     conn.commit()
@@ -537,19 +538,19 @@ def api_finance_summary():
     }
     key_expr = group_map.get(group, group_map["month"])
 
-    where = ["deleted_at IS NULL", "type = ?"]
+    where = ["deleted_at IS NULL", "type = %s"]
     params = [ftype]
 
     if not is_all_banks(bank_id):
-        where.append("bank_id = ?")
+        where.append("bank_id = %s")
         params.append(bank_id)
 
     if month:
-        where.append("substr(COALESCE(NULLIF(paid_date,''), created_at), 1, 7) = ?")
+        where.append("substr(COALESCE(NULLIF(paid_date,''), created_at), 1, 7) = %s")
         params.append(month)
 
     if user_filter:
-        where.append("created_by = ?")
+        where.append("created_by = %s")
         params.append(user_filter)
 
     conn = db()
@@ -606,19 +607,19 @@ def api_finance_summary_csv():
     }
     key_expr = group_map.get(group, group_map["month"])
 
-    where = ["deleted_at IS NULL", "type = ?"]
+    where = ["deleted_at IS NULL", "type = %s"]
     params = [ftype]
 
     if not is_all_banks(bank_id):
-        where.append("bank_id = ?")
+        where.append("bank_id = %s")
         params.append(bank_id)
 
     if month:
-        where.append("substr(COALESCE(NULLIF(paid_date,''), created_at), 1, 7) = ?")
+        where.append("substr(COALESCE(NULLIF(paid_date,''), created_at), 1, 7) = %s")
         params.append(month)
 
     if user_filter:
-        where.append("created_by = ?")
+        where.append("created_by = %s")
         params.append(user_filter)
 
     conn = db()
@@ -674,15 +675,15 @@ def api_finance_export_csv():
     params = []
 
     if bank_id.upper() != "ALL":
-        where.append("fr.bank_id = ?")
+        where.append("fr.bank_id = %s")
         params.append(int(bank_id))
 
     if ftype in ("INCOME", "OUTCOME"):
-        where.append("fr.type = ?")
+        where.append("fr.type = %s")
         params.append(ftype)
 
     if month:
-        where.append("substr(COALESCE(NULLIF(fr.paid_date,''), fr.created_at), 1, 7) = ?")
+        where.append("substr(COALESCE(NULLIF(fr.paid_date,''), fr.created_at), 1, 7) = %s")
         params.append(month)
 
     sql = f"""
@@ -798,7 +799,7 @@ def api_finance_restore(rid):
     conn.execute("""
         UPDATE finance_records
         SET deleted_at=NULL, deleted_by=NULL
-        WHERE id=?
+        WHERE id=%s
     """, (rid,))
     conn.commit()
     conn.close()
@@ -838,7 +839,7 @@ def api_balance_get():
     row = conn.execute("""
         SELECT *
         FROM month_balances
-        WHERE bank_id=? AND month_key=? AND currency=?
+        WHERE bank_id=%s AND month_key=%s AND currency=%s
         LIMIT 1
     """, (bank_id, month, currency)).fetchone()
     conn.close()
@@ -869,13 +870,13 @@ def api_balance_upsert():
     conn = db()
     conn.execute("""
         INSERT INTO month_balances (bank_id, month_key, currency, closing_balance, note, created_at, created_by)
-        VALUES (?,?,?,?,?,?,?)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT(bank_id, month_key, currency)
         DO UPDATE SET
           closing_balance=excluded.closing_balance,
           note=excluded.note,
-          edited_at=?,
-          edited_by=?
+          edited_at=%s,
+          edited_by=%s
     """, (
         int(bank_id),
         month,

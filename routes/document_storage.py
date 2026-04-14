@@ -8,7 +8,7 @@ from datetime import datetime
 
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
-from .db_compat import sqlite3
+from .db import connect
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -23,9 +23,7 @@ DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
 def db():
-    conn = sqlite3.connect(current_app.config["DATABASE_URL"])
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(current_app.config["DATABASE_URL"])
 
 
 def now_iso():
@@ -188,7 +186,7 @@ def get_saved_oauth_token_from_db():
     row = conn.execute("""
         SELECT token_json
         FROM google_oauth_tokens
-        WHERE service_name=?
+        WHERE service_name=%s
         LIMIT 1
     """, ("google_drive",)).fetchone()
     conn.close()
@@ -200,20 +198,20 @@ def save_oauth_token_to_db(token_json: str, updated_by: str):
     existing = conn.execute("""
         SELECT id
         FROM google_oauth_tokens
-        WHERE service_name=?
+        WHERE service_name=%s
         LIMIT 1
     """, ("google_drive",)).fetchone()
 
     if existing:
         conn.execute("""
             UPDATE google_oauth_tokens
-            SET token_json=?, updated_at=?, updated_by=?
-            WHERE service_name=?
+            SET token_json=%s, updated_at=%s, updated_by=%s
+            WHERE service_name=%s
         """, (token_json, now_iso(), updated_by, "google_drive"))
     else:
         conn.execute("""
             INSERT INTO google_oauth_tokens (service_name, token_json, updated_at, updated_by)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """, ("google_drive", token_json, now_iso(), updated_by))
 
     conn.commit()
@@ -344,7 +342,7 @@ def get_parent_drive_id(conn, parent_id):
         """
         SELECT id, drive_id, item_type, is_active, deleted_at
         FROM doc_items
-        WHERE id=? LIMIT 1
+        WHERE id=%s LIMIT 1
         """,
         (int(parent_id),),
     ).fetchone()
@@ -365,7 +363,7 @@ def get_item_row(conn, item_id):
         """
         SELECT *
         FROM doc_items
-        WHERE id=? LIMIT 1
+        WHERE id=%s LIMIT 1
         """,
         (int(item_id),),
     ).fetchone()
@@ -380,7 +378,7 @@ def get_item_ancestors(conn, item_row):
             """
             SELECT *
             FROM doc_items
-            WHERE id=? LIMIT 1
+            WHERE id=%s LIMIT 1
             """,
             (int(parent_id),),
         ).fetchone()
@@ -404,13 +402,13 @@ def has_direct_permission(conn, item_id, uid, username, role, need_edit=False):
             SELECT di.id
             FROM doc_items di
             LEFT JOIN doc_item_permissions dp
-              ON dp.item_id = di.id AND dp.user_id = ?
-            WHERE di.id = ?
+              ON dp.item_id = di.id AND dp.user_id = %s
+            WHERE di.id = %s
               AND di.is_active = 1
               AND di.deleted_at IS NULL
               AND COALESCE(di.admin_locked, 0) = 0
               AND (
-                  di.created_by = ?
+                  di.created_by = %s
                   OR COALESCE(dp.can_edit, 0) = 1
               )
             LIMIT 1
@@ -423,13 +421,13 @@ def has_direct_permission(conn, item_id, uid, username, role, need_edit=False):
             SELECT di.id
             FROM doc_items di
             LEFT JOIN doc_item_permissions dp
-              ON dp.item_id = di.id AND dp.user_id = ?
-            WHERE di.id = ?
+              ON dp.item_id = di.id AND dp.user_id = %s
+            WHERE di.id = %s
               AND di.is_active = 1
               AND di.deleted_at IS NULL
               AND COALESCE(di.admin_locked, 0) = 0
               AND (
-                  di.created_by = ?
+                  di.created_by = %s
                   OR COALESCE(dp.can_access, 0) = 1
               )
             LIMIT 1
@@ -485,7 +483,7 @@ def can_edit_item(conn, item_id, uid, username, role):
 
 
 def save_item_permissions(conn, item_id, creator_username, permissions):
-    conn.execute("DELETE FROM doc_item_permissions WHERE item_id=?", (item_id,))
+    conn.execute("DELETE FROM doc_item_permissions WHERE item_id=%s", (item_id,))
 
     seen_users = set()
 
@@ -498,13 +496,13 @@ def save_item_permissions(conn, item_id, creator_username, permissions):
         conn.execute(
             """
             INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
-            VALUES (?,?,?,?)
+            VALUES (%s,%s,%s,%s)
             """,
             (item_id, user_id, can_access, can_edit),
         )
 
     creator = conn.execute(
-        "SELECT id FROM users WHERE username=? LIMIT 1",
+        "SELECT id FROM users WHERE username=%s LIMIT 1",
         (creator_username,)
     ).fetchone()
 
@@ -541,7 +539,7 @@ def desired_drive_shares(conn, item_id):
                MAX(COALESCE(dp.can_access, 0)) AS can_access
         FROM doc_item_permissions dp
         JOIN users u ON u.id = dp.user_id
-        WHERE dp.item_id=?
+        WHERE dp.item_id=%s
           AND u.active=1
           AND u.google_email IS NOT NULL
           AND TRIM(u.google_email) <> ''
@@ -738,7 +736,7 @@ def api_docs_items_list():
             FROM doc_items
             WHERE is_active=1
               AND deleted_at IS NULL
-              AND parent_id=?
+              AND parent_id=%s
             ORDER BY
               CASE WHEN item_type='FOLDER' THEN 0 ELSE 1 END,
               LOWER(name) ASC
@@ -822,9 +820,9 @@ def api_docs_shared_items():
         WHERE di.is_active=1
           AND di.deleted_at IS NULL
           AND COALESCE(di.admin_locked, 0)=0
-          AND dp.user_id=?
+          AND dp.user_id=%s
           AND COALESCE(dp.can_access, 0)=1
-          AND di.created_by <> ?
+          AND di.created_by <> %s
         ORDER BY
           CASE WHEN di.item_type='FOLDER' THEN 0 ELSE 1 END,
           LOWER(di.name) ASC
@@ -888,7 +886,7 @@ def api_docs_item_get(item_id):
     role = session.get("role")
 
     conn = db()
-    item = conn.execute("SELECT * FROM doc_items WHERE id=? LIMIT 1", (item_id,)).fetchone()
+    item = conn.execute("SELECT * FROM doc_items WHERE id=%s LIMIT 1", (item_id,)).fetchone()
     if not item:
         conn.close()
         return jsonify({"ok": False, "error": "Item not found"}), 404
@@ -906,7 +904,7 @@ def api_docs_item_get(item_id):
         SELECT u.id AS user_id, u.username, u.role, u.full_name, u.google_email, dp.can_access, dp.can_edit
         FROM doc_item_permissions dp
         JOIN users u ON u.id = dp.user_id
-        WHERE dp.item_id=?
+        WHERE dp.item_id=%s
         ORDER BY u.username ASC
         """,
         (item_id,),
@@ -956,8 +954,8 @@ def api_docs_create_folder():
             FROM doc_items
             WHERE is_active=1
               AND deleted_at IS NULL
-              AND COALESCE(parent_id, -1) = COALESCE(?, -1)
-              AND LOWER(name)=LOWER(?)
+              AND COALESCE(parent_id, -1) = COALESCE(%s, -1)
+              AND LOWER(name)=LOWER(%s)
             LIMIT 1
             """,
             (parent_db_id, name),
@@ -977,7 +975,7 @@ def api_docs_create_folder():
                 drive_id, web_view_link, mime_type, notes,
                 admin_locked, is_active, created_at, created_by,
                 deleted_at, deleted_by
-            ) VALUES (?, 'FOLDER', ?, 'GENERAL', ?, ?, ?, ?, 0, 1, ?, ?, NULL, NULL)
+            ) VALUES (%s, 'FOLDER', %s, 'GENERAL', %s, %s, %s, %s, 0, 1, %s, %s, NULL, NULL)
             """,
             (
                 parent_db_id,
@@ -993,7 +991,7 @@ def api_docs_create_folder():
         conn.commit()
 
         row = conn.execute(
-            "SELECT * FROM doc_items WHERE drive_id=? LIMIT 1",
+            "SELECT * FROM doc_items WHERE drive_id=%s LIMIT 1",
             (created.get("id"),)
         ).fetchone()
 
@@ -1007,7 +1005,7 @@ def api_docs_create_folder():
         sync_drive_shares(conn, item_id, created.get("id"))
         conn.commit()
 
-        row = conn.execute("SELECT * FROM doc_items WHERE id=?", (item_id,)).fetchone()
+        row = conn.execute("SELECT * FROM doc_items WHERE id=%s", (item_id,)).fetchone()
         conn.close()
         return jsonify({"ok": True, "data": dict(row)})
 
@@ -1063,7 +1061,7 @@ def api_docs_upload():
                 drive_id, web_view_link, mime_type, notes,
                 admin_locked, is_active, created_at, created_by,
                 deleted_at, deleted_by
-            ) VALUES (?, 'DOCUMENT', ?, 'GENERAL', ?, ?, ?, ?, 0, 1, ?, ?, NULL, NULL)
+            ) VALUES (%s, 'DOCUMENT', %s, 'GENERAL', %s, %s, %s, %s, 0, 1, %s, %s, NULL, NULL)
             """,
             (
                 parent_db_id,
@@ -1079,7 +1077,7 @@ def api_docs_upload():
         conn.commit()
 
         row = conn.execute(
-            "SELECT * FROM doc_items WHERE drive_id=? LIMIT 1",
+            "SELECT * FROM doc_items WHERE drive_id=%s LIMIT 1",
             (uploaded.get("id"),)
         ).fetchone()
 
@@ -1093,7 +1091,7 @@ def api_docs_upload():
         sync_drive_shares(conn, item_id, uploaded.get("id"))
         conn.commit()
 
-        row = conn.execute("SELECT * FROM doc_items WHERE id=?", (item_id,)).fetchone()
+        row = conn.execute("SELECT * FROM doc_items WHERE id=%s", (item_id,)).fetchone()
         conn.close()
         return jsonify({"ok": True, "data": dict(row)})
 
@@ -1117,7 +1115,7 @@ def api_docs_item_update(item_id):
     role = session.get("role")
 
     conn = db()
-    item = conn.execute("SELECT * FROM doc_items WHERE id=? LIMIT 1", (item_id,)).fetchone()
+    item = conn.execute("SELECT * FROM doc_items WHERE id=%s LIMIT 1", (item_id,)).fetchone()
     if not item:
         conn.close()
         return jsonify({"ok": False, "error": "Item not found"}), 404
@@ -1147,9 +1145,9 @@ def api_docs_item_update(item_id):
             FROM doc_items
             WHERE is_active=1
               AND deleted_at IS NULL
-              AND id<>?
-              AND COALESCE(parent_id,-1)=COALESCE(?, -1)
-              AND LOWER(name)=LOWER(?)
+              AND id<>%s
+              AND COALESCE(parent_id,-1)=COALESCE(%s, -1)
+              AND LOWER(name)=LOWER(%s)
             LIMIT 1
             """,
             (item_id, item["parent_id"], new_name),
@@ -1165,8 +1163,8 @@ def api_docs_item_update(item_id):
     conn.execute(
         """
         UPDATE doc_items
-        SET name=?, notes=?, web_view_link=?, edited_at=?, edited_by=?
-        WHERE id=?
+        SET name=%s, notes=%s, web_view_link=%s, edited_at=%s, edited_by=%s
+        WHERE id=%s
         """,
         (new_name, notes, web_view_link, now_iso(), session["user"], item_id),
     )
@@ -1176,7 +1174,7 @@ def api_docs_item_update(item_id):
         sync_drive_shares(conn, item_id, item["drive_id"])
 
     conn.commit()
-    row = conn.execute("SELECT * FROM doc_items WHERE id=?", (item_id,)).fetchone()
+    row = conn.execute("SELECT * FROM doc_items WHERE id=%s", (item_id,)).fetchone()
     conn.close()
     return jsonify({"ok": True, "data": dict(row)})
 
@@ -1189,7 +1187,7 @@ def api_docs_toggle_lock(item_id):
         return jsonify({"ok": False, "error": "Admin only"}), 403
 
     conn = db()
-    item = conn.execute("SELECT id, admin_locked, deleted_at FROM doc_items WHERE id=? LIMIT 1", (item_id,)).fetchone()
+    item = conn.execute("SELECT id, admin_locked, deleted_at FROM doc_items WHERE id=%s LIMIT 1", (item_id,)).fetchone()
     if not item:
         conn.close()
         return jsonify({"ok": False, "error": "Item not found"}), 404
@@ -1202,8 +1200,8 @@ def api_docs_toggle_lock(item_id):
     conn.execute(
         """
         UPDATE doc_items
-        SET admin_locked=?, edited_at=?, edited_by=?
-        WHERE id=?
+        SET admin_locked=%s, edited_at=%s, edited_by=%s
+        WHERE id=%s
         """,
         (new_val, now_iso(), session["user"], item_id),
     )
@@ -1221,7 +1219,7 @@ def api_docs_item_delete(item_id):
     role = session.get("role")
 
     conn = db()
-    item = conn.execute("SELECT * FROM doc_items WHERE id=? LIMIT 1", (item_id,)).fetchone()
+    item = conn.execute("SELECT * FROM doc_items WHERE id=%s LIMIT 1", (item_id,)).fetchone()
     if not item:
         conn.close()
         return jsonify({"ok": False, "error": "Item not found"}), 404
@@ -1238,7 +1236,7 @@ def api_docs_item_delete(item_id):
         """
         SELECT id
         FROM doc_items
-        WHERE parent_id=?
+        WHERE parent_id=%s
           AND is_active=1
           AND deleted_at IS NULL
         LIMIT 1
@@ -1255,8 +1253,8 @@ def api_docs_item_delete(item_id):
     conn.execute(
         """
         UPDATE doc_items
-        SET deleted_at=?, deleted_by=?, edited_at=?, edited_by=?
-        WHERE id=?
+        SET deleted_at=%s, deleted_by=%s, edited_at=%s, edited_by=%s
+        WHERE id=%s
         """,
         (now_iso(), session["user"], now_iso(), session["user"], item_id),
     )
@@ -1277,7 +1275,7 @@ def api_docs_restore(item_id):
         return jsonify({"ok": False, "error": "Admin only"}), 403
 
     conn = db()
-    item = conn.execute("SELECT * FROM doc_items WHERE id=? LIMIT 1", (item_id,)).fetchone()
+    item = conn.execute("SELECT * FROM doc_items WHERE id=%s LIMIT 1", (item_id,)).fetchone()
     if not item:
         conn.close()
         return jsonify({"ok": False, "error": "Item not found"}), 404
@@ -1289,8 +1287,8 @@ def api_docs_restore(item_id):
     conn.execute(
         """
         UPDATE doc_items
-        SET deleted_at=NULL, deleted_by=NULL, edited_at=?, edited_by=?
-        WHERE id=?
+        SET deleted_at=NULL, deleted_by=NULL, edited_at=%s, edited_by=%s
+        WHERE id=%s
         """,
         (now_iso(), session["user"], item_id),
     )
@@ -1307,7 +1305,7 @@ def api_docs_delete_forever(item_id):
         return jsonify({"ok": False, "error": "Admin only"}), 403
 
     conn = db()
-    item = conn.execute("SELECT * FROM doc_items WHERE id=? LIMIT 1", (item_id,)).fetchone()
+    item = conn.execute("SELECT * FROM doc_items WHERE id=%s LIMIT 1", (item_id,)).fetchone()
     if not item:
         conn.close()
         return jsonify({"ok": False, "error": "Item not found"}), 404
@@ -1316,8 +1314,8 @@ def api_docs_delete_forever(item_id):
         conn.close()
         return jsonify({"ok": False, "error": "Move item to trash first"}), 400
 
-    conn.execute("DELETE FROM doc_item_permissions WHERE item_id=?", (item_id,))
-    conn.execute("DELETE FROM doc_items WHERE id=?", (item_id,))
+    conn.execute("DELETE FROM doc_item_permissions WHERE item_id=%s", (item_id,))
+    conn.execute("DELETE FROM doc_items WHERE id=%s", (item_id,))
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
@@ -1349,13 +1347,13 @@ def api_docs_bulk_trash_action():
 
     if action == "restore":
         for item_id in valid_ids:
-            row = conn.execute("SELECT id FROM doc_items WHERE id=? AND deleted_at IS NOT NULL", (item_id,)).fetchone()
+            row = conn.execute("SELECT id FROM doc_items WHERE id=%s AND deleted_at IS NOT NULL", (item_id,)).fetchone()
             if row:
                 conn.execute(
                     """
                     UPDATE doc_items
-                    SET deleted_at=NULL, deleted_by=NULL, edited_at=?, edited_by=?
-                    WHERE id=?
+                    SET deleted_at=NULL, deleted_by=NULL, edited_at=%s, edited_by=%s
+                    WHERE id=%s
                     """,
                     (now_iso(), session["user"], item_id),
                 )
@@ -1363,10 +1361,10 @@ def api_docs_bulk_trash_action():
 
     elif action == "delete_forever":
         for item_id in valid_ids:
-            row = conn.execute("SELECT id FROM doc_items WHERE id=? AND deleted_at IS NOT NULL", (item_id,)).fetchone()
+            row = conn.execute("SELECT id FROM doc_items WHERE id=%s AND deleted_at IS NOT NULL", (item_id,)).fetchone()
             if row:
-                conn.execute("DELETE FROM doc_item_permissions WHERE item_id=?", (item_id,))
-                conn.execute("DELETE FROM doc_items WHERE id=?", (item_id,))
+                conn.execute("DELETE FROM doc_item_permissions WHERE item_id=%s", (item_id,))
+                conn.execute("DELETE FROM doc_items WHERE id=%s", (item_id,))
                 updated += 1
     else:
         conn.close()

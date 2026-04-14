@@ -1,14 +1,12 @@
 from flask import Blueprint, render_template, request, jsonify, session, current_app
 from functools import wraps
 from datetime import datetime, timedelta
-from .db_compat import sqlite3
+from .db import connect
 
 worksheet_bp = Blueprint("worksheet", __name__)
 
 def db():
-    conn = sqlite3.connect(current_app.config["DATABASE_URL"])
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(current_app.config["DATABASE_URL"])
 
 
 def now_iso():
@@ -41,8 +39,8 @@ def ensure_worksheet_tables():
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS worksheet_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
             work_date TEXT NOT NULL,
             is_workday INTEGER NOT NULL DEFAULT 1,
             summary TEXT,
@@ -65,8 +63,8 @@ def ensure_worksheet_tables():
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS admin_worksheet_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            admin_user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            admin_user_id BIGINT NOT NULL,
             work_date TEXT NOT NULL,
             is_workday INTEGER NOT NULL DEFAULT 1,
             summary TEXT,
@@ -94,7 +92,7 @@ def get_me(conn):
     return conn.execute("""
         SELECT id, username, role, full_name
         FROM users
-        WHERE username=?
+        WHERE username=%s
         LIMIT 1
     """, (session.get("user"),)).fetchone()
 
@@ -142,7 +140,7 @@ def get_schedule_map(conn, user_id):
     rows = conn.execute("""
         SELECT weekday, is_working, start_time, end_time
         FROM employee_schedules
-        WHERE user_id=?
+        WHERE user_id=%s
     """, (user_id,)).fetchall()
 
     out = {}
@@ -176,8 +174,8 @@ def build_employee_month_rows(conn, user_id, month_str):
     existing = conn.execute("""
         SELECT *
         FROM worksheet_entries
-        WHERE user_id=?
-          AND substr(work_date, 1, 7)=?
+        WHERE user_id=%s
+          AND substr(work_date, 1, 7)=%s
         ORDER BY work_date ASC
     """, (user_id, month_str)).fetchall()
 
@@ -286,7 +284,7 @@ def api_worksheet_admin_month():
     target = conn.execute("""
         SELECT id, role, full_name, username
         FROM users
-        WHERE id=? AND active=1
+        WHERE id=%s AND active=1
         LIMIT 1
     """, (user_id,)).fetchone()
 
@@ -315,7 +313,7 @@ def api_worksheet_my_save():
     existing = conn.execute("""
         SELECT *
         FROM worksheet_entries
-        WHERE user_id=? AND work_date=?
+        WHERE user_id=%s AND work_date=%s
         LIMIT 1
     """, (me["id"], work_date)).fetchone()
 
@@ -327,12 +325,12 @@ def api_worksheet_my_save():
 
         conn.execute("""
             UPDATE worksheet_entries
-            SET is_workday=?,
-                summary=?,
+            SET is_workday=%s,
+                summary=%s,
                 status='DRAFT',
-                saved_at=?,
-                saved_by=?
-            WHERE id=?
+                saved_at=%s,
+                saved_by=%s
+            WHERE id=%s
         """, (
             1 if data.get("is_workday", True) else 0,
             (data.get("summary") or "").strip(),
@@ -346,7 +344,7 @@ def api_worksheet_my_save():
                 user_id, work_date, is_workday, summary, status,
                 admin_comment, reopen_reason, saved_at, saved_by
             )
-            VALUES (?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             int(me["id"]),
             work_date,
@@ -380,7 +378,7 @@ def api_worksheet_my_submit():
     existing = conn.execute("""
         SELECT *
         FROM worksheet_entries
-        WHERE user_id=? AND work_date=?
+        WHERE user_id=%s AND work_date=%s
         LIMIT 1
     """, (me["id"], work_date)).fetchone()
 
@@ -392,14 +390,14 @@ def api_worksheet_my_submit():
 
         conn.execute("""
             UPDATE worksheet_entries
-            SET is_workday=?,
-                summary=?,
+            SET is_workday=%s,
+                summary=%s,
                 status='SUBMITTED',
-                saved_at=?,
-                saved_by=?,
-                submitted_at=?,
-                submitted_by=?
-            WHERE id=?
+                saved_at=%s,
+                saved_by=%s,
+                submitted_at=%s,
+                submitted_by=%s
+            WHERE id=%s
         """, (
             1 if data.get("is_workday", True) else 0,
             (data.get("summary") or "").strip(),
@@ -416,7 +414,7 @@ def api_worksheet_my_submit():
                 admin_comment, reopen_reason, saved_at, saved_by,
                 submitted_at, submitted_by
             )
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             int(me["id"]),
             work_date,
@@ -454,7 +452,7 @@ def api_worksheet_my_request_reopen():
     row = conn.execute("""
         SELECT *
         FROM worksheet_entries
-        WHERE user_id=? AND work_date=?
+        WHERE user_id=%s AND work_date=%s
         LIMIT 1
     """, (me["id"], work_date)).fetchone()
 
@@ -465,10 +463,10 @@ def api_worksheet_my_request_reopen():
     conn.execute("""
         UPDATE worksheet_entries
         SET status='REOPEN_REQUESTED',
-            reopen_reason=?,
-            returned_at=?,
-            returned_by=?
-        WHERE id=?
+            reopen_reason=%s,
+            returned_at=%s,
+            returned_by=%s
+        WHERE id=%s
     """, (
         reason,
         now_iso(),
@@ -504,7 +502,7 @@ def api_worksheet_admin_action():
     row = conn.execute("""
         SELECT *
         FROM worksheet_entries
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (int(entry_id),)).fetchone()
 
@@ -516,10 +514,10 @@ def api_worksheet_admin_action():
         conn.execute("""
             UPDATE worksheet_entries
             SET status='APPROVED',
-                admin_comment=?,
-                approved_at=?,
-                approved_by=?
-            WHERE id=?
+                admin_comment=%s,
+                approved_at=%s,
+                approved_by=%s
+            WHERE id=%s
         """, (
             admin_comment,
             now_iso(),
@@ -531,10 +529,10 @@ def api_worksheet_admin_action():
         conn.execute("""
             UPDATE worksheet_entries
             SET status='RETURNED',
-                admin_comment=?,
-                returned_at=?,
-                returned_by=?
-            WHERE id=?
+                admin_comment=%s,
+                returned_at=%s,
+                returned_by=%s
+            WHERE id=%s
         """, (
             admin_comment,
             now_iso(),
@@ -546,11 +544,11 @@ def api_worksheet_admin_action():
         conn.execute("""
             UPDATE worksheet_entries
             SET status='DRAFT',
-                admin_comment=?,
-                reopened_at=?,
-                reopened_by=?,
+                admin_comment=%s,
+                reopened_at=%s,
+                reopened_by=%s,
                 reopen_reason=''
-            WHERE id=?
+            WHERE id=%s
         """, (
             admin_comment,
             now_iso(),
@@ -561,7 +559,7 @@ def api_worksheet_admin_action():
     elif action == "DELETE":
         conn.execute("""
             DELETE FROM worksheet_entries
-            WHERE id=?
+            WHERE id=%s
         """, (int(entry_id),))
 
     else:

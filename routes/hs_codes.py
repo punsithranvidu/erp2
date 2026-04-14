@@ -1,15 +1,13 @@
 from flask import Blueprint, render_template, request, jsonify, session, current_app
 from functools import wraps
 from datetime import datetime
-from .db_compat import sqlite3
+from .db import connect, get_table_columns
 
 hs_codes_bp = Blueprint("hs_codes", __name__)
 
 
 def db():
-    conn = sqlite3.connect(current_app.config["DATABASE_URL"])
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(current_app.config["DATABASE_URL"])
 
 
 def now_iso():
@@ -42,7 +40,7 @@ def ensure_hs_code_tables():
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS hs_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             product_name TEXT NOT NULL,
             hs_code TEXT NOT NULL,
             proof_link TEXT,
@@ -57,7 +55,7 @@ def ensure_hs_code_tables():
 
     conn.commit()
 
-    cols = {r["name"] for r in conn.execute("PRAGMA table_info(hs_codes)").fetchall()}
+    cols = get_table_columns(conn, "hs_codes")
 
     if "proof_link" not in cols:
         conn.execute("ALTER TABLE hs_codes ADD COLUMN proof_link TEXT")
@@ -124,10 +122,10 @@ def api_hs_codes_list():
             FROM hs_codes
             WHERE is_deleted=0
               AND (
-                product_name LIKE ?
-                OR hs_code LIKE ?
-                OR proof_link LIKE ?
-                OR notes LIKE ?
+                product_name LIKE %s
+                OR hs_code LIKE %s
+                OR proof_link LIKE %s
+                OR notes LIKE %s
               )
             ORDER BY product_name ASC, hs_code ASC, id DESC
             LIMIT 500
@@ -171,7 +169,7 @@ def api_hs_codes_create():
             product_name, hs_code, proof_link, notes,
             created_at, created_by, updated_at, updated_by, is_deleted
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
     """, (
         product_name,
         hs_code,
@@ -198,7 +196,7 @@ def api_hs_codes_update(item_id):
     row = conn.execute("""
         SELECT *
         FROM hs_codes
-        WHERE id=? AND is_deleted=0
+        WHERE id=%s AND is_deleted=0
         LIMIT 1
     """, (item_id,)).fetchone()
 
@@ -221,13 +219,13 @@ def api_hs_codes_update(item_id):
 
     conn.execute("""
         UPDATE hs_codes
-        SET product_name=?,
-            hs_code=?,
-            proof_link=?,
-            notes=?,
-            updated_at=?,
-            updated_by=?
-        WHERE id=?
+        SET product_name=%s,
+            hs_code=%s,
+            proof_link=%s,
+            notes=%s,
+            updated_at=%s,
+            updated_by=%s
+        WHERE id=%s
     """, (
         product_name,
         hs_code,
@@ -252,7 +250,7 @@ def api_hs_codes_delete(item_id):
     row = conn.execute("""
         SELECT id
         FROM hs_codes
-        WHERE id=? AND is_deleted=0
+        WHERE id=%s AND is_deleted=0
         LIMIT 1
     """, (item_id,)).fetchone()
 
@@ -263,9 +261,9 @@ def api_hs_codes_delete(item_id):
     conn.execute("""
         UPDATE hs_codes
         SET is_deleted=1,
-            updated_at=?,
-            updated_by=?
-        WHERE id=?
+            updated_at=%s,
+            updated_by=%s
+        WHERE id=%s
     """, (
         now_iso(),
         session.get("user"),

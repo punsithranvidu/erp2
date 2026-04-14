@@ -3,8 +3,8 @@ import os
 from datetime import datetime
 from functools import wraps
 
-from routes.db_compat import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
+from routes.db import connect, get_table_columns
 
 # Blueprints
 from routes.auth import auth_bp
@@ -94,7 +94,7 @@ MODULES = [
 # DB / HELPERS
 # ======================
 def db():
-    return sqlite3.connect(DATABASE_URL)
+    return connect(DATABASE_URL)
 
 
 def now_iso():
@@ -131,7 +131,7 @@ def get_user_row_by_username(username: str):
     if not username:
         return None
     conn = db()
-    row = conn.execute("SELECT * FROM users WHERE username=? LIMIT 1", (username,)).fetchone()
+    row = conn.execute("SELECT * FROM users WHERE username=%s LIMIT 1", (username,)).fetchone()
     conn.close()
     return row
 
@@ -159,7 +159,7 @@ def has_module_access(module: str, need_edit: bool = False) -> bool:
     row = conn.execute("""
         SELECT can_access, can_edit
         FROM user_permissions
-        WHERE user_id=? AND module=?
+        WHERE user_id=%s AND module=%s
         LIMIT 1
     """, (uid, module)).fetchone()
     conn.close()
@@ -209,11 +209,11 @@ def require_module_response(module: str, need_edit: bool = False):
 # INVOICE TABLE
 # ======================
 def init_invoice_table():
-    conn = sqlite3.connect(DATABASE_URL)
+    conn = db()
     c = conn.cursor()
     c.execute("""
         CREATE TABLE IF NOT EXISTS document_numbers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             doc_type TEXT,
             year INTEGER,
             month INTEGER,
@@ -247,7 +247,7 @@ def would_remove_last_admin(conn, target_user_id: int) -> bool:
     target = conn.execute("""
         SELECT id, role, active
         FROM users
-        WHERE id=?
+        WHERE id=%s
         LIMIT 1
     """, (target_user_id,)).fetchone()
 
@@ -270,7 +270,7 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL CHECK(role IN ('ADMIN','EMP')),
@@ -290,8 +290,8 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_permissions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
             module TEXT NOT NULL,
             can_access INTEGER NOT NULL DEFAULT 0,
             can_edit INTEGER NOT NULL DEFAULT 0,
@@ -300,14 +300,13 @@ def init_db():
         )
     """)
 
-    cur.execute("PRAGMA table_info(user_permissions)")
-    pcols = {r["name"] for r in cur.fetchall()}
+    pcols = get_table_columns(conn, "user_permissions")
     if "module" not in pcols:
         cur.execute("ALTER TABLE user_permissions RENAME TO user_permissions_old")
         cur.execute("""
             CREATE TABLE user_permissions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
                 module TEXT NOT NULL,
                 can_access INTEGER NOT NULL DEFAULT 0,
                 can_edit INTEGER NOT NULL DEFAULT 0,
@@ -315,11 +314,18 @@ def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         """)
+        old_cols = get_table_columns(conn, "user_permissions_old")
+        if {"user_id", "can_access", "can_edit"}.issubset(old_cols):
+            module_source = "module" if "module" in old_cols else "'UNKNOWN'"
+            cur.execute(f"""
+                INSERT INTO user_permissions (user_id, module, can_access, can_edit)
+                SELECT user_id, {module_source}, can_access, can_edit
+                FROM user_permissions_old
+            """)
         cur.execute("DROP TABLE IF EXISTS user_permissions_old")
     conn.commit()
 
-    cur.execute("PRAGMA table_info(users)")
-    ucols = {r["name"] for r in cur.fetchall()}
+    ucols = get_table_columns(conn, "users")
 
     if "google_email" not in ucols:
         cur.execute("ALTER TABLE users ADD COLUMN google_email TEXT")
@@ -334,7 +340,7 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS bank_accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
             created_at TEXT NOT NULL,
             created_by TEXT NOT NULL,
@@ -344,8 +350,8 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS finance_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            bank_id INTEGER,
+            id BIGSERIAL PRIMARY KEY,
+            bank_id BIGINT,
             type TEXT NOT NULL,
             client_name TEXT NOT NULL,
             category TEXT NOT NULL,
@@ -374,8 +380,8 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS month_balances (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            bank_id INTEGER,
+            id BIGSERIAL PRIMARY KEY,
+            bank_id BIGINT,
             month_key TEXT NOT NULL,
             currency TEXT NOT NULL,
             closing_balance REAL NOT NULL,
@@ -390,9 +396,9 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cash_advances (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             employee_username TEXT NOT NULL,
-            bank_id INTEGER,
+            bank_id BIGINT,
             currency TEXT NOT NULL,
             amount_given REAL NOT NULL,
             purpose TEXT,
@@ -408,8 +414,8 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cash_advance_expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            advance_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            advance_id BIGINT NOT NULL,
             category TEXT NOT NULL,
             description TEXT,
             amount REAL NOT NULL,
@@ -423,8 +429,8 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cash_advance_topups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            advance_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            advance_id BIGINT NOT NULL,
             amount REAL NOT NULL,
             topup_date TEXT,
             proof_link TEXT,
@@ -439,8 +445,8 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS doc_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            parent_id INTEGER,
+            id BIGSERIAL PRIMARY KEY,
+            parent_id BIGINT,
             item_type TEXT NOT NULL CHECK(item_type IN ('FOLDER','DOCUMENT')),
             name TEXT NOT NULL,
             category TEXT NOT NULL DEFAULT 'GENERAL',
@@ -461,9 +467,9 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS doc_item_permissions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            item_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
             can_access INTEGER NOT NULL DEFAULT 1,
             can_edit INTEGER NOT NULL DEFAULT 0,
             UNIQUE(item_id, user_id),
@@ -472,8 +478,7 @@ def init_db():
         )
     """)
 
-    cur.execute("PRAGMA table_info(doc_items)")
-    doc_cols = {r["name"] for r in cur.fetchall()}
+    doc_cols = get_table_columns(conn, "doc_items")
     if "category" not in doc_cols:
         cur.execute("ALTER TABLE doc_items ADD COLUMN category TEXT NOT NULL DEFAULT 'GENERAL'")
     if "drive_id" not in doc_cols:
@@ -501,7 +506,7 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS message_conversations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             conversation_type TEXT NOT NULL CHECK(conversation_type IN ('DIRECT','GROUP')),
             title TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
@@ -512,12 +517,12 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS message_conversation_members (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conversation_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            conversation_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
             joined_at TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1,
-            last_read_message_id INTEGER,
+            last_read_message_id BIGINT,
             UNIQUE(conversation_id, user_id),
             FOREIGN KEY(conversation_id) REFERENCES message_conversations(id),
             FOREIGN KEY(user_id) REFERENCES users(id)
@@ -526,9 +531,9 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS message_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conversation_id INTEGER NOT NULL,
-            sender_user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            conversation_id BIGINT NOT NULL,
+            sender_user_id BIGINT NOT NULL,
             message_text TEXT NOT NULL DEFAULT '',
             attachment_name TEXT,
             attachment_url TEXT,
@@ -544,9 +549,9 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS message_conversation_deleted (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conversation_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            conversation_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
             deleted_at TEXT NOT NULL,
             deleted_by TEXT,
             active INTEGER NOT NULL DEFAULT 1,
@@ -556,31 +561,27 @@ def init_db():
         )
     """)
 
-    cur.execute("PRAGMA table_info(finance_records)")
-    cols = {r["name"] for r in cur.fetchall()}
+    cols = get_table_columns(conn, "finance_records")
     if "deleted_at" not in cols:
         cur.execute("ALTER TABLE finance_records ADD COLUMN deleted_at TEXT")
     if "deleted_by" not in cols:
         cur.execute("ALTER TABLE finance_records ADD COLUMN deleted_by TEXT")
     if "bank_id" not in cols:
-        cur.execute("ALTER TABLE finance_records ADD COLUMN bank_id INTEGER")
+        cur.execute("ALTER TABLE finance_records ADD COLUMN bank_id BIGINT")
     if "po_link" not in cols:
         cur.execute("ALTER TABLE finance_records ADD COLUMN po_link TEXT")    
 
-    cur.execute("PRAGMA table_info(month_balances)")
-    bcols = {r["name"] for r in cur.fetchall()}
+    bcols = get_table_columns(conn, "month_balances")
     if "bank_id" not in bcols:
-        cur.execute("ALTER TABLE month_balances ADD COLUMN bank_id INTEGER")
+        cur.execute("ALTER TABLE month_balances ADD COLUMN bank_id BIGINT")
 
-    cur.execute("PRAGMA table_info(cash_advance_expenses)")
-    cexp_cols = {r["name"] for r in cur.fetchall()}
+    cexp_cols = get_table_columns(conn, "cash_advance_expenses")
     if "paid_by" not in cexp_cols:
         cur.execute("ALTER TABLE cash_advance_expenses ADD COLUMN paid_by TEXT DEFAULT 'COMPANY_ADVANCE'")
 
-    cur.execute("PRAGMA table_info(message_messages)")
-    msg_cols = {r["name"] for r in cur.fetchall()}
+    msg_cols = get_table_columns(conn, "message_messages")
     if "reply_to" not in msg_cols:
-        cur.execute("ALTER TABLE message_messages ADD COLUMN reply_to INTEGER")
+        cur.execute("ALTER TABLE message_messages ADD COLUMN reply_to BIGINT")
     if "attachment_drive_id" not in msg_cols:
         cur.execute("ALTER TABLE message_messages ADD COLUMN attachment_drive_id TEXT")
 
@@ -591,7 +592,7 @@ def init_db():
         defaults = ["HNB-LKR-107010008865", "HNB-USD-107010008866"]
         for name in defaults:
             cur.execute(
-                "INSERT INTO bank_accounts (name, created_at, created_by, active) VALUES (?,?,?,1)",
+                "INSERT INTO bank_accounts (name, created_at, created_by, active) VALUES (%s,%s,%s,1)",
                 (name, now_iso(), "system")
             )
         conn.commit()
@@ -599,8 +600,8 @@ def init_db():
     first_bank = cur.execute("SELECT id FROM bank_accounts WHERE active=1 ORDER BY id ASC LIMIT 1").fetchone()
     default_bank_id = first_bank["id"] if first_bank else None
     if default_bank_id:
-        cur.execute("UPDATE finance_records SET bank_id=? WHERE bank_id IS NULL", (default_bank_id,))
-        cur.execute("UPDATE month_balances SET bank_id=? WHERE bank_id IS NULL", (default_bank_id,))
+        cur.execute("UPDATE finance_records SET bank_id=%s WHERE bank_id IS NULL", (default_bank_id,))
+        cur.execute("UPDATE month_balances SET bank_id=%s WHERE bank_id IS NULL", (default_bank_id,))
         conn.commit()
 
     ucount = cur.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
@@ -608,7 +609,7 @@ def init_db():
         for uname, info in USERS.items():
             cur.execute("""
                 INSERT INTO users (username, password_hash, role, active, created_at, created_by)
-                VALUES (?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s)
             """, (
                 uname,
                 generate_password_hash(info["password"]),
@@ -625,7 +626,7 @@ def init_db():
         role = r["role"]
         for m in MODULES:
             existing = cur.execute("""
-                SELECT id FROM user_permissions WHERE user_id=? AND module=? LIMIT 1
+                SELECT id FROM user_permissions WHERE user_id=%s AND module=%s LIMIT 1
             """, (uid, m)).fetchone()
             if existing:
                 continue
@@ -633,25 +634,25 @@ def init_db():
             if role == "ADMIN":
                 cur.execute("""
                     INSERT INTO user_permissions (user_id, module, can_access, can_edit)
-                    VALUES (?,?,1,1)
+                    VALUES (%s,%s,1,1)
                 """, (uid, m))
             else:
                 if m in ("FINANCE", "CASH_ADVANCES", "DOCUMENT_STORAGE"):
                     cur.execute("""
                         INSERT INTO user_permissions (user_id, module, can_access, can_edit)
-                        VALUES (?,?,1,1)
+                        VALUES (%s,%s,1,1)
                     """, (uid, m))
                 else:
                     cur.execute("""
                         INSERT INTO user_permissions (user_id, module, can_access, can_edit)
-                        VALUES (?,?,0,0)
+                        VALUES (%s,%s,0,0)
                     """, (uid, m))
     conn.commit()
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS employee_schedules (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
             weekday INTEGER NOT NULL,
             is_working INTEGER NOT NULL DEFAULT 0,
             start_time TEXT,
@@ -665,8 +666,8 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS employee_unavailability (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
             start_date TEXT NOT NULL,
             end_date TEXT NOT NULL,
             all_day INTEGER NOT NULL DEFAULT 1,
@@ -687,7 +688,7 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS calendar_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             calendar_scope TEXT NOT NULL DEFAULT 'SHARED',
             title TEXT NOT NULL,
             event_date TEXT NOT NULL,
@@ -706,9 +707,9 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS calendar_event_acks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            event_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
             remind_at TEXT NOT NULL,
             acked_at TEXT NOT NULL,
             UNIQUE(event_id, user_id, remind_at)
@@ -717,7 +718,7 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS google_oauth_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             service_name TEXT NOT NULL UNIQUE,
             token_json TEXT NOT NULL,
             updated_at TEXT NOT NULL,
@@ -777,7 +778,7 @@ def auth_user(username, password):
     password = password or ""
 
     conn = db()
-    row = conn.execute("SELECT * FROM users WHERE username=? LIMIT 1", (username,)).fetchone()
+    row = conn.execute("SELECT * FROM users WHERE username=%s LIMIT 1", (username,)).fetchone()
     conn.close()
 
     if row:
@@ -850,7 +851,7 @@ def api_me():
         rows = conn.execute("""
             SELECT module, can_access, can_edit
             FROM user_permissions
-            WHERE user_id=?
+            WHERE user_id=%s
         """, (uid,)).fetchall()
         conn.close()
         for r in rows:
