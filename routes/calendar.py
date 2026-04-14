@@ -397,6 +397,74 @@ def date_is_before_user_created(date_text, user_created_at):
         return False
 
 
+def build_pending_reminders(conn, me):
+    now = datetime.now(APP_TZ).replace(tzinfo=None)
+    user_created_at = parse_user_created_at(me)
+    month_start = (now - timedelta(days=60)).date().isoformat()
+
+    rows = fetchall(conn, """
+        SELECT *
+        FROM calendar_events
+        WHERE is_active=1
+          AND event_date >= %s
+        ORDER BY event_date ASC
+    """, (month_start,))
+
+    pending = []
+
+    for e in rows:
+        if not event_visible_to_user(e, int(me["id"]), me["role"]):
+            continue
+
+        if date_is_before_user_created(e["event_date"], user_created_at):
+            continue
+
+        raw_times = [x.strip() for x in (e["reminder_times"] or "").split(",") if x.strip()]
+        for t in raw_times:
+            remind_dt = parse_reminder_entry(t)
+            if not remind_dt or remind_dt > now:
+                continue
+
+            if user_created_at and remind_dt < user_created_at:
+                continue
+
+            remind_at_value = remind_dt.isoformat(timespec="seconds")
+            ack = fetchone(conn, """
+                SELECT 1
+                FROM calendar_event_acks
+                WHERE event_id=%s AND user_id=%s AND remind_at=%s
+                LIMIT 1
+            """, (e["id"], me["id"], remind_at_value))
+
+            if ack:
+                continue
+
+            pending.append({
+                "event_id": e["id"],
+                "title": e["title"],
+                "event_date": e["event_date"],
+                "remind_at": remind_at_value,
+            })
+
+    pending.sort(key=lambda x: x["remind_at"])
+    return pending
+
+
+def build_calendar_badge_items(conn, me):
+    # The dashboard badge should represent pending calendar items, not every
+    # overdue reminder timestamp for the same event.
+    pending = build_pending_reminders(conn, me)
+    deduped = {}
+
+    for item in pending:
+        key = int(item["event_id"])
+        existing = deduped.get(key)
+        if not existing or item["remind_at"] < existing["remind_at"]:
+            deduped[key] = dict(item)
+
+    return list(deduped.values())
+
+
 @calendar_bp.before_app_request
 def _ensure_tables_once():
     if not current_app.config.get("CALENDAR_TABLES_READY"):
@@ -1559,58 +1627,7 @@ def api_calendar_reminders_pending():
     conn = db()
     try:
         me = get_me(conn)
-        now = datetime.now(APP_TZ).replace(tzinfo=None)
-        user_created_at = parse_user_created_at(me)
-
-        month_start = (now - timedelta(days=60)).date().isoformat()
-
-        rows = fetchall(conn, """
-            SELECT *
-            FROM calendar_events
-            WHERE is_active=1
-              AND event_date >= %s
-            ORDER BY event_date ASC
-        """, (month_start,))
-
-        pending = []
-
-        for e in rows:
-            if not event_visible_to_user(e, int(me["id"]), me["role"]):
-                continue
-
-            raw_times = [x.strip() for x in (e["reminder_times"] or "").split(",") if x.strip()]
-            for t in raw_times:
-                remind_dt = parse_reminder_entry(t)
-                if not remind_dt:
-                    continue
-
-                if remind_dt > now:
-                    continue
-
-                # Important fix:
-                # If this user was created AFTER the reminder time,
-                # they should not receive this old reminder.
-                if user_created_at and remind_dt < user_created_at:
-                    continue
-
-                remind_at_value = remind_dt.isoformat(timespec="seconds")
-                ack = fetchone(conn, """
-                    SELECT 1
-                    FROM calendar_event_acks
-                    WHERE event_id=%s AND user_id=%s AND remind_at=%s
-                    LIMIT 1
-                """, (e["id"], me["id"], remind_at_value))
-
-                if not ack:
-                    pending.append({
-                        "event_id": e["id"],
-                        "title": e["title"],
-                        "event_date": e["event_date"],
-                        "remind_at": remind_at_value,
-                    })
-
-        pending.sort(key=lambda x: x["remind_at"])
-        return jsonify({"ok": True, "data": pending})
+        return jsonify({"ok": True, "data": build_pending_reminders(conn, me)})
     finally:
         conn.close()
 
@@ -1652,5 +1669,11 @@ def api_calendar_reminders_ack():
 
 @calendar_bp.route("/api/messages/calendar-badge", methods=["GET"])
 @login_required
+@require_module("CALENDAR")
 def api_calendar_badge():
-    return api_calendar_reminders_pending()
+    conn = db()
+    try:
+        me = get_me(conn)
+        return jsonify({"ok": True, "data": build_calendar_badge_items(conn, me)})
+    finally:
+        conn.close()

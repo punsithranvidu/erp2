@@ -80,65 +80,89 @@ def get_default_bank_id():
     return row["id"] if row else None
 
 
-def _advance_money_total(conn, adv_id: int) -> float:
-    base = conn.execute("""
-        SELECT COALESCE(amount_given,0) AS a
-        FROM cash_advances
-        WHERE id=%s
-    """, (adv_id,)).fetchone()["a"]
-
-    top = conn.execute("""
-        SELECT COALESCE(SUM(amount),0) AS s
-        FROM cash_advance_topups
-        WHERE advance_id=%s
-    """, (adv_id,)).fetchone()["s"]
-
-    return float(base or 0) + float(top or 0)
-
-
-def _advance_spent_total(conn, adv_id: int) -> float:
-    spent = conn.execute("""
-        SELECT COALESCE(SUM(amount),0) AS s
-        FROM cash_advance_expenses
-        WHERE advance_id=%s
-    """, (adv_id,)).fetchone()["s"]
-
-    return float(spent or 0)
-
-
-def _advance_row_with_balance(conn, adv_row):
-    adv_id = adv_row["id"]
-
-    topups = conn.execute("""
-        SELECT COALESCE(SUM(amount),0) AS s
-        FROM cash_advance_topups
-        WHERE advance_id=%s
-    """, (adv_id,)).fetchone()["s"]
-
-    spent_company = conn.execute("""
-        SELECT COALESCE(SUM(amount),0) AS s
-        FROM cash_advance_expenses
-        WHERE advance_id=%s AND COALESCE(paid_by,'COMPANY_ADVANCE')='COMPANY_ADVANCE'
-    """, (adv_id,)).fetchone()["s"]
-
-    spent_personal = conn.execute("""
-        SELECT COALESCE(SUM(amount),0) AS s
-        FROM cash_advance_expenses
-        WHERE advance_id=%s AND COALESCE(paid_by,'COMPANY_ADVANCE')='EMPLOYEE_PERSONAL'
-    """, (adv_id,)).fetchone()["s"]
-
-    total_given = float(adv_row["amount_given"]) + float(topups)
-    spent_total = float(spent_company) + float(spent_personal)
+def _format_advance_row(adv_row):
+    topups = float(adv_row["topups_total"] or 0)
+    spent_company = float(adv_row["spent_company"] or 0)
+    spent_personal = float(adv_row["spent_personal"] or 0)
+    spent_total = float(adv_row["spent_total"] or 0)
+    total_given = float(adv_row["amount_given"] or 0) + topups
     balance = total_given - spent_total
 
     out = dict(adv_row)
-    out["topups_total"] = round(float(topups), 2)
-    out["spent_company"] = round(float(spent_company), 2)
-    out["spent_personal"] = round(float(spent_personal), 2)
-    out["spent_total"] = round(float(spent_total), 2)
+    out["topups_total"] = round(topups, 2)
+    out["spent_company"] = round(spent_company, 2)
+    out["spent_personal"] = round(spent_personal, 2)
+    out["spent_total"] = round(spent_total, 2)
     out["balance"] = round(float(balance), 2)
     out["status"] = "CLOSED" if int(adv_row["closed"] or 0) == 1 else "OPEN"
     return out
+
+
+def fetch_advance_rows(conn, where_sql="", params=(), limit_sql=""):
+    return conn.execute(f"""
+        SELECT
+            ca.*,
+            ba.name AS bank_name,
+            COALESCE(t.topups_total, 0) AS topups_total,
+            COALESCE(e.spent_company, 0) AS spent_company,
+            COALESCE(e.spent_personal, 0) AS spent_personal,
+            COALESCE(e.spent_total, 0) AS spent_total
+        FROM cash_advances ca
+        LEFT JOIN bank_accounts ba ON ba.id = ca.bank_id
+        LEFT JOIN (
+            SELECT advance_id, SUM(amount) AS topups_total
+            FROM cash_advance_topups
+            GROUP BY advance_id
+        ) t ON t.advance_id = ca.id
+        LEFT JOIN (
+            SELECT
+                advance_id,
+                SUM(CASE WHEN COALESCE(paid_by, 'COMPANY_ADVANCE') = 'COMPANY_ADVANCE' THEN amount ELSE 0 END) AS spent_company,
+                SUM(CASE WHEN COALESCE(paid_by, 'COMPANY_ADVANCE') = 'EMPLOYEE_PERSONAL' THEN amount ELSE 0 END) AS spent_personal,
+                SUM(amount) AS spent_total
+            FROM cash_advance_expenses
+            GROUP BY advance_id
+        ) e ON e.advance_id = ca.id
+        {where_sql}
+        ORDER BY ca.id DESC
+        {limit_sql}
+    """, params).fetchall()
+
+
+def fetch_advance_summary_rows(conn, where_clauses, params):
+    where_sql = " AND ".join(where_clauses)
+    return conn.execute(f"""
+        SELECT
+            base.employee_username,
+            base.currency,
+            SUM(base.amount_given) AS total_given,
+            SUM(base.topups_total) AS total_topups,
+            SUM(base.spent_total) AS total_spent,
+            COUNT(*) AS count
+        FROM (
+            SELECT
+                ca.id,
+                ca.employee_username,
+                ca.currency,
+                COALESCE(ca.amount_given, 0) AS amount_given,
+                COALESCE(t.topups_total, 0) AS topups_total,
+                COALESCE(e.spent_total, 0) AS spent_total
+            FROM cash_advances ca
+            LEFT JOIN (
+                SELECT advance_id, SUM(amount) AS topups_total
+                FROM cash_advance_topups
+                GROUP BY advance_id
+            ) t ON t.advance_id = ca.id
+            LEFT JOIN (
+                SELECT advance_id, SUM(amount) AS spent_total
+                FROM cash_advance_expenses
+                GROUP BY advance_id
+            ) e ON e.advance_id = ca.id
+            WHERE {where_sql}
+        ) base
+        GROUP BY base.employee_username, base.currency
+        ORDER BY base.employee_username ASC, base.currency ASC
+    """, params).fetchall()
 
 
 # ==========================
@@ -153,24 +177,16 @@ def api_advances_list():
     user = session.get("user")
 
     if role == "ADMIN":
-        rows = conn.execute("""
-            SELECT ca.*, ba.name AS bank_name
-            FROM cash_advances ca
-            LEFT JOIN bank_accounts ba ON ba.id = ca.bank_id
-            ORDER BY ca.id DESC
-            LIMIT 1000
-        """).fetchall()
+        rows = fetch_advance_rows(conn, limit_sql="LIMIT 1000")
     else:
-        rows = conn.execute("""
-            SELECT ca.*, ba.name AS bank_name
-            FROM cash_advances ca
-            LEFT JOIN bank_accounts ba ON ba.id = ca.bank_id
-            WHERE ca.employee_username=%s
-            ORDER BY ca.id DESC
-            LIMIT 1000
-        """, (user,)).fetchall()
+        rows = fetch_advance_rows(
+            conn,
+            where_sql="WHERE ca.employee_username=%s",
+            params=(user,),
+            limit_sql="LIMIT 1000"
+        )
 
-    data = [_advance_row_with_balance(conn, r) for r in rows]
+    data = [_format_advance_row(r) for r in rows]
     conn.close()
     return jsonify({"ok": True, "data": data})
 
@@ -241,14 +257,9 @@ def api_advances_create():
     new_id = new_row["id"]
     conn.commit()
 
-    row = conn.execute("""
-        SELECT ca.*, ba.name AS bank_name
-        FROM cash_advances ca
-        LEFT JOIN bank_accounts ba ON ba.id=ca.bank_id
-        WHERE ca.id=%s
-    """, (new_id,)).fetchone()
+    row = fetch_advance_rows(conn, where_sql="WHERE ca.id=%s", params=(new_id,))[0]
 
-    out = _advance_row_with_balance(conn, row)
+    out = _format_advance_row(row)
     conn.close()
 
     return jsonify({"ok": True, "data": out})
@@ -845,34 +856,7 @@ def api_advances_summary():
         params.append(1 if status == "CLOSED" else 0)
 
     conn = db()
-    rows = conn.execute(f"""
-        SELECT
-            ca.employee_username,
-            ca.currency,
-            SUM(COALESCE(ca.amount_given, 0)) AS total_given,
-
-            SUM(
-                COALESCE((
-                    SELECT SUM(t.amount)
-                    FROM cash_advance_topups t
-                    WHERE t.advance_id = ca.id
-                ), 0)
-            ) AS total_topups,
-
-            SUM(
-                COALESCE((
-                    SELECT SUM(e.amount)
-                    FROM cash_advance_expenses e
-                    WHERE e.advance_id = ca.id
-                ), 0)
-            ) AS total_spent,
-
-            COUNT(*) AS count
-        FROM cash_advances ca
-        WHERE {" AND ".join(where)}
-        GROUP BY ca.employee_username, ca.currency
-        ORDER BY ca.employee_username ASC, ca.currency ASC
-    """, params).fetchall()
+    rows = fetch_advance_summary_rows(conn, where, params)
     conn.close()
 
     data = []
@@ -922,34 +906,7 @@ def api_advances_summary_csv():
         params.append(1 if status == "CLOSED" else 0)
 
     conn = db()
-    rows = conn.execute(f"""
-        SELECT
-            ca.employee_username,
-            ca.currency,
-            SUM(COALESCE(ca.amount_given, 0)) AS total_given,
-
-            SUM(
-                COALESCE((
-                    SELECT SUM(t.amount)
-                    FROM cash_advance_topups t
-                    WHERE t.advance_id = ca.id
-                ), 0)
-            ) AS total_topups,
-
-            SUM(
-                COALESCE((
-                    SELECT SUM(e.amount)
-                    FROM cash_advance_expenses e
-                    WHERE e.advance_id = ca.id
-                ), 0)
-            ) AS total_spent,
-
-            COUNT(*) AS count
-        FROM cash_advances ca
-        WHERE {" AND ".join(where)}
-        GROUP BY ca.employee_username, ca.currency
-        ORDER BY ca.employee_username ASC, ca.currency ASC
-    """, params).fetchall()
+    rows = fetch_advance_summary_rows(conn, where, params)
     conn.close()
 
     output = StringIO()

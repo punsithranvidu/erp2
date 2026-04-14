@@ -14,6 +14,14 @@ def now_local():
     return datetime.now(pytz.timezone("Asia/Colombo"))
 
 
+def reservation_lock_key(doc_type: str) -> int:
+    return {
+        "INV": 1,
+        "QT": 2,
+        "PO": 3,
+    }.get((doc_type or "").upper(), 0)
+
+
 def get_next_number(doc_type):
     now = now_local()
     year = now.year
@@ -76,20 +84,30 @@ def reserve():
     if doc_type not in ("INV", "QT", "PO"):
         return jsonify({"ok": False, "error": "Invalid document type"}), 400
 
-    num, year, month = get_next_number(doc_type)
-
     conn = db()
     c = conn.cursor()
+    now = now_local()
+    year = now.year
+    month = now.month
+
+    c.execute(
+        "SELECT pg_advisory_xact_lock(%s, %s)",
+        (reservation_lock_key(doc_type), year)
+    )
 
     c.execute("""
-        SELECT id
+        SELECT id, number
         FROM document_numbers
-        WHERE doc_type=%s AND year=%s AND number=%s AND status='RESTORED'
-    """, (doc_type, year, num))
+        WHERE doc_type=%s AND year=%s AND status='RESTORED'
+        ORDER BY number ASC
+        LIMIT 1
+        FOR UPDATE
+    """, (doc_type, year))
 
     restored = c.fetchone()
 
     if restored:
+        num = int(restored["number"])
         c.execute("""
             UPDATE document_numbers
             SET status='RESERVED',
@@ -99,10 +117,18 @@ def reserve():
             WHERE id=%s
         """, (
             session.get("user"),
-            now_local().isoformat(),
+            now.isoformat(),
             restored["id"]
         ))
     else:
+        c.execute("""
+            SELECT COALESCE(MAX(number), 0) AS max_num
+            FROM document_numbers
+            WHERE doc_type=%s AND year=%s
+        """, (doc_type, year))
+        max_row = c.fetchone()
+        num = int(max_row["max_num"] or 0) + 1
+
         c.execute("""
             INSERT INTO document_numbers
             (doc_type, year, month, number, status, reserved_by, reserved_at)
@@ -113,7 +139,7 @@ def reserve():
             month,
             num,
             session.get("user"),
-            now_local().isoformat()
+            now.isoformat()
         ))
 
     conn.commit()

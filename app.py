@@ -64,7 +64,7 @@ app.config["GOOGLE_SERVICE_ACCOUNT_JSON"] = os.environ.get(
     ""
 )
 
-USERS = {
+BOOTSTRAP_USERS = {
     "punsith": {"password": "punsith123", "role": "ADMIN"},
     "dulmina": {"password": "dulmina123", "role": "ADMIN"},
     "mihiran": {"password": "mihiran123", "role": "ADMIN"},
@@ -224,6 +224,10 @@ def init_invoice_table():
             used_at TEXT,
             restored_at TEXT
         )
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_document_numbers_doc_year_status_number
+        ON document_numbers (doc_type, year, status, number)
     """)
     conn.commit()
     conn.close()
@@ -606,7 +610,7 @@ def init_db():
 
     ucount = cur.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
     if ucount == 0:
-        for uname, info in USERS.items():
+        for uname, info in BOOTSTRAP_USERS.items():
             cur.execute("""
                 INSERT INTO users (username, password_hash, role, active, created_at, created_by)
                 VALUES (%s,%s,%s,%s,%s,%s)
@@ -788,11 +792,7 @@ def auth_user(username, password):
             return None, "Invalid username or password"
         return {"id": row["id"], "username": row["username"], "role": row["role"]}, None
 
-    u = USERS.get(username)
-    if not u or u["password"] != password:
-        return None, "Invalid username or password"
-
-    return {"id": None, "username": username, "role": u["role"]}, None
+    return None, "Invalid username or password"
 
 
 # expose helpers to blueprints

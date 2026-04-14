@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, session, current_app
 from functools import wraps
 from datetime import datetime, timedelta
-from .db import connect
+from .db import connect, get_table_columns
 
 worksheet_bp = Blueprint("worksheet", __name__)
 
@@ -76,6 +76,42 @@ def ensure_worksheet_tables():
             UNIQUE(admin_user_id, work_date)
         )
     """)
+
+    worksheet_cols = get_table_columns(conn, "worksheet_entries")
+    worksheet_missing = {
+        "is_workday": "ALTER TABLE worksheet_entries ADD COLUMN is_workday INTEGER NOT NULL DEFAULT 1",
+        "summary": "ALTER TABLE worksheet_entries ADD COLUMN summary TEXT",
+        "status": "ALTER TABLE worksheet_entries ADD COLUMN status TEXT NOT NULL DEFAULT 'DRAFT'",
+        "admin_comment": "ALTER TABLE worksheet_entries ADD COLUMN admin_comment TEXT",
+        "reopen_reason": "ALTER TABLE worksheet_entries ADD COLUMN reopen_reason TEXT",
+        "saved_at": "ALTER TABLE worksheet_entries ADD COLUMN saved_at TEXT",
+        "saved_by": "ALTER TABLE worksheet_entries ADD COLUMN saved_by TEXT",
+        "submitted_at": "ALTER TABLE worksheet_entries ADD COLUMN submitted_at TEXT",
+        "submitted_by": "ALTER TABLE worksheet_entries ADD COLUMN submitted_by TEXT",
+        "approved_at": "ALTER TABLE worksheet_entries ADD COLUMN approved_at TEXT",
+        "approved_by": "ALTER TABLE worksheet_entries ADD COLUMN approved_by TEXT",
+        "reopened_at": "ALTER TABLE worksheet_entries ADD COLUMN reopened_at TEXT",
+        "reopened_by": "ALTER TABLE worksheet_entries ADD COLUMN reopened_by TEXT",
+        "returned_at": "ALTER TABLE worksheet_entries ADD COLUMN returned_at TEXT",
+        "returned_by": "ALTER TABLE worksheet_entries ADD COLUMN returned_by TEXT",
+    }
+    for column_name, ddl in worksheet_missing.items():
+        if column_name not in worksheet_cols:
+            conn.execute(ddl)
+
+    admin_cols = get_table_columns(conn, "admin_worksheet_entries")
+    admin_missing = {
+        "is_workday": "ALTER TABLE admin_worksheet_entries ADD COLUMN is_workday INTEGER NOT NULL DEFAULT 1",
+        "summary": "ALTER TABLE admin_worksheet_entries ADD COLUMN summary TEXT",
+        "status": "ALTER TABLE admin_worksheet_entries ADD COLUMN status TEXT NOT NULL DEFAULT 'APPROVED'",
+        "saved_at": "ALTER TABLE admin_worksheet_entries ADD COLUMN saved_at TEXT",
+        "saved_by": "ALTER TABLE admin_worksheet_entries ADD COLUMN saved_by TEXT",
+        "approved_at": "ALTER TABLE admin_worksheet_entries ADD COLUMN approved_at TEXT",
+        "approved_by": "ALTER TABLE admin_worksheet_entries ADD COLUMN approved_by TEXT",
+    }
+    for column_name, ddl in admin_missing.items():
+        if column_name not in admin_cols:
+            conn.execute(ddl)
 
     conn.commit()
     conn.close()

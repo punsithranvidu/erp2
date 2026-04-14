@@ -514,41 +514,115 @@ def get_direct_other_user(conn, conversation_id: int, current_user_id: int):
     """, (conversation_id, current_user_id)).fetchone()
 
 
+def get_bulk_conversation_metadata(conn, conversation_rows, user_id: int):
+    conversation_ids = [int(r["id"]) for r in conversation_rows]
+    if not conversation_ids:
+        return {}, {}, {}
+
+    in_clause = placeholders(len(conversation_ids))
+
+    last_rows = conn.execute(f"""
+        SELECT DISTINCT ON (mm.conversation_id)
+               mm.conversation_id,
+               mm.id,
+               mm.message_text,
+               mm.created_at,
+               mm.sender_user_id,
+               mm.attachment_name,
+               mm.attachment_mime,
+               mm.attachment_drive_id,
+               mm.deleted_at,
+               u.username AS sender_username,
+               u.full_name AS sender_full_name
+        FROM message_messages mm
+        LEFT JOIN users u ON u.id = mm.sender_user_id
+        WHERE mm.conversation_id IN ({in_clause})
+          AND mm.deleted_at IS NULL
+        ORDER BY mm.conversation_id, mm.id DESC
+    """, tuple(conversation_ids)).fetchall()
+    last_messages = {int(r["conversation_id"]): dict(r) for r in last_rows}
+
+    unread_rows = conn.execute(f"""
+        SELECT m.conversation_id, COUNT(mm.id) AS unread_count
+        FROM message_conversation_members m
+        LEFT JOIN message_messages mm
+          ON mm.conversation_id = m.conversation_id
+         AND mm.deleted_at IS NULL
+         AND mm.id > COALESCE(m.last_read_message_id, 0)
+         AND mm.sender_user_id <> %s
+        WHERE m.user_id=%s
+          AND m.active=1
+          AND m.conversation_id IN ({in_clause})
+        GROUP BY m.conversation_id
+    """, (user_id, user_id, *conversation_ids)).fetchall()
+    unread_counts = {int(r["conversation_id"]): int(r["unread_count"] or 0) for r in unread_rows}
+
+    direct_ids = [
+        int(r["id"])
+        for r in conversation_rows
+        if (r["conversation_type"] or "").upper() == "DIRECT"
+    ]
+    direct_users = {}
+    if direct_ids:
+        direct_in_clause = placeholders(len(direct_ids))
+        other_rows = conn.execute(f"""
+            SELECT m.conversation_id, u.id, u.username, u.full_name, u.role, u.google_email
+            FROM message_conversation_members m
+            JOIN users u ON u.id = m.user_id
+            WHERE m.conversation_id IN ({direct_in_clause})
+              AND m.active=1
+              AND u.id<>%s
+        """, (*direct_ids, user_id)).fetchall()
+        direct_users = {int(r["conversation_id"]): dict(r) for r in other_rows}
+
+    return last_messages, unread_counts, direct_users
+
+
+def build_sidebar_conversation_payloads(conn, conversation_rows, user_id: int):
+    last_messages, unread_counts, direct_users = get_bulk_conversation_metadata(conn, conversation_rows, user_id)
+    payloads = []
+
+    for conversation_row in conversation_rows:
+        convo = dict(conversation_row)
+        convo_id = int(convo["id"])
+        last_msg = last_messages.get(convo_id)
+        unread_count = unread_counts.get(convo_id, 0)
+
+        payload = {
+            "id": convo["id"],
+            "conversation_type": convo["conversation_type"],
+            "title": convo.get("title") or "",
+            "created_at": convo["created_at"],
+            "created_by": convo["created_by"],
+            "active": convo["active"],
+            "unread_count": unread_count,
+            "last_message": dict(last_msg) if last_msg else None,
+            "last_message_text": "",
+            "last_message_at": "",
+            "display_name": "",
+            "other_user_name": None,
+        }
+
+        if last_msg:
+            payload["last_message_text"] = last_msg["message_text"] or last_msg["attachment_name"] or "Attachment"
+            payload["last_message_at"] = last_msg["created_at"] or ""
+
+        if (convo["conversation_type"] or "").upper() == "DIRECT":
+            other = direct_users.get(convo_id)
+            display_name = (other["full_name"] or other["username"]) if other else "Direct Chat"
+            payload["display_name"] = display_name
+            payload["other_user_name"] = display_name
+            payload["title"] = display_name
+        else:
+            payload["display_name"] = convo.get("title") or "Group Chat"
+
+        payloads.append(payload)
+
+    return payloads
+
+
 def serialize_sidebar_conversation(conn, conversation_row, user_id: int):
-    convo = dict(conversation_row)
-
-    last_msg = get_conversation_last_message(conn, convo["id"])
-    unread_count = get_conversation_unread_count(conn, convo["id"], user_id)
-
-    payload = {
-        "id": convo["id"],
-        "conversation_type": convo["conversation_type"],
-        "title": convo.get("title") or "",
-        "created_at": convo["created_at"],
-        "created_by": convo["created_by"],
-        "active": convo["active"],
-        "unread_count": unread_count,
-        "last_message": dict(last_msg) if last_msg else None,
-        "last_message_text": "",
-        "last_message_at": "",
-        "display_name": "",
-        "other_user_name": None,
-    }
-
-    if last_msg:
-        payload["last_message_text"] = last_msg["message_text"] or last_msg["attachment_name"] or "Attachment"
-        payload["last_message_at"] = last_msg["created_at"] or ""
-
-    if (convo["conversation_type"] or "").upper() == "DIRECT":
-        other = get_direct_other_user(conn, convo["id"], user_id)
-        display_name = (other["full_name"] or other["username"]) if other else "Direct Chat"
-        payload["display_name"] = display_name
-        payload["other_user_name"] = display_name
-        payload["title"] = display_name
-    else:
-        payload["display_name"] = convo.get("title") or "Group Chat"
-
-    return payload
+    return build_sidebar_conversation_payloads(conn, [conversation_row], user_id)[0]
 
 
 def serialize_conversation_detail(conn, conversation_row, user_id: int):
@@ -630,11 +704,16 @@ def api_messages_unread_count():
     conn = db()
     uid = int(session.get("uid"))
 
-    rows = conn.execute("""
-        SELECT mc.id
-        FROM message_conversations mc
-        JOIN message_conversation_members m
-          ON m.conversation_id = mc.id
+    row = conn.execute("""
+        SELECT COUNT(mm.id) AS unread_count
+        FROM message_conversation_members m
+        JOIN message_conversations mc
+          ON mc.id = m.conversation_id
+        JOIN message_messages mm
+          ON mm.conversation_id = mc.id
+         AND mm.deleted_at IS NULL
+         AND mm.id > COALESCE(m.last_read_message_id, 0)
+         AND mm.sender_user_id <> %s
         WHERE mc.active=1
           AND m.user_id=%s
           AND m.active=1
@@ -645,14 +724,10 @@ def api_messages_unread_count():
                 AND d.user_id = %s
                 AND COALESCE(d.active,1)=1
           )
-    """, (uid, uid)).fetchall()
-
-    total = 0
-    for r in rows:
-        total += get_conversation_unread_count(conn, int(r["id"]), uid)
+    """, (uid, uid, uid)).fetchone()
 
     conn.close()
-    return jsonify({"ok": True, "data": {"unread_count": total}})
+    return jsonify({"ok": True, "data": {"unread_count": int(row["unread_count"] or 0)}})
 
 
 @messages_bp.route("/api/messages/conversations", methods=["GET"])
@@ -680,7 +755,7 @@ def api_messages_conversations():
         ORDER BY mc.id DESC
     """, (uid, uid)).fetchall()
 
-    data = [serialize_sidebar_conversation(conn, r, uid) for r in rows]
+    data = build_sidebar_conversation_payloads(conn, rows, uid)
     data.sort(key=lambda x: (x["last_message_at"] or x["created_at"] or ""), reverse=True)
 
     conn.close()
@@ -1269,11 +1344,10 @@ def api_messages_trash():
         ORDER BY d.deleted_at DESC, mc.id DESC
     """, (uid,)).fetchall()
 
-    data = []
-    for r in rows:
-        item = serialize_sidebar_conversation(conn, r, uid)
-        item["user_deleted_at"] = r["user_deleted_at"]
-        data.append(item)
+    data = build_sidebar_conversation_payloads(conn, rows, uid)
+    deleted_at_map = {int(r["id"]): r["user_deleted_at"] for r in rows}
+    for item in data:
+        item["user_deleted_at"] = deleted_at_map.get(int(item["id"]))
 
     conn.close()
     return jsonify({"ok": True, "data": data})
