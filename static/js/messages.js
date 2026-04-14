@@ -327,7 +327,7 @@ async function openConversation(conversationId) {
   stopChatRefreshLoop();
 
   await loadMessages({ forceBottom: true, silent: false });
-  await markConversationRead(false);
+  syncActiveConversationReadState();
   await loadConversationMembers(false, false);
 
   startChatRefreshLoop();
@@ -573,6 +573,22 @@ function upsertConversationFromMessage(messageRow) {
       unread_count: 0
     });
   }
+}
+
+function syncActiveConversationReadState() {
+  if (!ACTIVE_CONVO_ID) return;
+
+  const idx = CONVERSATIONS.findIndex((c) => Number(c.id) === Number(ACTIVE_CONVO_ID));
+  if (idx >= 0) {
+    CONVERSATIONS[idx].unread_count = 0;
+  }
+
+  if (ACTIVE_CONVO) {
+    ACTIVE_CONVO.unread_count = 0;
+  }
+
+  renderConversations();
+  renderChatHeader();
 }
 
 function renderAttachedFile() {
@@ -911,7 +927,7 @@ async function refreshActiveChatOnce() {
 
   const wasNearBottom = isNearBottom();
   await loadMessages({ forceBottom: false, silent: true });
-  await markConversationRead(false);
+  syncActiveConversationReadState();
 
   if (wasNearBottom) {
     scrollMessagesToBottom(true);

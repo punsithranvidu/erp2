@@ -108,6 +108,7 @@
 
     async function loadMessageBadge(){
       try{
+        if(document.hidden) return;
         const res = await fetch("/api/messages/unread-count", { credentials: "same-origin" });
         const out = await res.json();
         const count = Number(out?.data?.unread_count || 0);
@@ -126,6 +127,7 @@
 
     async function loadCalendarBadge(){
       try{
+        if(document.hidden) return;
         const res = await fetch("/api/messages/calendar-badge", { credentials: "same-origin" });
         const out = await safeJson(res);
         const count = Array.isArray(out?.data) ? out.data.length : 0;
@@ -148,6 +150,13 @@
 
       setInterval(loadMessageBadge, 55000);
       setInterval(loadCalendarBadge, 45000);
+
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          loadMessageBadge();
+          loadCalendarBadge();
+        }
+      });
     });
   </script>
 </body>

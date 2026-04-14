@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 
 let HS_ROWS = [];
 let EDIT_ID = null;
+let searchTimer = null;
 
 async function safeJson(res) {
   try {
@@ -261,6 +262,16 @@ async function deleteRow() {
   }
 }
 
+function scheduleSearchReload() {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+  }
+
+  searchTimer = setTimeout(() => {
+    loadRows();
+  }, 250);
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   $("saveBtn")?.addEventListener("click", saveRow);
   $("updateBtn")?.addEventListener("click", updateRow);
@@ -282,9 +293,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  $("searchInput")?.addEventListener("input", async () => {
-    await loadRows();
-  });
+  $("searchInput")?.addEventListener("input", scheduleSearchReload);
 
   setupScrollSync();
   clearForm();

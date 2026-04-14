@@ -241,7 +241,6 @@ function renderAdminRows() {
 
         showMsg("adminMsg", "Attendance updated.", true);
         await loadAdminRows();
-        await loadMyRows();
       } catch (err) {
         showMsg("adminMsg", err.message, false);
       }

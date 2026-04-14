@@ -1267,6 +1267,8 @@ async function deleteSelectedHistory() {
 }
 
 async function loadPendingReminders() {
+  if (document.hidden) return;
+
   try {
     const out = await api("/api/calendar/reminders/pending");
     const box = $("pendingReminders");
@@ -1400,4 +1402,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   if ($("holidayDate")) $("holidayDate").value = SELECTED_DATE;
 
   setInterval(loadPendingReminders, 30000);
+
+  document.addEventListener("visibilitychange", async () => {
+    if (!document.hidden) {
+      await loadPendingReminders();
+    }
+  });
 });

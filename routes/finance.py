@@ -68,11 +68,19 @@ def normalize_url(url: str) -> str:
     return "https://" + u
 
 
-def purge_deleted_older_than_30_days():
+def purge_deleted_older_than_30_days(force: bool = False):
     """
     Safe purge.
     If DB pool is temporarily full, do not break the whole page load.
     """
+    purge_key = "FINANCE_LAST_PURGE_TS"
+    now_ts = __import__("time").time()
+
+    if not force:
+        last_ts = float(current_app.config.get(purge_key) or 0)
+        if last_ts and (now_ts - last_ts) < 60:
+            return
+
     conn = None
     try:
         conn = db()
@@ -82,6 +90,7 @@ def purge_deleted_older_than_30_days():
               AND CAST(REPLACE(deleted_at, 'T', ' ') AS timestamp) <= NOW() - INTERVAL '30 days'
         """)
         conn.commit()
+        current_app.config[purge_key] = now_ts
     except Exception:
         # Ignore purge failures so finance page can still work
         pass
@@ -811,7 +820,7 @@ def api_finance_restore(rid):
 @login_required
 @require_module("FINANCE_TRASH", need_edit=True)
 def api_finance_purge():
-    purge_deleted_older_than_30_days()
+    purge_deleted_older_than_30_days(force=True)
     return jsonify({"ok": True})
 
 

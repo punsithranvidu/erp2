@@ -13,6 +13,7 @@ let SHARED_TREE_MODE = false;
 
 let creatingFolder = false;
 let uploadingDocument = false;
+let listSearchTimer = null;
 
 function safeText(v){ return (v === null || v === undefined) ? "" : String(v); }
 
@@ -744,6 +745,16 @@ async function copySelectedLink(){
   showMsg("editMsg", "Link copied.", true);
 }
 
+function scheduleListReload() {
+  if (listSearchTimer) {
+    clearTimeout(listSearchTimer);
+  }
+
+  listSearchTimer = setTimeout(() => {
+    loadItems();
+  }, 250);
+}
+
 function switchToShared(){
   VIEW_MODE = "SHARED";
   CURRENT_PARENT_ID = null;
@@ -780,7 +791,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderPath();
 
   $("shareSearch").addEventListener("input", renderCreatePermUsers);
-  $("listSearch").addEventListener("input", loadItems);
+  $("listSearch").addEventListener("input", scheduleListReload);
 
   $("goRootBtn").addEventListener("click", goRoot);
   $("goUpBtn").addEventListener("click", goUp);
