@@ -3,7 +3,11 @@ from psycopg.rows import dict_row
 
 
 def connect(dsn: str):
-    return psycopg.connect(dsn, row_factory=dict_row)
+    return psycopg.connect(
+        dsn,
+        row_factory=dict_row,
+        prepare_threshold=None
+    )
 
 
 def fetchone(conn, query, params=None):
