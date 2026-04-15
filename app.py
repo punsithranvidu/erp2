@@ -20,6 +20,7 @@ from routes.users import users_bp
 from routes.clients import clients_bp
 from routes.cash_advances import cash_advances_bp
 from routes.messages import messages_bp
+from routes.marketing_emails import marketing_emails_bp
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "CHANGE_THIS_TO_A_RANDOM_SECRET")
@@ -832,6 +833,7 @@ app.register_blueprint(users_bp)
 app.register_blueprint(clients_bp)
 app.register_blueprint(cash_advances_bp)
 app.register_blueprint(messages_bp)
+app.register_blueprint(marketing_emails_bp)
 
 
 # ======================
