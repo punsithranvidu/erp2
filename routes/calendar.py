@@ -397,6 +397,54 @@ def date_is_before_user_created(date_text, user_created_at):
         return False
 
 
+def parse_isoish_datetime(value):
+    raw = (str(value or "")).strip()
+    if not raw:
+        return None
+    normalized = raw.replace("T", " ")
+    try:
+        return datetime.fromisoformat(normalized)
+    except Exception:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(normalized, fmt)
+        except Exception:
+            pass
+    return None
+
+
+def combine_due_datetime(date_text, time_text=None, all_day=False):
+    raw_date = (str(date_text or "")).strip()
+    if not raw_date:
+        return None
+
+    clock = (str(time_text or "")).strip()
+    if clock:
+        candidate = parse_isoish_datetime(f"{raw_date} {clock}")
+        if candidate:
+            return candidate
+
+    base_date = parse_isoish_datetime(raw_date)
+    if not base_date:
+        return None
+
+    if all_day:
+        return base_date.replace(hour=23, minute=59, second=59, microsecond=0)
+    return base_date
+
+
+def was_item_already_overdue_for_user(user_created_at, item_created_at, due_at):
+    if not user_created_at or not due_at:
+        return False
+
+    created_dt = parse_isoish_datetime(item_created_at)
+    if created_dt and created_dt >= user_created_at:
+        return False
+
+    return due_at < user_created_at
+
+
 def build_pending_reminders(conn, me):
     now = datetime.now(APP_TZ).replace(tzinfo=None)
     user_created_at = parse_user_created_at(me)
@@ -1381,7 +1429,15 @@ def api_calendar_month():
                         })
 
         for h in holidays:
-            if date_is_before_user_created(h["holiday_date"], user_created_at):
+            holiday_due_at = combine_due_datetime(
+                h["holiday_date"],
+                all_day=True
+            )
+            if was_item_already_overdue_for_user(
+                user_created_at,
+                h.get("created_at"),
+                holiday_due_at
+            ):
                 continue
 
             key = h["holiday_date"]
@@ -1398,14 +1454,33 @@ def api_calendar_month():
             cur = datetime.fromisoformat(r["start_date"])
             end = datetime.fromisoformat(r["end_date"])
 
-            if user_created_at and end.date() < user_created_at.date():
+            unavailability_due_at = combine_due_datetime(
+                r["end_date"],
+                r.get("end_time"),
+                all_day=int(r.get("all_day") or 0) == 1
+            )
+            if was_item_already_overdue_for_user(
+                user_created_at,
+                r.get("requested_at"),
+                unavailability_due_at
+            ):
                 continue
 
             while cur <= end:
                 key = cur.date().isoformat()
-                if date_is_before_user_created(key, user_created_at):
-                    cur += timedelta(days=1)
-                    continue
+                if user_created_at:
+                    segment_due_at = combine_due_datetime(
+                        key,
+                        r.get("end_time") if key == r["end_date"] else None,
+                        all_day=int(r.get("all_day") or 0) == 1 or key != r["end_date"] or not (r.get("end_time") or "").strip()
+                    )
+                    if was_item_already_overdue_for_user(
+                        user_created_at,
+                        r.get("requested_at"),
+                        segment_due_at
+                    ):
+                        cur += timedelta(days=1)
+                        continue
 
                 if key in days:
                     days[key]["unavailability"].append({
@@ -1432,7 +1507,16 @@ def api_calendar_month():
                 if not event_visible_to_user(e, int(me["id"]), me["role"]):
                     continue
 
-            if date_is_before_user_created(e["event_date"], user_created_at):
+            event_due_at = combine_due_datetime(
+                e["event_date"],
+                e.get("end_time") or e.get("start_time"),
+                all_day=int(e.get("all_day") or 0) == 1
+            )
+            if was_item_already_overdue_for_user(
+                user_created_at,
+                e.get("created_at"),
+                event_due_at
+            ):
                 continue
 
             key = e["event_date"]
