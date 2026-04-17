@@ -147,6 +147,7 @@ function refreshOptionControls() {
   setOptions("callStatusFilter", ME.options.call_statuses, { includeAll: true });
   setOptions("bulkStatusSelect", ME.options.verification_statuses, { includeBlank: true });
   setOptions("exportStatus", ME.options.export_statuses, { includeBlank: false });
+  setOptions("exportStatusFilter", ME.options.export_statuses, { includeAll: true });
   setOptions("leadCallStatus", ME.options.call_statuses, { includeBlank: false });
 
   const employees = (ME.options.employees || []).map((emp) => ({
@@ -309,7 +310,9 @@ function renderLeads() {
 
   if (!ME.leads.length) {
     body.innerHTML = `<tr><td colspan="13" class="me-muted-cell">No leads found.</td></tr>`;
+    updateLeadTotals();
     updateSelectedCount();
+    setupTableScrollbars();
     return;
   }
 
@@ -413,6 +416,15 @@ function renderLeads() {
   });
 
   updateSelectedCount();
+  updateLeadTotals();
+  setupTableScrollbars();
+}
+
+function updateLeadTotals() {
+  const el = $("leadTotalText");
+  if (!el) return;
+  const count = ME.leads.length;
+  el.textContent = `${count} lead${count === 1 ? "" : "s"} / email${count === 1 ? "" : "s"} shown`;
 }
 
 function updateSelectedCount() {
@@ -611,9 +623,11 @@ function getExportFilters() {
   const employee = $("employeeFilter")?.value || "";
   const category = $("categoryFilter")?.value || "";
   const country = $("countryFilter")?.value || "";
+  const status = $("exportStatusFilter")?.value || "";
   if (employee) params.set("employee", employee);
   if (category) params.set("category", category);
   if (country) params.set("country", country);
+  if (status) params.set("status", status);
   return params;
 }
 
@@ -629,6 +643,8 @@ function renderExports() {
 
   if (!ME.exports.length) {
     body.innerHTML = `<tr><td colspan="11" class="me-muted-cell">No export file records found.</td></tr>`;
+    updateExportTotals();
+    setupTableScrollbars();
     return;
   }
 
@@ -687,6 +703,8 @@ function renderExports() {
   });
 
   updateSelectedExportCount();
+  updateExportTotals();
+  setupTableScrollbars();
 }
 
 function renderSendDatesCell(row) {
@@ -708,14 +726,18 @@ function renderSendDatesCell(row) {
 }
 
 function updateSelectedExportCount() {
-  const count = ME.selectedExportIds.size;
-  const el = $("selectedExportCount");
-  if (el) el.textContent = `${count} export file${count === 1 ? "" : "s"} selected`;
-
   const visibleIds = ME.exports.map((row) => Number(row.id));
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => ME.selectedExportIds.has(id));
   const box = $("exportSelectAllBox");
   if (box) box.checked = allVisibleSelected;
+}
+
+function updateExportTotals() {
+  const el = $("exportTotalText");
+  if (!el) return;
+  const fileCount = ME.exports.length;
+  const emailCount = ME.exports.reduce((sum, row) => sum + Number(row.lead_count || 0), 0);
+  el.textContent = `${fileCount} file${fileCount === 1 ? "" : "s"} • ${emailCount} email${emailCount === 1 ? "" : "s"}`;
 }
 
 function selectAllVisibleExports() {
@@ -821,6 +843,7 @@ async function loadPermissions() {
   const out = await api("/api/marketing-emails/download-permissions");
   ME.permissions = out.data || [];
   renderPermissions();
+  renderRequests();
 }
 
 function renderPermissions() {
@@ -834,10 +857,22 @@ function renderPermissions() {
 
   body.innerHTML = ME.permissions.map((row) => {
     const allowed = Number(row.can_download || 0) === 1;
+    const hadApprovedRequest = ME.requests.some((req) => (
+      Number(req.user_id || 0) === Number(row.user_id || 0)
+      && String(req.status || "").toUpperCase() === "APPROVED"
+    ));
+    const statusHtml = allowed
+      ? `<span class="me-status good">Allowed</span>`
+      : hadApprovedRequest
+        ? `<div class="me-actions">
+             <span class="me-status old good">Approved</span>
+             <span class="me-status bad">Blocked / Revoked</span>
+           </div>`
+        : `<span class="me-status warn">Blocked</span>`;
     return `
       <tr>
         <td><b>${esc(row.username)}</b><div class="me-muted-cell">${esc(row.full_name || "")}</div></td>
-        <td><span class="me-status ${allowed ? "good" : "warn"}">${allowed ? "Allowed" : "Blocked"}</span></td>
+        <td>${statusHtml}</td>
         <td>${esc(row.notes || "-")}</td>
         <td>${esc(row.updated_by || row.created_by || "-")}</td>
         <td>${esc(row.updated_at || row.created_at || "-")}</td>
@@ -892,6 +927,7 @@ function renderRequests() {
 
   body.innerHTML = ME.requests.map((row) => {
     const status = row.status || "PENDING";
+    const statusHtml = renderRequestStatus(row);
     const pendingActions = ME.options.is_admin
       ? `${status === "PENDING" ? `
            <button class="btn mini" type="button" data-approve-request="${row.id}">Approve</button>
@@ -907,7 +943,7 @@ function renderRequests() {
       <tr>
         <td><b>${esc(row.username || row.user_id)}</b><div class="me-muted-cell">${esc(row.full_name || "")}</div></td>
         <td>${esc(row.request_note || "-")}</td>
-        <td><span class="me-status ${statusClass(status)}">${esc(status)}</span></td>
+        <td>${statusHtml}</td>
         <td>${esc(row.requested_at || "-")}</td>
         <td>${esc(row.decided_by || "-")}</td>
         <td>${esc(row.decision_note || "-")}</td>
@@ -931,6 +967,27 @@ function renderRequests() {
   document.querySelectorAll("[data-delete-request]").forEach((btn) => {
     btn.addEventListener("click", () => deleteRequest(Number(btn.dataset.deleteRequest)));
   });
+}
+
+function requestUserCanDownload(row) {
+  if (ME.options.is_admin) {
+    const perm = ME.permissions.find((item) => Number(item.user_id || 0) === Number(row.user_id || 0));
+    return Number(perm?.can_download || 0) === 1;
+  }
+  return Boolean(ME.options.can_download);
+}
+
+function renderRequestStatus(row) {
+  const status = String(row.status || "PENDING").toUpperCase();
+  if (status === "APPROVED" && !requestUserCanDownload(row)) {
+    return `
+      <div class="me-actions">
+        <span class="me-status old good">Approved</span>
+        <span class="me-status bad">Blocked / Revoked</span>
+      </div>
+    `;
+  }
+  return `<span class="me-status ${statusClass(status)}">${esc(status)}</span>`;
 }
 
 async function requestDownloadAccess() {
@@ -1004,7 +1061,8 @@ function renderDownloadLogs() {
   if (!body) return;
 
   if (!ME.logs.length) {
-    body.innerHTML = `<tr><td colspan="3" class="me-muted-cell">No download logs found.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="4" class="me-muted-cell">No download logs found.</td></tr>`;
+    setupTableScrollbars();
     return;
   }
 
@@ -1013,20 +1071,41 @@ function renderDownloadLogs() {
       <td><b>${esc(row.file_name)}</b></td>
       <td>${esc(row.downloaded_by)}</td>
       <td>${esc(row.downloaded_at)}</td>
+      <td><button class="btn danger mini" type="button" data-delete-log="${row.id}">Delete</button></td>
     </tr>
   `).join("");
+
+  document.querySelectorAll("[data-delete-log]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteDownloadLog(Number(btn.dataset.deleteLog)));
+  });
+
+  setupTableScrollbars();
+}
+
+async function deleteDownloadLog(logId) {
+  if (!confirm("Move this download log to trash?")) return;
+  try {
+    await api(`/api/marketing-emails/download-logs/${logId}/delete`, { method: "POST" });
+    await loadDownloadLogs();
+    await loadTrash();
+    showMsg("requestMsg", "Download log moved to trash.", true);
+  } catch (err) {
+    showMsg("requestMsg", err.message, false);
+  }
 }
 
 async function loadTrash() {
   if (!ME.options.is_admin) return;
   const out = await api("/api/marketing-emails/trash");
-  ME.trash = out.data || { leads: [], exports: [] };
+  ME.trash = out.data || { leads: [], exports: [], logs: [] };
   renderTrash();
 }
 
 function renderTrash() {
   renderTrashLeads();
   renderTrashExports();
+  renderTrashLogs();
+  setupTableScrollbars();
 }
 
 function renderTrashLeads() {
@@ -1087,6 +1166,34 @@ function renderTrashExports() {
   bindTrashActions();
 }
 
+function renderTrashLogs() {
+  const body = $("trashLogBody");
+  if (!body) return;
+  const rows = ME.trash.logs || [];
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="6" class="me-muted-cell">No deleted download logs.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = rows.map((row) => `
+    <tr>
+      <td><b>${esc(row.file_name || "-")}</b></td>
+      <td>${esc(row.downloaded_by || "-")}</td>
+      <td>${esc(row.downloaded_at || "-")}</td>
+      <td>${esc(row.deleted_by || "-")}</td>
+      <td>${esc(row.deleted_at || "-")}</td>
+      <td>
+        <div class="me-actions">
+          <button class="btn mini" type="button" data-recover-trash="log:${row.id}">Recover</button>
+          <button class="btn danger mini" type="button" data-permanent-trash="log:${row.id}">Delete Permanently</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+
+  bindTrashActions();
+}
+
 function bindTrashActions() {
   document.querySelectorAll("[data-recover-trash]").forEach((btn) => {
     btn.onclick = () => {
@@ -1133,6 +1240,51 @@ function switchTab(tabName) {
   document.querySelectorAll(".me-section").forEach((section) => {
     section.classList.toggle("active", section.id === `tab-${tabName}`);
   });
+  setupTableScrollbars();
+}
+
+function setupTableScrollbars() {
+  document.querySelectorAll(".me-table-wrap").forEach((wrap) => {
+    const table = wrap.querySelector("table");
+    if (!table) return;
+
+    let scroll = wrap.nextElementSibling;
+    if (!scroll || !scroll.classList.contains("me-x-scroll")) {
+      scroll = document.createElement("div");
+      scroll.className = "me-x-scroll";
+      scroll.innerHTML = `<div class="me-x-scroll-inner"></div>`;
+      wrap.insertAdjacentElement("afterend", scroll);
+    }
+
+    const inner = scroll.querySelector(".me-x-scroll-inner");
+    if (!inner) return;
+    inner.style.width = `${table.scrollWidth}px`;
+    scroll.style.display = table.scrollWidth > wrap.clientWidth ? "block" : "none";
+
+    if (wrap.dataset.scrollSyncReady === "1") return;
+    wrap.dataset.scrollSyncReady = "1";
+
+    let fromWrap = false;
+    let fromScroll = false;
+
+    wrap.addEventListener("scroll", () => {
+      if (fromScroll) {
+        fromScroll = false;
+        return;
+      }
+      fromWrap = true;
+      scroll.scrollLeft = wrap.scrollLeft;
+    });
+
+    scroll.addEventListener("scroll", () => {
+      if (fromWrap) {
+        fromWrap = false;
+        return;
+      }
+      fromScroll = true;
+      wrap.scrollLeft = scroll.scrollLeft;
+    });
+  });
 }
 
 function scheduleSearchReload() {
@@ -1151,10 +1303,11 @@ async function refreshAll() {
     await loadOptions();
     await loadLeads();
     await loadExports();
-    await loadPermissions();
     await loadRequests();
+    await loadPermissions();
     await loadDownloadLogs();
     await loadTrash();
+    setupTableScrollbars();
   } catch (err) {
     showMsg("leadTableMsg", err.message, false);
   }
@@ -1174,6 +1327,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadLeads();
     await loadExports();
   });
+  $("applyExportFiltersBtn")?.addEventListener("click", loadExports);
   $("refreshAllBtn")?.addEventListener("click", refreshAll);
   $("selectAllLeadsBtn")?.addEventListener("click", selectAllVisibleLeads);
   $("clearLeadSelectionBtn")?.addEventListener("click", clearLeadSelection);
@@ -1190,8 +1344,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("clearExportBtn")?.addEventListener("click", clearExportForm);
   $("exportStatus")?.addEventListener("change", updateSendDateVisibility);
   $("sendRound")?.addEventListener("input", updateSendDateVisibility);
-  $("selectAllExportsBtn")?.addEventListener("click", selectAllVisibleExports);
-  $("clearExportSelectionBtn")?.addEventListener("click", clearExportSelection);
   $("exportSelectAllBox")?.addEventListener("change", (event) => {
     if (event.target.checked) {
       selectAllVisibleExports();
@@ -1213,6 +1365,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       await loadExports();
     });
   });
+
+  $("exportStatusFilter")?.addEventListener("change", loadExports);
+
+  window.addEventListener("resize", setupTableScrollbars);
 
   clearLeadForm();
   await loadOptions();

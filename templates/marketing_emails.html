@@ -99,6 +99,21 @@
       scrollbar-gutter:stable both-edges;
     }
 
+    .me-x-scroll{
+      width:100%;
+      overflow-x:auto;
+      overflow-y:hidden;
+      height:16px;
+      border:1px solid var(--line);
+      border-top:none;
+      border-radius:0 0 10px 10px;
+      background:#fff;
+    }
+
+    .me-x-scroll-inner{
+      height:1px;
+    }
+
     .me-table{
       width:100%;
       min-width:1280px;
@@ -212,6 +227,12 @@
       border-color:#fecaca;
       background:#fff1f2;
       color:#991b1b;
+    }
+
+    .me-status.old{
+      opacity:.65;
+      text-decoration:line-through;
+      text-decoration-thickness:2px;
     }
 
     .me-admin-only,
@@ -415,10 +436,21 @@
             <tbody id="leadTableBody"></tbody>
           </table>
         </div>
+        <div class="me-actions" style="margin-top:10px;">
+          <span class="me-muted-cell" id="leadTotalText">0 leads</span>
+        </div>
         <p class="msg" id="leadTableMsg"></p>
       </section>
 
       <section class="me-section" id="tab-exports">
+        <div class="me-filters">
+          <div>
+            <label for="exportStatusFilter">Export Status</label>
+            <select id="exportStatusFilter"></select>
+          </div>
+          <button class="btn mini" id="applyExportFiltersBtn" type="button">Apply</button>
+        </div>
+
         <div class="me-mini-form">
           <div>
             <label for="exportFileName">File Name</label>
@@ -483,9 +515,7 @@
           </table>
         </div>
         <div class="me-actions" style="margin-top:10px;">
-          <button class="btn ghost mini" id="selectAllExportsBtn" type="button">Select All</button>
-          <button class="btn ghost mini" id="clearExportSelectionBtn" type="button">Clear Selection</button>
-          <span class="me-muted-cell" id="selectedExportCount">0 export files selected</span>
+          <span class="me-muted-cell" id="exportTotalText">0 files • 0 emails</span>
         </div>
         <p class="msg" id="exportTableMsg"></p>
       </section>
@@ -549,6 +579,7 @@
                 <th>File</th>
                 <th>Downloaded By</th>
                 <th>Downloaded At</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="downloadLogBody"></tbody>
@@ -590,6 +621,23 @@
               </tr>
             </thead>
             <tbody id="trashExportBody"></tbody>
+          </table>
+        </div>
+
+        <h3 style="margin-top:18px;">Download Log Trash</h3>
+        <div class="me-table-wrap" style="max-height:320px;">
+          <table class="me-table" style="min-width:900px;">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Downloaded By</th>
+                <th>Downloaded At</th>
+                <th>Deleted By</th>
+                <th>Deleted At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="trashLogBody"></tbody>
           </table>
         </div>
         <p class="msg" id="trashMsg"></p>

@@ -322,6 +322,9 @@ def ensure_marketing_email_tables():
             downloaded_by_user_id BIGINT,
             downloaded_by TEXT NOT NULL,
             downloaded_at TEXT NOT NULL,
+            is_deleted INTEGER NOT NULL DEFAULT 0,
+            deleted_at TEXT,
+            deleted_by TEXT,
             FOREIGN KEY(export_file_id) REFERENCES marketing_email_export_files(id)
         )
     """)
@@ -410,6 +413,9 @@ def ensure_marketing_email_tables():
         "downloaded_by_user_id": "BIGINT",
         "downloaded_by": "TEXT",
         "downloaded_at": "TEXT",
+        "is_deleted": "INTEGER NOT NULL DEFAULT 0",
+        "deleted_at": "TEXT",
+        "deleted_by": "TEXT",
     }
     log_cols = get_table_columns(conn, "marketing_email_download_logs")
     for col, sql_type in log_columns.items():
@@ -463,6 +469,11 @@ def ensure_marketing_email_tables():
             WHEN confirmation_status='Send Second Email' THEN GREATEST(COALESCE(send_round, 0), 2)
             ELSE COALESCE(send_round, 0)
         END
+    """)
+    conn.execute("""
+        UPDATE marketing_email_download_logs
+        SET is_deleted=0
+        WHERE is_deleted IS NULL
     """)
 
     conn.execute("""
@@ -1254,6 +1265,13 @@ def api_trash_list():
         ORDER BY deleted_at DESC NULLS LAST, id DESC
         LIMIT 1000
     """).fetchall()
+    logs = conn.execute("""
+        SELECT *
+        FROM marketing_email_download_logs
+        WHERE is_deleted=1
+        ORDER BY deleted_at DESC NULLS LAST, id DESC
+        LIMIT 1000
+    """).fetchall()
     conn.close()
 
     return jsonify({
@@ -1261,6 +1279,7 @@ def api_trash_list():
         "data": {
             "leads": [dict(r) for r in leads],
             "exports": [dict(r) for r in exports],
+            "logs": [dict(r) for r in logs],
         },
     })
 
@@ -1295,6 +1314,15 @@ def api_trash_recover(item_type, item_id):
             WHERE id=%s AND is_deleted=1
             RETURNING *
         """, (now_iso(), session.get("user"), item_id)).fetchone()
+    elif item_type == "log":
+        row = conn.execute("""
+            UPDATE marketing_email_download_logs
+            SET is_deleted=0,
+                deleted_at=NULL,
+                deleted_by=NULL
+            WHERE id=%s AND is_deleted=1
+            RETURNING *
+        """, (item_id,)).fetchone()
     else:
         conn.close()
         return jsonify({"ok": False, "error": "Invalid trash item type"}), 400
@@ -1334,6 +1362,12 @@ def api_trash_permanent_delete(item_type, item_id):
         conn.execute("DELETE FROM marketing_email_download_logs WHERE export_file_id=%s", (item_id,))
         row = conn.execute("""
             DELETE FROM marketing_email_export_files
+            WHERE id=%s AND is_deleted=1
+            RETURNING id
+        """, (item_id,)).fetchone()
+    elif item_type == "log":
+        row = conn.execute("""
+            DELETE FROM marketing_email_download_logs
             WHERE id=%s AND is_deleted=1
             RETURNING id
         """, (item_id,)).fetchone()
@@ -1635,6 +1669,7 @@ def api_download_logs_list():
         rows = conn.execute("""
             SELECT *
             FROM marketing_email_download_logs
+            WHERE is_deleted=0
             ORDER BY id DESC
             LIMIT 500
         """).fetchall()
@@ -1643,9 +1678,44 @@ def api_download_logs_list():
             SELECT *
             FROM marketing_email_download_logs
             WHERE downloaded_by_user_id=%s
+              AND is_deleted=0
             ORDER BY id DESC
             LIMIT 200
         """, (current_user_id(),)).fetchall()
     conn.close()
 
     return jsonify({"ok": True, "data": [dict(r) for r in rows]})
+
+
+@marketing_emails_bp.route("/api/marketing-emails/download-logs/<int:log_id>/delete", methods=["POST"])
+@login_required
+@require_module("MARKETING_EMAILS")
+def api_download_log_soft_delete(log_id):
+    conn = db()
+    row = conn.execute("""
+        SELECT *
+        FROM marketing_email_download_logs
+        WHERE id=%s AND is_deleted=0
+        LIMIT 1
+    """, (log_id,)).fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "Download log not found"}), 404
+
+    if not is_admin() and int(row["downloaded_by_user_id"] or 0) != int(current_user_id() or 0):
+        conn.close()
+        return jsonify({"ok": False, "error": "Download log not found or no access"}), 404
+
+    deleted = conn.execute("""
+        UPDATE marketing_email_download_logs
+        SET is_deleted=1,
+            deleted_at=%s,
+            deleted_by=%s
+        WHERE id=%s
+        RETURNING *
+    """, (now_iso(), session.get("user"), log_id)).fetchone()
+    conn.commit()
+    conn.close()
+
+    return jsonify({"ok": True, "message": "Download log moved to trash", "data": dict(deleted)})
