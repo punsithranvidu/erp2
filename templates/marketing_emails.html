@@ -10,6 +10,12 @@
       grid-template-columns: 420px 1fr;
     }
 
+    .me-page > *,
+    .me-work-card,
+    #tab-leads{
+      min-width:0;
+    }
+
     .me-form-card,
     .me-work-card{
       background:#fff;
@@ -90,6 +96,8 @@
 
     .me-table-wrap{
       width:100%;
+      max-width:100%;
+      min-width:0;
       overflow-x:auto;
       overflow-y:auto;
       border:1px solid var(--line);
@@ -196,7 +204,7 @@
     }
 
     .me-link{
-      color:var(--accent2);
+      color:#60a5fa;
       font-weight:700;
       text-decoration:none;
     }
@@ -440,6 +448,9 @@
             <tbody id="leadTableBody"></tbody>
           </table>
         </div>
+        <div class="me-x-scroll" id="leadsBottomScroll">
+          <div class="me-x-scroll-inner"></div>
+        </div>
 
         <div class="me-actions" style="margin-top:10px;">
           <span class="me-muted-cell" id="leadTotalText">0 leads</span>
@@ -647,11 +658,6 @@
         </div>
         <p class="msg" id="trashMsg"></p>
       </section>
-
-      <div class="me-x-scroll" id="leadsBottomScroll">
-        <div class="me-x-scroll-inner"></div>
-      </div>
-
     </div>
   </div>
 
