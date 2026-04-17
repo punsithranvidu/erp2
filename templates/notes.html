@@ -69,6 +69,19 @@
       min-height:220px;
       margin-top:12px;
     }
+    .notes-board.search-results{
+      max-height:430px;
+      overflow-y:auto;
+      padding-right:6px;
+    }
+    .notes-date-filter{
+      display:flex;
+      gap:6px;
+      align-items:center;
+    }
+    .notes-date-filter input{
+      min-width:0;
+    }
     .note-card{
       position:relative;
       border:1px solid var(--line);
@@ -217,6 +230,15 @@
       margin-top:12px;
       flex-wrap:wrap;
     }
+    .notes-default-page{
+      display:none;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    body[data-role="ADMIN"] .notes-default-page{
+      display:flex;
+    }
     .notes-warning{
       display:none;
       margin-top:10px;
@@ -339,6 +361,14 @@
           <option>Cancelled</option>
         </select>
 
+        <div class="admin-only" style="display:none;">
+          <label for="noteAudience">Sharing</label>
+          <select id="noteAudience">
+            <option value="EVERYONE">Share with Everyone</option>
+            <option value="ADMINS">Admins Only</option>
+          </select>
+        </div>
+
         <div class="row" style="margin-top:14px;">
           <button class="btn" id="saveNoteBtn" type="button">Save</button>
           <button class="btn ghost" id="clearNoteBtn" type="button">Clear</button>
@@ -386,7 +416,10 @@
         </div>
         <div>
           <label for="filterExpected">Expected Date</label>
-          <input id="filterExpected" type="date" />
+          <div class="notes-date-filter">
+            <input id="filterExpected" type="date" />
+            <button class="btn ghost mini" id="clearExpectedBtn" type="button">Clear</button>
+          </div>
         </div>
         <button class="btn" id="applyFiltersBtn" type="button">Apply</button>
       </div>
@@ -403,6 +436,7 @@
           <button class="btn ghost mini" id="recoverSelectedBtn" type="button">Recover</button>
           <button class="btn ghost mini" id="permanentSelectedBtn" type="button">Permanent Delete</button>
           <button class="btn ghost mini" id="historySelectedBtn" type="button">History</button>
+          <button class="btn ghost mini" id="clearSelectionBtn" type="button">Unselect</button>
         </div>
       </div>
       <div class="notes-board" id="notesBoard"></div>
@@ -412,6 +446,10 @@
           <button class="btn ghost mini notes-icon-btn prev" id="prevPageBtn" type="button" aria-label="Previous page"></button>
           <span class="sub" id="pageLabel">Page 1</span>
           <button class="btn ghost mini notes-icon-btn next" id="nextPageBtn" type="button" aria-label="Next page"></button>
+        </div>
+        <div class="notes-default-page">
+          <button class="btn ghost mini" id="setDefaultPageBtn" type="button">Set Default Page</button>
+          <span class="sub" id="defaultPageLabel">Default: auto</span>
         </div>
         <span class="sub" id="totalLabel">0 notes shown</span>
       </div>

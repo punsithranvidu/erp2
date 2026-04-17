@@ -1,11 +1,12 @@
 let NOTES_TAB = "active";
-let NOTES_PAGE = 1;
+let NOTES_PAGE = "default";
 let NOTES_TOTAL_PAGES = 1;
 let EDIT_NOTE_ID = null;
 let ME = null;
 let SELECTED_NOTE = null;
 
 const NOTE_STATUSES = ["Active", "Done", "Cancelled"];
+const NOTES_PER_PAGE = 8;
 
 function qs(id){
   return document.getElementById(id);
@@ -68,6 +69,15 @@ function getFilters(){
   };
 }
 
+function hasSearchFilters(filters=getFilters()){
+  return Boolean(
+    filters.q
+    || filters.expected_date
+    || (filters.status && filters.status !== "ALL")
+    || (filters.user_id && filters.user_id !== "ALL")
+  );
+}
+
 function queryString(params){
   const sp = new URLSearchParams();
   Object.entries(params).forEach(([key, val]) => {
@@ -84,6 +94,7 @@ function clearForm(){
   qs("noteText").value = "";
   qs("expectedEndDate").value = "";
   qs("noteStatus").value = "Active";
+  if(qs("noteAudience")) qs("noteAudience").value = "EVERYONE";
   qs("noteStatus").disabled = false;
   qs("saveNoteBtn").textContent = "Save";
   showMsg("", true);
@@ -101,6 +112,7 @@ function fillForm(row){
   qs("noteText").value = row.note_text || "";
   qs("expectedEndDate").value = toInputDateTime(row.expected_end_date);
   qs("noteStatus").value = NOTE_STATUSES.includes(row.status) ? row.status : "Active";
+  if(qs("noteAudience")) qs("noteAudience").value = row.audience || "EVERYONE";
   qs("noteStatus").disabled = false;
   qs("saveNoteBtn").textContent = "Update";
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -108,10 +120,12 @@ function fillForm(row){
 
 async function saveNote(){
   try{
+    const wasEditing = !!EDIT_NOTE_ID;
     const payload = {
       note_text: qs("noteText").value.trim(),
       expected_end_date: qs("expectedEndDate").value,
-      status: qs("noteStatus").value
+      status: qs("noteStatus").value,
+      audience: qs("noteAudience") ? qs("noteAudience").value : "EVERYONE"
     };
 
     if(!payload.note_text){
@@ -134,6 +148,7 @@ async function saveNote(){
     }
 
     clearForm();
+    if(!wasEditing) NOTES_PAGE = "default";
     await loadNotes();
   }catch(err){
     showMsg(err.message, false);
@@ -142,7 +157,7 @@ async function saveNote(){
 
 function setTab(tab){
   NOTES_TAB = tab;
-  NOTES_PAGE = 1;
+  NOTES_PAGE = "default";
   document.querySelectorAll(".notes-tab").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.tab === tab);
   });
@@ -167,11 +182,7 @@ function renderWarning(pages){
     return;
   }
 
-  if(pages.length === 1){
-    el.textContent = `Previous page ${pages[0]} still has unmarked active notes.`;
-  }else{
-    el.textContent = `Previous pages ${pages.join(", ")} also have active notes.`;
-  }
+  el.textContent = `Unmarked active notes still exist on previous page(s): ${pages.join(", ")}.`;
   el.style.display = "block";
 }
 
@@ -181,6 +192,7 @@ function noteTooltip(row){
     <span class="note-tip-line"><b>Created by:</b> ${esc(fmt(row.created_by))}</span>
     <span class="note-tip-line"><b>Expected due:</b> ${esc(fmt(row.expected_end_date))}</span>
     <span class="note-tip-line"><b>Status:</b> ${esc(fmt(row.status))}</span>
+    <span class="note-tip-line"><b>Sharing:</b> ${esc((row.audience || "EVERYONE") === "ADMINS" ? "Admins Only" : "Everyone")}</span>
     <span class="note-tip-line"><b>Last edited:</b> ${esc(fmt(row.edited_at))}</span>
     <span class="note-tip-line"><b>Edited by:</b> ${esc(fmt(row.edited_by))}</span>
     <span class="note-tip-line"><b>Done date:</b> ${esc(fmt(row.done_at))}</span>
@@ -290,11 +302,22 @@ function renderNotes(rows){
 
 function renderPager(out){
   NOTES_TOTAL_PAGES = Number(out.total_pages || 1);
-  qs("pageLabel").textContent = `Page ${Number(out.page || NOTES_PAGE)} of ${NOTES_TOTAL_PAGES}`;
-  qs("totalLabel").textContent = `${Number(out.total || 0)} notes shown`;
-  qs("prevPageBtn").disabled = NOTES_PAGE <= 1;
-  qs("nextPageBtn").disabled = NOTES_PAGE >= NOTES_TOTAL_PAGES;
+  NOTES_PAGE = Number(out.page || 1);
+  const isSearch = !!out.search_mode;
+  qs("pageLabel").textContent = isSearch ? "Search results" : `Page ${NOTES_PAGE} of ${NOTES_TOTAL_PAGES}`;
+  qs("totalLabel").textContent = isSearch ? `${Number(out.total || 0)} matching notes shown` : `${Number(out.total || 0)} notes shown`;
+  qs("prevPageBtn").disabled = isSearch || NOTES_PAGE <= 1;
+  qs("nextPageBtn").disabled = isSearch || NOTES_PAGE >= NOTES_TOTAL_PAGES;
   qs("notesPager").style.display = NOTES_TAB === "trash" ? "none" : "flex";
+  qs("notesBoard").classList.toggle("search-results", isSearch);
+  const defaultLabel = qs("defaultPageLabel");
+  if(defaultLabel){
+    defaultLabel.textContent = out.configured_default_page ? `Default: page ${out.configured_default_page}` : "Default: latest page";
+  }
+  const defaultBtn = qs("setDefaultPageBtn");
+  if(defaultBtn){
+    defaultBtn.style.display = isSearch || NOTES_TAB !== "active" ? "none" : "";
+  }
 }
 
 async function loadNotes(){
@@ -308,7 +331,7 @@ async function loadNotes(){
     const qsText = queryString({
       tab: NOTES_TAB,
       page: NOTES_PAGE,
-      per_page: 30,
+      per_page: NOTES_PER_PAGE,
       q: filters.q,
       status: filters.status,
       user_id: filters.user_id,
@@ -336,6 +359,7 @@ async function loadTrash(){
   const out = await api(`/api/notes/trash?${qsText}`);
   clearSelection();
   renderNotes(out.data || []);
+  qs("notesBoard").classList.add("search-results");
   qs("totalLabel").textContent = `${(out.data || []).length} trash notes`;
   qs("notesPager").style.display = "none";
   renderWarning([]);
@@ -379,6 +403,22 @@ async function permanentDelete(id){
   try{
     const out = await api(`/api/notes/trash/${id}/permanent`, { method: "DELETE" });
     showMsg(out.message || "Note permanently deleted", true);
+    await loadNotes();
+  }catch(err){
+    showMsg(err.message, false);
+  }
+}
+
+async function setDefaultPage(){
+  if((document.body.dataset.role || "") !== "ADMIN") return;
+  if(NOTES_TAB !== "active") return;
+  try{
+    const page = Number(NOTES_PAGE || 1);
+    const out = await api("/api/notes/default-page", {
+      method: "POST",
+      body: JSON.stringify({ page })
+    });
+    showMsg(out.message || `Default opening page set to ${page}`, true);
     await loadNotes();
   }catch(err){
     showMsg(err.message, false);
@@ -459,21 +499,27 @@ function bindEvents(){
   qs("clearNoteBtn").addEventListener("click", clearForm);
   qs("refreshNotesBtn").addEventListener("click", loadNotes);
   qs("applyFiltersBtn").addEventListener("click", () => {
-    NOTES_PAGE = 1;
+    NOTES_PAGE = hasSearchFilters() ? 1 : "default";
+    loadNotes();
+  });
+  qs("clearExpectedBtn").addEventListener("click", () => {
+    qs("filterExpected").value = "";
+    NOTES_PAGE = hasSearchFilters() ? 1 : "default";
     loadNotes();
   });
   qs("prevPageBtn").addEventListener("click", () => {
-    if(NOTES_PAGE > 1){
+    if(Number(NOTES_PAGE) > 1){
       NOTES_PAGE -= 1;
       loadNotes();
     }
   });
   qs("nextPageBtn").addEventListener("click", () => {
-    if(NOTES_PAGE < NOTES_TOTAL_PAGES){
+    if(Number(NOTES_PAGE) < NOTES_TOTAL_PAGES){
       NOTES_PAGE += 1;
       loadNotes();
     }
   });
+  qs("setDefaultPageBtn").addEventListener("click", setDefaultPage);
   qs("closeHistoryBtn").addEventListener("click", closeHistory);
   qs("historyModal").addEventListener("click", (e) => {
     if(e.target === qs("historyModal")) closeHistory();
@@ -489,9 +535,10 @@ function bindEvents(){
   qs("recoverSelectedBtn").addEventListener("click", () => SELECTED_NOTE && recoverNote(SELECTED_NOTE.id));
   qs("permanentSelectedBtn").addEventListener("click", () => SELECTED_NOTE && permanentDelete(SELECTED_NOTE.id));
   qs("historySelectedBtn").addEventListener("click", () => SELECTED_NOTE && loadHistory(SELECTED_NOTE.id));
+  qs("clearSelectionBtn").addEventListener("click", clearSelection);
   qs("filterSearch").addEventListener("keydown", (e) => {
     if(e.key === "Enter"){
-      NOTES_PAGE = 1;
+      NOTES_PAGE = hasSearchFilters() ? 1 : "default";
       loadNotes();
     }
   });

@@ -9,6 +9,8 @@ from .db import connect, get_table_columns
 notes_bp = Blueprint("notes", __name__)
 
 NOTE_STATUSES = ("Active", "Done", "Cancelled")
+NOTE_AUDIENCES = ("EVERYONE", "ADMINS")
+NOTES_PER_PAGE = 8
 APP_TZ = ZoneInfo("Asia/Colombo")
 
 
@@ -75,6 +77,11 @@ def normalize_status(value):
     return status if status in NOTE_STATUSES else None
 
 
+def normalize_audience(value):
+    audience = clean_text(value).upper() or "EVERYONE"
+    return audience if audience in NOTE_AUDIENCES else "EVERYONE"
+
+
 def ensure_notes_tables():
     conn = db()
     cur = conn.cursor()
@@ -92,6 +99,7 @@ def ensure_notes_tables():
             created_at TEXT NOT NULL,
             edited_by TEXT,
             edited_at TEXT,
+            audience TEXT NOT NULL DEFAULT 'EVERYONE',
             is_deleted INTEGER NOT NULL DEFAULT 0,
             deleted_by TEXT,
             deleted_by_user_id BIGINT,
@@ -124,6 +132,15 @@ def ensure_notes_tables():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS note_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT,
+            edited_at TEXT,
+            edited_by TEXT
+        )
+    """)
+
     cols = get_table_columns(conn, "notes")
     missing = {
         "note_text": "ALTER TABLE notes ADD COLUMN note_text TEXT NOT NULL DEFAULT ''",
@@ -136,6 +153,7 @@ def ensure_notes_tables():
         "created_at": "ALTER TABLE notes ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
         "edited_by": "ALTER TABLE notes ADD COLUMN edited_by TEXT",
         "edited_at": "ALTER TABLE notes ADD COLUMN edited_at TEXT",
+        "audience": "ALTER TABLE notes ADD COLUMN audience TEXT NOT NULL DEFAULT 'EVERYONE'",
         "is_deleted": "ALTER TABLE notes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
         "deleted_by": "ALTER TABLE notes ADD COLUMN deleted_by TEXT",
         "deleted_by_user_id": "ALTER TABLE notes ADD COLUMN deleted_by_user_id BIGINT",
@@ -170,9 +188,27 @@ def ensure_notes_tables():
         if col not in ecols:
             cur.execute(sql)
 
+    scols = get_table_columns(conn, "note_settings")
+    settings_missing = {
+        "setting_key": "ALTER TABLE note_settings ADD COLUMN setting_key TEXT",
+        "setting_value": "ALTER TABLE note_settings ADD COLUMN setting_value TEXT",
+        "edited_at": "ALTER TABLE note_settings ADD COLUMN edited_at TEXT",
+        "edited_by": "ALTER TABLE note_settings ADD COLUMN edited_by TEXT",
+    }
+    for col, sql in settings_missing.items():
+        if col not in scols:
+            cur.execute(sql)
+
+    cur.execute("""
+        UPDATE notes
+        SET audience='EVERYONE'
+        WHERE audience IS NULL OR TRIM(audience)=''
+    """)
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_deleted_status ON notes (is_deleted, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_created_by_user ON notes (created_by_user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_expected_end_date ON notes (expected_end_date)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_audience ON notes (audience)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_note_due_history_note_id ON note_due_date_history (note_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_note_edit_history_note_id ON note_edit_history (note_id)")
 
@@ -200,6 +236,27 @@ def can_status_note(row):
     return bool(row) and int(row["is_deleted"] or 0) == 0
 
 
+def note_visible_to_viewer(row, viewer_created_at=None):
+    if not row:
+        return False
+    if is_admin():
+        return True
+    if (row["audience"] or "EVERYONE") != "EVERYONE":
+        return False
+    if not viewer_created_at:
+        return True
+    expected_due = clean_text(row["expected_end_date"])
+    done_at = clean_text(row["done_at"])
+    cancelled_at = clean_text(row["cancelled_at"])
+    if expected_due and expected_due < viewer_created_at:
+        return False
+    if done_at and done_at < viewer_created_at:
+        return False
+    if cancelled_at and cancelled_at < viewer_created_at:
+        return False
+    return True
+
+
 def get_note(conn, note_id, include_deleted=False):
     deleted_sql = "" if include_deleted else "AND is_deleted=0"
     return conn.execute(f"""
@@ -208,6 +265,40 @@ def get_note(conn, note_id, include_deleted=False):
         WHERE id=%s {deleted_sql}
         LIMIT 1
     """, (note_id,)).fetchone()
+
+
+def get_current_user_row(conn):
+    uid = current_user_id()
+    if not uid:
+        return None
+    return conn.execute("""
+        SELECT id, username, role, created_at
+        FROM users
+        WHERE id=%s
+        LIMIT 1
+    """, (uid,)).fetchone()
+
+
+def get_note_setting(conn, key):
+    row = conn.execute("""
+        SELECT setting_value
+        FROM note_settings
+        WHERE setting_key=%s
+        LIMIT 1
+    """, (key,)).fetchone()
+    return row["setting_value"] if row else None
+
+
+def set_note_setting(conn, key, value):
+    conn.execute("""
+        INSERT INTO note_settings (setting_key, setting_value, edited_at, edited_by)
+        VALUES (%s,%s,%s,%s)
+        ON CONFLICT(setting_key)
+        DO UPDATE SET
+            setting_value=excluded.setting_value,
+            edited_at=excluded.edited_at,
+            edited_by=excluded.edited_by
+    """, (key, value, now_iso(), session["user"]))
 
 
 def note_dict(row):
@@ -233,7 +324,20 @@ def record_edit_history(conn, note_id, edited_at, edit_type="UPDATE"):
     ))
 
 
-def build_note_filters(args, include_deleted=False):
+def has_search_filters(args):
+    q = clean_text(args.get("q"))
+    status = clean_text(args.get("status"))
+    expected_date = clean_text(args.get("expected_date"))
+    user_id = clean_text(args.get("user_id"))
+    return bool(
+        q
+        or expected_date
+        or (status and status.upper() != "ALL")
+        or (user_id and user_id.upper() != "ALL")
+    )
+
+
+def build_note_filters(args, include_deleted=False, viewer_created_at=None):
     tab = clean_text(args.get("tab")) or "active"
     q = clean_text(args.get("q"))
     status = clean_text(args.get("status"))
@@ -243,6 +347,18 @@ def build_note_filters(args, include_deleted=False):
     where = ["n.is_deleted=%s"]
     vals = [1 if include_deleted else 0]
 
+    if not is_admin():
+        where.append("COALESCE(n.audience, 'EVERYONE')='EVERYONE'")
+        if viewer_created_at:
+            where.append("""
+                NOT (
+                    (n.expected_end_date IS NOT NULL AND TRIM(n.expected_end_date)<>'' AND n.expected_end_date < %s)
+                    OR (n.done_at IS NOT NULL AND TRIM(n.done_at)<>'' AND n.done_at < %s)
+                    OR (n.cancelled_at IS NOT NULL AND TRIM(n.cancelled_at)<>'' AND n.cancelled_at < %s)
+                )
+            """)
+            vals.extend([viewer_created_at, viewer_created_at, viewer_created_at])
+
     if q:
         where.append("n.note_text ILIKE %s")
         vals.append(f"%{q}%")
@@ -251,9 +367,6 @@ def build_note_filters(args, include_deleted=False):
         if status in NOTE_STATUSES:
             where.append("n.status=%s")
             vals.append(status)
-    elif tab == "active" and not include_deleted:
-        where.append("n.status=%s")
-        vals.append("Active")
 
     if expected_date:
         where.append("COALESCE(n.expected_end_date, '') LIKE %s")
@@ -293,7 +406,7 @@ def previous_active_pages(conn, where_sql, vals, page, per_page):
         SELECT n.status
         FROM notes n
         WHERE {where_sql}
-        ORDER BY n.id DESC
+        ORDER BY n.id ASC
         LIMIT %s
     """, tuple(vals + [offset])).fetchall()
 
@@ -334,47 +447,97 @@ def api_notes_users():
 @login_required
 @require_module("NOTES")
 def api_notes_list():
-    try:
-        page = max(1, int(request.args.get("page", 1)))
-    except Exception:
-        page = 1
-    try:
-        per_page = int(request.args.get("per_page", 12))
-        per_page = min(48, max(6, per_page))
-    except Exception:
-        per_page = 12
-
-    where_sql, vals = build_note_filters(request.args, include_deleted=False)
-    offset = (page - 1) * per_page
-
     conn = db()
+    viewer = get_current_user_row(conn)
+    viewer_created_at = viewer["created_at"] if viewer else None
+    tab = clean_text(request.args.get("tab")) or "active"
+    where_sql, vals = build_note_filters(
+        request.args,
+        include_deleted=False,
+        viewer_created_at=viewer_created_at
+    )
+    search_mode = has_search_filters(request.args)
+
     total = conn.execute(f"""
         SELECT COUNT(*) AS c
         FROM notes n
         WHERE {where_sql}
     """, tuple(vals)).fetchone()["c"]
+    total = int(total or 0)
+    per_page = NOTES_PER_PAGE
+    total_pages = max(1, ((total + per_page - 1) // per_page))
 
-    rows = conn.execute(f"""
-        SELECT n.*
-        FROM notes n
-        WHERE {where_sql}
-        ORDER BY n.id DESC
-        LIMIT %s OFFSET %s
-    """, tuple(vals + [per_page, offset])).fetchall()
+    configured_default = get_note_setting(conn, "default_active_page")
+    configured_page = None
+    if configured_default:
+        try:
+            configured_page = max(1, int(configured_default))
+        except Exception:
+            configured_page = None
 
-    active_pages = previous_active_pages(conn, where_sql, vals, page, per_page)
+    raw_page = clean_text(request.args.get("page")) or "default"
+    if search_mode:
+        page = 1
+        rows = conn.execute(f"""
+            SELECT n.*
+            FROM notes n
+            WHERE {where_sql}
+            ORDER BY n.id ASC
+        """, tuple(vals)).fetchall()
+        active_pages = []
+    else:
+        if raw_page.lower() == "default":
+            page = (configured_page if tab == "active" else None) or total_pages
+        else:
+            try:
+                page = max(1, int(raw_page))
+            except Exception:
+                page = (configured_page if tab == "active" else None) or total_pages
+        page = min(max(1, page), total_pages)
+        offset = (page - 1) * per_page
+
+        rows = conn.execute(f"""
+            SELECT n.*
+            FROM notes n
+            WHERE {where_sql}
+            ORDER BY n.id ASC
+            LIMIT %s OFFSET %s
+        """, tuple(vals + [per_page, offset])).fetchall()
+
+        active_pages = previous_active_pages(conn, where_sql, vals, page, per_page)
     conn.close()
 
-    total_pages = max(1, ((int(total or 0) + per_page - 1) // per_page))
     return jsonify({
         "ok": True,
         "data": [note_dict(r) for r in rows],
         "page": page,
         "per_page": per_page,
-        "total": int(total or 0),
+        "total": total,
         "total_pages": total_pages,
         "previous_active_pages": active_pages,
+        "search_mode": search_mode,
+        "configured_default_page": configured_page,
     })
+
+
+@notes_bp.route("/api/notes/default-page", methods=["POST"])
+@login_required
+@require_module("NOTES", need_edit=True)
+def api_notes_default_page_set():
+    if not is_admin():
+        return jsonify({"ok": False, "error": "Admin only"}), 403
+
+    data = request.json or {}
+    try:
+        page = max(1, int(data.get("page") or 1))
+    except Exception:
+        return jsonify({"ok": False, "error": "Invalid page"}), 400
+
+    conn = db()
+    set_note_setting(conn, "default_active_page", str(page))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "data": {"page": page}, "message": f"Default opening page set to {page}"})
 
 
 @notes_bp.route("/api/notes", methods=["POST"])
@@ -384,6 +547,7 @@ def api_notes_create():
     data = request.json or {}
     note_text = clean_text(data.get("note_text"))
     expected_end_date = clean_due(data.get("expected_end_date"))
+    audience = normalize_audience(data.get("audience")) if is_admin() else "EVERYONE"
 
     if not note_text:
         return jsonify({"ok": False, "error": "Note text is required"}), 400
@@ -392,14 +556,15 @@ def api_notes_create():
     conn = db()
     row = conn.execute("""
         INSERT INTO notes (
-            note_text, expected_end_date, status,
+            note_text, expected_end_date, status, audience,
             created_by_user_id, created_by, created_at
         )
-        VALUES (%s,%s,'Active',%s,%s,%s)
+        VALUES (%s,%s,'Active',%s,%s,%s,%s)
         RETURNING *
     """, (
         note_text,
         expected_end_date,
+        audience,
         current_user_id(),
         session["user"],
         created_at,
@@ -434,6 +599,7 @@ def api_notes_update(note_id):
     note_text = clean_text(data.get("note_text"))
     expected_end_date = clean_due(data.get("expected_end_date"))
     status = normalize_status(data.get("status"))
+    requested_audience = normalize_audience(data.get("audience"))
 
     if not note_text:
         return jsonify({"ok": False, "error": "Note text is required"}), 400
@@ -445,6 +611,10 @@ def api_notes_update(note_id):
     if not old:
         conn.close()
         return jsonify({"ok": False, "error": "Note not found"}), 404
+    viewer = get_current_user_row(conn)
+    if not note_visible_to_viewer(old, viewer["created_at"] if viewer else None):
+        conn.close()
+        return jsonify({"ok": False, "error": "Note not found"}), 404
     if not can_modify_note(old):
         conn.close()
         return jsonify({"ok": False, "error": "You can edit only your own notes"}), 403
@@ -452,6 +622,7 @@ def api_notes_update(note_id):
     changed_at = now_iso()
     done_at = old["done_at"]
     cancelled_at = old["cancelled_at"]
+    audience = requested_audience if is_admin() else (old["audience"] or "EVERYONE")
 
     if status == "Done" and old["status"] != "Done":
         done_at = changed_at
@@ -468,6 +639,7 @@ def api_notes_update(note_id):
         SET note_text=%s,
             expected_end_date=%s,
             status=%s,
+            audience=%s,
             done_at=%s,
             cancelled_at=%s,
             edited_by=%s,
@@ -478,6 +650,7 @@ def api_notes_update(note_id):
         note_text,
         expected_end_date,
         status,
+        audience,
         done_at,
         cancelled_at,
         session["user"],
@@ -520,6 +693,10 @@ def api_notes_status(note_id):
     conn = db()
     old = get_note(conn, note_id)
     if not old:
+        conn.close()
+        return jsonify({"ok": False, "error": "Note not found"}), 404
+    viewer = get_current_user_row(conn)
+    if not note_visible_to_viewer(old, viewer["created_at"] if viewer else None):
         conn.close()
         return jsonify({"ok": False, "error": "Note not found"}), 404
     if not can_status_note(old):
@@ -566,6 +743,10 @@ def api_notes_delete(note_id):
     if not row:
         conn.close()
         return jsonify({"ok": False, "error": "Note not found"}), 404
+    viewer = get_current_user_row(conn)
+    if not note_visible_to_viewer(row, viewer["created_at"] if viewer else None):
+        conn.close()
+        return jsonify({"ok": False, "error": "Note not found"}), 404
     if not can_modify_note(row):
         conn.close()
         return jsonify({"ok": False, "error": "You can delete only your own notes"}), 403
@@ -606,6 +787,10 @@ def api_notes_history(note_id):
     if int(note["is_deleted"] or 0) == 1 and not is_admin():
         conn.close()
         return jsonify({"ok": False, "error": "Admin only"}), 403
+    viewer = get_current_user_row(conn)
+    if not note_visible_to_viewer(note, viewer["created_at"] if viewer else None):
+        conn.close()
+        return jsonify({"ok": False, "error": "Note not found"}), 404
 
     due_rows = conn.execute("""
         SELECT *
