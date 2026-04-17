@@ -21,6 +21,7 @@ from routes.clients import clients_bp
 from routes.cash_advances import cash_advances_bp
 from routes.messages import messages_bp
 from routes.marketing_emails import marketing_emails_bp
+from routes.notes import notes_bp
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "CHANGE_THIS_TO_A_RANDOM_SECRET")
@@ -88,6 +89,7 @@ MODULES = [
     "ADMIN_WORKSHEET",
     "ATTENDANCE",
     "MARKETING_EMAILS",
+    "NOTES",
 ]
 
 
@@ -642,7 +644,7 @@ def init_db():
                     VALUES (%s,%s,1,1)
                 """, (uid, m))
             else:
-                if m in ("FINANCE", "CASH_ADVANCES", "DOCUMENT_STORAGE"):
+                if m in ("FINANCE", "CASH_ADVANCES", "DOCUMENT_STORAGE", "NOTES"):
                     cur.execute("""
                         INSERT INTO user_permissions (user_id, module, can_access, can_edit)
                         VALUES (%s,%s,1,1)
@@ -834,6 +836,7 @@ app.register_blueprint(clients_bp)
 app.register_blueprint(cash_advances_bp)
 app.register_blueprint(messages_bp)
 app.register_blueprint(marketing_emails_bp)
+app.register_blueprint(notes_bp)
 
 
 # ======================

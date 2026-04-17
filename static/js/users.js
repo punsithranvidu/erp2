@@ -17,7 +17,8 @@ const MODULES = [
   { key: "WORKSHEET", label: "Worksheet" },
   { key: "ADMIN_WORKSHEET", label: "Admin Worksheet" },
   { key: "ATTENDANCE", label: "Attendance" },
-  { key: "MARKETING_EMAILS", label: "Marketing Emails" }
+  { key: "MARKETING_EMAILS", label: "Marketing Emails" },
+  { key: "NOTES", label: "Notes" }
 ];
 
 function showMsg(id, text, ok){

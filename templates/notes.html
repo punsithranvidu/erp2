@@ -1,0 +1,327 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Notes</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <style>
+    .notes-page{
+      grid-template-columns: 360px 1fr;
+      align-items:start;
+    }
+    .notes-head{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:flex-start;
+      margin-bottom:12px;
+    }
+    .notes-tabs{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin:12px 0;
+      border-bottom:1px solid var(--line);
+      padding-bottom:10px;
+    }
+    .notes-tab{
+      border:1px solid var(--line);
+      background:#fff;
+      color:var(--text);
+      border-radius:10px;
+      padding:8px 12px;
+      font-weight:800;
+      cursor:pointer;
+    }
+    .notes-tab.active{
+      border-color:rgba(37,99,235,.35);
+      background:rgba(37,99,235,.10);
+      color:var(--accent);
+    }
+    .notes-filters{
+      display:grid;
+      grid-template-columns: minmax(180px, 1.4fr) minmax(130px, .7fr) minmax(150px, .8fr) minmax(130px, .7fr) auto;
+      gap:10px;
+      align-items:end;
+      margin:12px 0;
+    }
+    .notes-filters label{
+      display:block;
+      font-size:12px;
+      color:var(--muted);
+      font-weight:700;
+      margin:0 0 5px;
+    }
+    .notes-filters input,
+    .notes-filters select{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:9px 10px;
+      background:#fff;
+      color:var(--text);
+    }
+    .notes-board{
+      display:grid;
+      grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));
+      gap:12px;
+      min-height:260px;
+      margin-top:12px;
+    }
+    .note-card{
+      position:relative;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#fff;
+      padding:12px;
+      box-shadow:0 8px 18px rgba(15,23,42,.05);
+      min-height:170px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .note-card.done{
+      background:#f8fafc;
+    }
+    .note-card.cancelled{
+      background:#fff7f7;
+      border-color:#fecaca;
+    }
+    .note-text{
+      white-space:pre-wrap;
+      line-height:1.45;
+      font-weight:750;
+      color:var(--text);
+      word-break:break-word;
+    }
+    .note-card.done .note-text{
+      text-decoration:line-through;
+      color:#64748b;
+    }
+    .note-card.cancelled .note-text{
+      color:#991b1b;
+      opacity:.82;
+    }
+    .note-meta{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:auto;
+    }
+    .note-pill{
+      display:inline-flex;
+      align-items:center;
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:4px 8px;
+      font-size:12px;
+      color:var(--muted);
+      background:#fff;
+      font-weight:700;
+    }
+    .note-pill.status-active{
+      color:#166534;
+      border-color:#bbf7d0;
+      background:#f0fdf4;
+    }
+    .note-pill.status-done{
+      color:#1d4ed8;
+      border-color:#bfdbfe;
+      background:#eff6ff;
+    }
+    .note-pill.status-cancelled{
+      color:#991b1b;
+      border-color:#fecaca;
+      background:#fef2f2;
+    }
+    .note-actions{
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+      padding-top:2px;
+    }
+    .note-tip{
+      display:none;
+      position:absolute;
+      z-index:20;
+      left:12px;
+      right:12px;
+      top:42px;
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:10px;
+      background:#fff;
+      box-shadow:0 18px 36px rgba(15,23,42,.14);
+      padding:10px;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.55;
+    }
+    .note-card:hover .note-tip{
+      display:block;
+    }
+    .notes-pager{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      margin-top:12px;
+      flex-wrap:wrap;
+    }
+    .notes-warning{
+      display:none;
+      margin-top:10px;
+      border:1px solid #fde68a;
+      background:#fffbeb;
+      color:#92400e;
+      border-radius:10px;
+      padding:10px 12px;
+      font-size:13px;
+      font-weight:700;
+    }
+    .notes-history{
+      display:none;
+      margin-top:12px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:12px;
+      background:#f8fafc;
+    }
+    .notes-history h4{
+      margin:0 0 8px;
+    }
+    .notes-history-row{
+      display:grid;
+      grid-template-columns:1fr 1fr 1fr 1fr;
+      gap:8px;
+      padding:8px 0;
+      border-top:1px solid var(--line);
+      font-size:12px;
+    }
+    .notes-empty{
+      grid-column:1 / -1;
+      color:var(--muted);
+      border:1px dashed var(--line);
+      border-radius:12px;
+      padding:28px;
+      text-align:center;
+      background:#fff;
+    }
+    @media (max-width: 1100px){
+      .notes-page{grid-template-columns:1fr;}
+      .notes-filters{grid-template-columns:1fr 1fr;}
+    }
+    @media (max-width: 700px){
+      .notes-filters{grid-template-columns:1fr;}
+      .notes-board{grid-template-columns:1fr;}
+    }
+  </style>
+</head>
+<body data-user="{{ user }}" data-role="{{ role }}">
+  <div class="topbar">
+    <div>
+      <h2>Notes</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page notes-page">
+    <div class="panel">
+      <h3 id="noteFormTitle">Add Note</h3>
+      <p class="hint">Shared work notes, draft reminders, and task follow-ups.</p>
+
+      <div class="form">
+        <label for="noteText">Note Text</label>
+        <textarea id="noteText" rows="8" placeholder="Example: Follow up buyer document"></textarea>
+
+        <label for="expectedEndDate">Expected End Date</label>
+        <input id="expectedEndDate" type="datetime-local" />
+
+        <label for="noteStatus">Status</label>
+        <select id="noteStatus">
+          <option>Active</option>
+          <option>Done</option>
+          <option>Cancelled</option>
+        </select>
+
+        <div class="row" style="margin-top:14px;">
+          <button class="btn" id="saveNoteBtn" type="button">Save</button>
+          <button class="btn ghost" id="clearNoteBtn" type="button">Clear</button>
+        </div>
+        <div class="msg" id="noteMsg"></div>
+      </div>
+    </div>
+
+    <div class="panel wide">
+      <div class="notes-head">
+        <div>
+          <h3>Notes Board</h3>
+          <p class="sub" id="notesSub">Active shared notes.</p>
+        </div>
+        <button class="btn ghost mini" id="refreshNotesBtn" type="button">Refresh</button>
+      </div>
+
+      <div class="notes-tabs">
+        <button class="notes-tab active" data-tab="active" type="button">Active Notes</button>
+        <button class="notes-tab" data-tab="mine" type="button">My Notes</button>
+        {% if role == "ADMIN" %}
+        <button class="notes-tab" data-tab="trash" type="button">Trash</button>
+        {% endif %}
+      </div>
+
+      <div class="notes-filters" id="notesFilters">
+        <div>
+          <label for="filterSearch">Search</label>
+          <input id="filterSearch" type="search" placeholder="Search note text" />
+        </div>
+        <div>
+          <label for="filterStatus">Status</label>
+          <select id="filterStatus">
+            <option value="ALL">All</option>
+            <option value="Active">Active</option>
+            <option value="Done">Done</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="admin-only" style="display:none;">
+          <label for="filterUser">Created By</label>
+          <select id="filterUser">
+            <option value="">Me</option>
+          </select>
+        </div>
+        <div>
+          <label for="filterExpected">Expected Date</label>
+          <input id="filterExpected" type="date" />
+        </div>
+        <button class="btn" id="applyFiltersBtn" type="button">Apply</button>
+      </div>
+
+      <div class="notes-warning" id="pageWarning"></div>
+      <div class="notes-board" id="notesBoard"></div>
+
+      <div class="notes-pager" id="notesPager">
+        <div class="row">
+          <button class="btn ghost mini" id="prevPageBtn" type="button">&lt;-</button>
+          <span class="sub" id="pageLabel">Page 1</span>
+          <button class="btn ghost mini" id="nextPageBtn" type="button">-&gt;</button>
+        </div>
+        <span class="sub" id="totalLabel">0 notes shown</span>
+      </div>
+
+      <div class="notes-history" id="historyPanel">
+        <div class="notes-head" style="margin-bottom:0;">
+          <h4>Expected Date History</h4>
+          <button class="btn ghost mini" id="closeHistoryBtn" type="button">Close</button>
+        </div>
+        <div id="historyRows"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/notes.js') }}"></script>
+</body>
+</html>

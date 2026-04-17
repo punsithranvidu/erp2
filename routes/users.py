@@ -109,6 +109,7 @@ def get_modules():
         "ADMIN_WORKSHEET",
         "ATTENDANCE",
         "MARKETING_EMAILS",
+        "NOTES",
     ])
 
 
@@ -333,7 +334,7 @@ def api_users_create():
                     DO UPDATE SET can_access=1, can_edit=1
                 """, (new_id, m))
             else:
-                if m in ("FINANCE", "CASH_ADVANCES"):
+                if m in ("FINANCE", "CASH_ADVANCES", "NOTES"):
                     conn.execute("""
                         INSERT INTO user_permissions (user_id, module, can_access, can_edit)
                         VALUES (%s,%s,1,1)
