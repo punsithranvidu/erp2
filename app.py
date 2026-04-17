@@ -86,7 +86,6 @@ MODULES = [
     "CALENDAR",
     "HS_CODES",
     "WORKSHEET",
-    "ADMIN_WORKSHEET",
     "ATTENDANCE",
     "MARKETING_EMAILS",
     "NOTES",
@@ -330,6 +329,7 @@ def init_db():
                 FROM user_permissions_old
             """)
         cur.execute("DROP TABLE IF EXISTS user_permissions_old")
+    cur.execute("DELETE FROM user_permissions WHERE module='ADMIN_WORKSHEET'")
     conn.commit()
 
     ucols = get_table_columns(conn, "users")

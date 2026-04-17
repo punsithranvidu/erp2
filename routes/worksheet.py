@@ -61,22 +61,6 @@ def ensure_worksheet_tables():
         )
     """)
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS admin_worksheet_entries (
-            id BIGSERIAL PRIMARY KEY,
-            admin_user_id BIGINT NOT NULL,
-            work_date TEXT NOT NULL,
-            is_workday INTEGER NOT NULL DEFAULT 1,
-            summary TEXT,
-            status TEXT NOT NULL DEFAULT 'APPROVED',
-            saved_at TEXT,
-            saved_by TEXT,
-            approved_at TEXT,
-            approved_by TEXT,
-            UNIQUE(admin_user_id, work_date)
-        )
-    """)
-
     worksheet_cols = get_table_columns(conn, "worksheet_entries")
     worksheet_missing = {
         "is_workday": "ALTER TABLE worksheet_entries ADD COLUMN is_workday INTEGER NOT NULL DEFAULT 1",
@@ -97,20 +81,6 @@ def ensure_worksheet_tables():
     }
     for column_name, ddl in worksheet_missing.items():
         if column_name not in worksheet_cols:
-            conn.execute(ddl)
-
-    admin_cols = get_table_columns(conn, "admin_worksheet_entries")
-    admin_missing = {
-        "is_workday": "ALTER TABLE admin_worksheet_entries ADD COLUMN is_workday INTEGER NOT NULL DEFAULT 1",
-        "summary": "ALTER TABLE admin_worksheet_entries ADD COLUMN summary TEXT",
-        "status": "ALTER TABLE admin_worksheet_entries ADD COLUMN status TEXT NOT NULL DEFAULT 'APPROVED'",
-        "saved_at": "ALTER TABLE admin_worksheet_entries ADD COLUMN saved_at TEXT",
-        "saved_by": "ALTER TABLE admin_worksheet_entries ADD COLUMN saved_by TEXT",
-        "approved_at": "ALTER TABLE admin_worksheet_entries ADD COLUMN approved_at TEXT",
-        "approved_by": "ALTER TABLE admin_worksheet_entries ADD COLUMN approved_by TEXT",
-    }
-    for column_name, ddl in admin_missing.items():
-        if column_name not in admin_cols:
             conn.execute(ddl)
 
     conn.commit()

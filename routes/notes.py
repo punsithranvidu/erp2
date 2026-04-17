@@ -112,6 +112,18 @@ def ensure_notes_tables():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS note_edit_history (
+            id BIGSERIAL PRIMARY KEY,
+            note_id BIGINT NOT NULL,
+            edit_type TEXT NOT NULL DEFAULT 'UPDATE',
+            edited_at TEXT NOT NULL,
+            edited_by TEXT NOT NULL,
+            edited_by_user_id BIGINT,
+            FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
+        )
+    """)
+
     cols = get_table_columns(conn, "notes")
     missing = {
         "note_text": "ALTER TABLE notes ADD COLUMN note_text TEXT NOT NULL DEFAULT ''",
@@ -146,10 +158,23 @@ def ensure_notes_tables():
         if col not in hcols:
             cur.execute(sql)
 
+    ecols = get_table_columns(conn, "note_edit_history")
+    edit_missing = {
+        "note_id": "ALTER TABLE note_edit_history ADD COLUMN note_id BIGINT",
+        "edit_type": "ALTER TABLE note_edit_history ADD COLUMN edit_type TEXT NOT NULL DEFAULT 'UPDATE'",
+        "edited_at": "ALTER TABLE note_edit_history ADD COLUMN edited_at TEXT NOT NULL DEFAULT ''",
+        "edited_by": "ALTER TABLE note_edit_history ADD COLUMN edited_by TEXT NOT NULL DEFAULT ''",
+        "edited_by_user_id": "ALTER TABLE note_edit_history ADD COLUMN edited_by_user_id BIGINT",
+    }
+    for col, sql in edit_missing.items():
+        if col not in ecols:
+            cur.execute(sql)
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_deleted_status ON notes (is_deleted, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_created_by_user ON notes (created_by_user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_expected_end_date ON notes (expected_end_date)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_note_due_history_note_id ON note_due_date_history (note_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_note_edit_history_note_id ON note_edit_history (note_id)")
 
     conn.commit()
     conn.close()
@@ -189,8 +214,23 @@ def note_dict(row):
     out = dict(row)
     out["can_edit"] = 1 if can_modify_note(row) and int(row["is_deleted"] or 0) == 0 else 0
     out["can_delete"] = out["can_edit"]
-    out["can_status"] = 1 if can_status_note(row) else 0
+    out["can_status"] = 1 if can_status_note(row) and has_module_access("NOTES", True) else 0
     return out
+
+
+def record_edit_history(conn, note_id, edited_at, edit_type="UPDATE"):
+    conn.execute("""
+        INSERT INTO note_edit_history (
+            note_id, edit_type, edited_at, edited_by, edited_by_user_id
+        )
+        VALUES (%s,%s,%s,%s,%s)
+    """, (
+        note_id,
+        edit_type,
+        edited_at,
+        session["user"],
+        current_user_id(),
+    ))
 
 
 def build_note_filters(args, include_deleted=False):
@@ -462,6 +502,7 @@ def api_notes_update(note_id):
             current_user_id(),
         ))
 
+    record_edit_history(conn, note_id, changed_at, "UPDATE")
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "data": note_dict(row), "message": "Note updated successfully"})
@@ -510,6 +551,7 @@ def api_notes_status(note_id):
         RETURNING *
     """, (status, done_at, cancelled_at, session["user"], changed_at, note_id)).fetchone()
 
+    record_edit_history(conn, note_id, changed_at, f"STATUS:{status}")
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "data": note_dict(row), "message": "Status updated"})
@@ -546,6 +588,7 @@ def api_notes_delete(note_id):
         session["user"],
         note_id,
     ))
+    record_edit_history(conn, note_id, deleted_at, "DELETE")
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Note moved to trash"})
@@ -564,14 +607,26 @@ def api_notes_history(note_id):
         conn.close()
         return jsonify({"ok": False, "error": "Admin only"}), 403
 
-    rows = conn.execute("""
+    due_rows = conn.execute("""
         SELECT *
         FROM note_due_date_history
         WHERE note_id=%s
         ORDER BY id DESC
     """, (note_id,)).fetchall()
+    edit_rows = conn.execute("""
+        SELECT *
+        FROM note_edit_history
+        WHERE note_id=%s
+        ORDER BY id ASC
+    """, (note_id,)).fetchall()
     conn.close()
-    return jsonify({"ok": True, "data": [dict(r) for r in rows]})
+    return jsonify({
+        "ok": True,
+        "data": {
+            "due_date_history": [dict(r) for r in due_rows],
+            "edit_history": [dict(r) for r in edit_rows],
+        }
+    })
 
 
 @notes_bp.route("/api/notes/trash", methods=["GET"])
@@ -619,6 +674,7 @@ def api_notes_recover(note_id):
         WHERE id=%s
         RETURNING *
     """, (changed_at, session["user"], note_id)).fetchone()
+    record_edit_history(conn, note_id, changed_at, "RECOVER")
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "data": note_dict(row), "message": "Note recovered"})

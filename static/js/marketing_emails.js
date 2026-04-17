@@ -1254,7 +1254,8 @@ function setupLeadFormToggle() {
 
   const sync = () => {
     const collapsed = page.classList.contains("form-collapsed");
-    btn.textContent = collapsed ? ">" : "<";
+    btn.textContent = "";
+    btn.classList.toggle("is-collapsed", collapsed);
     btn.setAttribute("aria-label", collapsed ? "Expand lead form" : "Collapse lead form");
   };
 

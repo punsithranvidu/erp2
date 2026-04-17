@@ -15,7 +15,6 @@ const MODULES = [
   { key: "CALENDAR", label: "Calendar" },
   { key: "HS_CODES", label: "HS Codes" },
   { key: "WORKSHEET", label: "Worksheet" },
-  { key: "ADMIN_WORKSHEET", label: "Admin Worksheet" },
   { key: "ATTENDANCE", label: "Attendance" },
   { key: "MARKETING_EMAILS", label: "Marketing Emails" },
   { key: "NOTES", label: "Notes" }

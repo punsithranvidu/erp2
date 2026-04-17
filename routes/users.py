@@ -106,7 +106,6 @@ def get_modules():
         "CALENDAR",
         "HS_CODES",
         "WORKSHEET",
-        "ADMIN_WORKSHEET",
         "ATTENDANCE",
         "MARKETING_EMAILS",
         "NOTES",

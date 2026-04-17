@@ -63,58 +63,68 @@
       color:var(--text);
     }
     .notes-board{
-      display:grid;
-      grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));
-      gap:12px;
-      min-height:260px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      min-height:220px;
       margin-top:12px;
     }
     .note-card{
       position:relative;
       border:1px solid var(--line);
-      border-radius:12px;
+      border-radius:8px;
       background:#fff;
-      padding:12px;
-      box-shadow:0 8px 18px rgba(15,23,42,.05);
-      min-height:170px;
+      padding:7px 9px;
+      box-shadow:none;
+      min-height:38px;
       display:flex;
-      flex-direction:column;
-      gap:10px;
+      align-items:center;
+      gap:9px;
+      cursor:pointer;
+      transition:background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+      outline:none;
+    }
+    .note-card:hover{
+      background:#f8fafc;
+      border-color:#dbe3ef;
+    }
+    .note-card.selected{
+      border-color:rgba(37,99,235,.45);
+      background:#eff6ff;
+      box-shadow:0 0 0 3px rgba(37,99,235,.10);
     }
     .note-card.done{
       background:#f8fafc;
     }
     .note-card.cancelled{
-      background:#fff7f7;
-      border-color:#fecaca;
+      background:#f8fafc;
+      border-color:#e5e7eb;
+      opacity:.72;
     }
     .note-text{
-      white-space:pre-wrap;
-      line-height:1.45;
+      flex:1 1 auto;
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      line-height:1.3;
       font-weight:750;
       color:var(--text);
-      word-break:break-word;
     }
     .note-card.done .note-text{
       text-decoration:line-through;
       color:#64748b;
     }
     .note-card.cancelled .note-text{
-      color:#991b1b;
-      opacity:.82;
-    }
-    .note-meta{
-      display:flex;
-      flex-wrap:wrap;
-      gap:6px;
-      margin-top:auto;
+      color:#64748b;
     }
     .note-pill{
+      flex:0 0 auto;
       display:inline-flex;
       align-items:center;
       border:1px solid var(--line);
       border-radius:999px;
-      padding:4px 8px;
+      padding:3px 8px;
       font-size:12px;
       color:var(--muted);
       background:#fff;
@@ -135,19 +145,29 @@
       border-color:#fecaca;
       background:#fef2f2;
     }
-    .note-actions{
+    .note-info-btn{
+      position:relative;
+      flex:0 0 auto;
+      width:22px;
+      height:22px;
+      border-radius:999px;
+      border:1px solid #d1d5db;
+      background:#f3f4f6;
+      color:#64748b;
+      font-size:12px;
+      font-weight:900;
+      cursor:help;
       display:flex;
-      gap:6px;
-      flex-wrap:wrap;
-      padding-top:2px;
+      align-items:center;
+      justify-content:center;
     }
     .note-tip{
       display:none;
       position:absolute;
       z-index:20;
-      left:12px;
-      right:12px;
-      top:42px;
+      right:0;
+      top:26px;
+      width:260px;
       border:1px solid rgba(15,23,42,.12);
       border-radius:10px;
       background:#fff;
@@ -156,9 +176,38 @@
       color:var(--muted);
       font-size:12px;
       line-height:1.55;
+      text-align:left;
     }
-    .note-card:hover .note-tip{
+    .note-tip-line{
       display:block;
+    }
+    .note-info-btn:hover .note-tip,
+    .note-info-btn:focus .note-tip{
+      display:block;
+    }
+    .notes-actionbar{
+      display:none;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      margin-top:10px;
+      padding:9px 10px;
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:#f8fafc;
+      flex-wrap:wrap;
+    }
+    .notes-actionbar.active{
+      display:flex;
+    }
+    .notes-actionbar-title{
+      min-width:0;
+      color:var(--muted);
+      font-size:13px;
+      font-weight:700;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
     }
     .notes-pager{
       display:flex;
@@ -179,27 +228,67 @@
       font-size:13px;
       font-weight:700;
     }
-    .notes-history{
+    .notes-icon-btn{
+      width:30px;
+      height:30px;
+      padding:0;
+      border-radius:8px;
+    }
+    .notes-icon-btn::before{
+      content:"";
+      width:8px;
+      height:8px;
+      border-top:2px solid currentColor;
+      border-right:2px solid currentColor;
+    }
+    .notes-icon-btn.prev::before{
+      transform:rotate(-135deg);
+      margin-left:3px;
+    }
+    .notes-icon-btn.next::before{
+      transform:rotate(45deg);
+      margin-right:3px;
+    }
+    .notes-modal-backdrop{
       display:none;
-      margin-top:12px;
+      position:fixed;
+      inset:0;
+      z-index:30;
+      background:rgba(15,23,42,.22);
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+    }
+    .notes-modal-backdrop.active{
+      display:flex;
+    }
+    .notes-modal{
+      width:min(560px, 100%);
+      max-height:80vh;
+      overflow:auto;
+      background:#fff;
       border:1px solid var(--line);
       border-radius:12px;
-      padding:12px;
+      box-shadow:0 24px 60px rgba(15,23,42,.22);
+      padding:14px;
+    }
+    .notes-modal-list{
+      display:grid;
+      gap:7px;
+      margin-top:10px;
+    }
+    .notes-history-line{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      padding:8px 10px;
+      font-size:13px;
+      color:var(--muted);
       background:#f8fafc;
     }
-    .notes-history h4{
-      margin:0 0 8px;
-    }
-    .notes-history-row{
-      display:grid;
-      grid-template-columns:1fr 1fr 1fr 1fr;
-      gap:8px;
-      padding:8px 0;
-      border-top:1px solid var(--line);
-      font-size:12px;
-    }
     .notes-empty{
-      grid-column:1 / -1;
       color:var(--muted);
       border:1px dashed var(--line);
       border-radius:12px;
@@ -213,7 +302,9 @@
     }
     @media (max-width: 700px){
       .notes-filters{grid-template-columns:1fr;}
-      .notes-board{grid-template-columns:1fr;}
+      .notes-actionbar{align-items:flex-start;}
+      .notes-actionbar-title{width:100%;}
+      .note-tip{right:-8px; width:min(260px, calc(100vw - 48px));}
     }
   </style>
 </head>
@@ -301,24 +392,42 @@
       </div>
 
       <div class="notes-warning" id="pageWarning"></div>
+      <div class="notes-actionbar" id="noteActionBar">
+        <span class="notes-actionbar-title" id="selectedNoteLabel">No note selected</span>
+        <div class="row">
+          <button class="btn ghost mini" id="markDoneBtn" type="button">Done</button>
+          <button class="btn ghost mini" id="markCancelBtn" type="button">Cancel</button>
+          <button class="btn ghost mini" id="markActiveBtn" type="button">Active</button>
+          <button class="btn ghost mini" id="editSelectedBtn" type="button">Edit</button>
+          <button class="btn ghost mini" id="deleteSelectedBtn" type="button">Delete</button>
+          <button class="btn ghost mini" id="recoverSelectedBtn" type="button">Recover</button>
+          <button class="btn ghost mini" id="permanentSelectedBtn" type="button">Permanent Delete</button>
+          <button class="btn ghost mini" id="historySelectedBtn" type="button">History</button>
+        </div>
+      </div>
       <div class="notes-board" id="notesBoard"></div>
 
       <div class="notes-pager" id="notesPager">
         <div class="row">
-          <button class="btn ghost mini" id="prevPageBtn" type="button">&lt;-</button>
+          <button class="btn ghost mini notes-icon-btn prev" id="prevPageBtn" type="button" aria-label="Previous page"></button>
           <span class="sub" id="pageLabel">Page 1</span>
-          <button class="btn ghost mini" id="nextPageBtn" type="button">-&gt;</button>
+          <button class="btn ghost mini notes-icon-btn next" id="nextPageBtn" type="button" aria-label="Next page"></button>
         </div>
         <span class="sub" id="totalLabel">0 notes shown</span>
       </div>
+    </div>
+  </div>
 
-      <div class="notes-history" id="historyPanel">
-        <div class="notes-head" style="margin-bottom:0;">
-          <h4>Expected Date History</h4>
-          <button class="btn ghost mini" id="closeHistoryBtn" type="button">Close</button>
+  <div class="notes-modal-backdrop" id="historyModal" aria-hidden="true">
+    <div class="notes-modal" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+      <div class="notes-head" style="margin-bottom:0;">
+        <div>
+          <h3 id="historyTitle">Note History</h3>
+          <p class="sub">Edit records and expected date changes.</p>
         </div>
-        <div id="historyRows"></div>
+        <button class="btn ghost mini" id="closeHistoryBtn" type="button">Close</button>
       </div>
+      <div class="notes-modal-list" id="historyRows"></div>
     </div>
   </div>
 

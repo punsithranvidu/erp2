@@ -91,6 +91,22 @@
       box-shadow:0 3px 10px rgba(15,23,42,.08);
     }
 
+    .me-collapse-toggle::before{
+      content:"";
+      position:absolute;
+      top:50%;
+      left:50%;
+      width:7px;
+      height:7px;
+      border-top:2px solid currentColor;
+      border-right:2px solid currentColor;
+      transform:translate(-35%, -50%) rotate(-135deg);
+    }
+
+    .me-collapse-toggle.is-collapsed::before{
+      transform:translate(-65%, -50%) rotate(45deg);
+    }
+
     .me-collapse-toggle:hover{
       color:var(--accent);
       border-color:rgba(37,99,235,.28);
@@ -456,7 +472,7 @@
       </div>
 
       <div class="me-collapse-rail">
-        <button class="me-collapse-toggle" id="leadFormToggle" type="button" aria-label="Collapse lead form">&lt;</button>
+        <button class="me-collapse-toggle" id="leadFormToggle" type="button" aria-label="Collapse lead form"></button>
       </div>
     </div>
 
