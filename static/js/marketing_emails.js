@@ -5,6 +5,7 @@ let ME = {
     categories: [],
     countries: [],
     verification_statuses: [],
+    call_statuses: [],
     export_statuses: [],
     employees: [],
     can_download: false,
@@ -15,9 +16,12 @@ let ME = {
   permissions: [],
   requests: [],
   logs: [],
+  trash: { leads: [], exports: [] },
   selectedLeadIds: new Set(),
+  selectedExportIds: new Set(),
   editLeadId: null,
   editExportId: null,
+  editExportExtraDates: [],
   searchTimer: null
 };
 
@@ -60,13 +64,48 @@ function normalizeLink(url) {
 }
 
 function statusClass(status) {
-  if (status === "Confirmed Ready" || status === "Checked" || status === "APPROVED" || status === "Confirmed" || status === "Completed") {
+  if (status === "Checked" || status === "APPROVED" || status === "Confirmed" || status === "Send First Email" || status === "Send Second Email") {
     return "good";
   }
-  if (status === "Invalid" || status === "Duplicate" || status === "DENIED" || status === "Blocked") {
+  if (status === "Invalid" || status === "DENIED" || status === "Invalid Email List" || status === "Called - Negative") {
     return "bad";
   }
   return "warn";
+}
+
+function parseExtraSendDates(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function effectiveSendRound(rowOrStatus, maybeRound) {
+  const status = typeof rowOrStatus === "string" ? rowOrStatus : rowOrStatus?.confirmation_status;
+  const round = typeof rowOrStatus === "string" ? maybeRound : rowOrStatus?.send_round;
+  if (status === "Send First Email") return 1;
+  if (status === "Send Second Email") return 2;
+  if (status === "Custom Send Stage") return Math.max(3, Number(round || 3));
+  return 0;
+}
+
+function ordinal(n) {
+  const value = Number(n || 0);
+  if (value === 1) return "First";
+  if (value === 2) return "Second";
+  if (value === 3) return "Third";
+  if (value === 4) return "Fourth";
+  if (value === 5) return "Fifth";
+  if (value === 6) return "Sixth";
+  if (value === 7) return "Seventh";
+  if (value === 8) return "Eighth";
+  if (value === 9) return "Ninth";
+  if (value === 10) return "Tenth";
+  return `${value}th`;
 }
 
 function setOptions(selectId, items, opts = {}) {
@@ -105,8 +144,10 @@ function refreshOptionControls() {
   setOptions("categoryFilter", ME.options.categories, { includeAll: true });
   setOptions("countryFilter", ME.options.countries, { includeAll: true });
   setOptions("statusFilter", ME.options.verification_statuses, { includeAll: true });
+  setOptions("callStatusFilter", ME.options.call_statuses, { includeAll: true });
   setOptions("bulkStatusSelect", ME.options.verification_statuses, { includeBlank: true });
   setOptions("exportStatus", ME.options.export_statuses, { includeBlank: false });
+  setOptions("leadCallStatus", ME.options.call_statuses, { includeBlank: false });
 
   const employees = (ME.options.employees || []).map((emp) => ({
     value: emp.username,
@@ -196,6 +237,7 @@ function clearLeadForm() {
   $("leadEmail").value = "";
   $("leadWebsite").value = "";
   $("leadNote").value = "";
+  $("leadCallStatus").value = "Not Yet Called";
   setLeadCategory("");
   setLeadCountry("");
   $("saveLeadBtn").disabled = false;
@@ -210,6 +252,7 @@ function fillLeadForm(row) {
   $("leadEmail").value = row.email || "";
   $("leadWebsite").value = row.website || "";
   $("leadNote").value = row.note || "";
+  $("leadCallStatus").value = row.call_status || "Not Yet Called";
   setLeadCategory(row.category || "");
   setLeadCountry(row.country || "");
   $("saveLeadBtn").disabled = true;
@@ -224,6 +267,7 @@ function getLeadPayload() {
     website: $("leadWebsite")?.value || "",
     category: getSelectedCategory(),
     country: getSelectedCountry(),
+    call_status: $("leadCallStatus")?.value || "Not Yet Called",
     note: $("leadNote")?.value || ""
   };
 }
@@ -241,12 +285,14 @@ function getLeadFilters() {
   const category = $("categoryFilter")?.value || "";
   const country = $("countryFilter")?.value || "";
   const status = $("statusFilter")?.value || "";
+  const callStatus = $("callStatusFilter")?.value || "";
 
   if (q) params.set("q", q);
   if (employee) params.set("employee", employee);
   if (category) params.set("category", category);
   if (country) params.set("country", country);
   if (status) params.set("status", status);
+  if (callStatus) params.set("call_status", callStatus);
   return params;
 }
 
@@ -262,7 +308,7 @@ function renderLeads() {
   if (!body) return;
 
   if (!ME.leads.length) {
-    body.innerHTML = `<tr><td colspan="12" class="me-muted-cell">No leads found.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="13" class="me-muted-cell">No leads found.</td></tr>`;
     updateSelectedCount();
     return;
   }
@@ -270,12 +316,16 @@ function renderLeads() {
   body.innerHTML = ME.leads.map((row) => {
     const checked = ME.selectedLeadIds.has(Number(row.id)) ? "checked" : "";
     const website = normalizeLink(row.website || "");
-    const status = row.verification_status || "Not Checked Yet";
+    const status = row.verification_status || "Not Yet Checked";
     const statusHtml = ME.options.is_admin
       ? `<select class="smallSelect" data-status-lead="${row.id}">
           ${(ME.options.verification_statuses || []).map((s) => `<option value="${esc(s)}" ${s === status ? "selected" : ""}>${esc(s)}</option>`).join("")}
         </select>`
       : `<span class="me-status ${statusClass(status)}">${esc(status)}</span>`;
+    const callStatus = row.call_status || "Not Yet Called";
+    const callStatusHtml = `<select class="smallSelect" data-call-status-lead="${row.id}">
+      ${(ME.options.call_statuses || []).map((s) => `<option value="${esc(s)}" ${s === callStatus ? "selected" : ""}>${esc(s)}</option>`).join("")}
+    </select>`;
 
     return `
       <tr>
@@ -290,6 +340,7 @@ function renderLeads() {
         </td>
         <td>${esc(row.category)}</td>
         <td>${esc(row.country)}</td>
+        <td>${callStatusHtml}</td>
         <td>${esc(row.created_by)}</td>
         <td>${esc(row.edited_by || "-")}</td>
         <td>${esc(row.edited_at || "-")}</td>
@@ -298,7 +349,7 @@ function renderLeads() {
         <td>
           <div class="me-actions">
             <button class="btn ghost mini" type="button" data-edit-lead="${row.id}">Edit</button>
-            ${website ? `<a class="btn ghost mini" href="${esc(website)}" target="_blank" rel="noopener noreferrer">Compare</a>` : ""}
+            <button class="btn danger mini" type="button" data-delete-lead="${row.id}">Delete</button>
           </div>
         </td>
       </tr>
@@ -341,6 +392,26 @@ function renderLeads() {
     });
   });
 
+  document.querySelectorAll("[data-call-status-lead]").forEach((select) => {
+    select.addEventListener("change", async () => {
+      try {
+        await api(`/api/marketing-emails/leads/${select.dataset.callStatusLead}/call-status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ call_status: select.value })
+        });
+        await loadLeads();
+        showMsg("leadTableMsg", "Call status updated.", true);
+      } catch (err) {
+        showMsg("leadTableMsg", err.message, false);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-delete-lead]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteLead(Number(btn.dataset.deleteLead)));
+  });
+
   updateSelectedCount();
 }
 
@@ -348,6 +419,34 @@ function updateSelectedCount() {
   const count = ME.selectedLeadIds.size;
   const el = $("selectedLeadCount");
   if (el) el.textContent = `${count} selected`;
+
+  const visibleIds = ME.leads.map((row) => Number(row.id));
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => ME.selectedLeadIds.has(id));
+  const leadBox = $("leadSelectAllBox");
+  if (leadBox) leadBox.checked = allVisibleSelected;
+}
+
+function selectAllVisibleLeads() {
+  ME.leads.forEach((row) => ME.selectedLeadIds.add(Number(row.id)));
+  renderLeads();
+}
+
+function clearLeadSelection() {
+  ME.selectedLeadIds.clear();
+  renderLeads();
+}
+
+async function deleteLead(leadId) {
+  if (!confirm("Move this lead to trash?")) return;
+  try {
+    await api(`/api/marketing-emails/leads/${leadId}/delete`, { method: "POST" });
+    ME.selectedLeadIds.delete(leadId);
+    await loadLeads();
+    await loadTrash();
+    showMsg("leadTableMsg", "Lead moved to trash.", true);
+  } catch (err) {
+    showMsg("leadTableMsg", err.message, false);
+  }
 }
 
 async function saveLead() {
@@ -414,12 +513,16 @@ async function bulkVerify() {
 
 function clearExportForm() {
   ME.editExportId = null;
+  ME.editExportExtraDates = [];
   $("exportFileName").value = "";
   $("exportCategory").value = "";
   $("exportCountry").value = "";
   $("exportStatus").value = (ME.options.export_statuses || [])[0] || "Pending";
+  $("sendRound").value = "3";
   $("firstSendDate").value = "";
   $("secondSendDate").value = "";
+  renderExtraSendDateInputs([]);
+  updateSendDateVisibility();
   $("exportNotes").value = "";
   $("createExportBtn").disabled = false;
   $("updateExportBtn").disabled = true;
@@ -432,8 +535,12 @@ function fillExportForm(row) {
   $("exportCategory").value = row.category || "";
   $("exportCountry").value = row.country || "";
   $("exportStatus").value = row.confirmation_status || "Pending";
+  $("sendRound").value = String(Math.max(3, Number(row.send_round || 3)));
   $("firstSendDate").value = row.first_send_date || "";
   $("secondSendDate").value = row.second_send_date || "";
+  ME.editExportExtraDates = parseExtraSendDates(row.extra_send_dates);
+  renderExtraSendDateInputs(ME.editExportExtraDates);
+  updateSendDateVisibility();
   $("exportNotes").value = row.notes || "";
   $("createExportBtn").disabled = true;
   $("updateExportBtn").disabled = false;
@@ -441,6 +548,10 @@ function fillExportForm(row) {
 }
 
 function getExportPayload() {
+  const extraDates = Array.from(document.querySelectorAll("[data-extra-send-date]")).map((input) => input.value || "");
+  if (extraDates.length < ME.editExportExtraDates.length) {
+    extraDates.push(...ME.editExportExtraDates.slice(extraDates.length));
+  }
   return {
     file_name: $("exportFileName")?.value || "",
     category: $("exportCategory")?.value || "",
@@ -448,9 +559,51 @@ function getExportPayload() {
     confirmation_status: $("exportStatus")?.value || "Pending",
     first_send_date: $("firstSendDate")?.value || "",
     second_send_date: $("secondSendDate")?.value || "",
+    send_round: Number($("sendRound")?.value || 0),
+    extra_send_dates: extraDates,
     notes: $("exportNotes")?.value || "",
     lead_ids: Array.from(ME.selectedLeadIds)
   };
+}
+
+function renderExtraSendDateInputs(values = []) {
+  const wrap = $("extraSendDatesWrap");
+  if (!wrap) return;
+
+  const round = effectiveSendRound($("exportStatus")?.value || "Pending", $("sendRound")?.value || 0);
+  const count = Math.max(0, round - 2);
+  const existing = Array.from(document.querySelectorAll("[data-extra-send-date]")).map((input) => input.value || "");
+  const source = values.length ? values : (existing.length ? existing : ME.editExportExtraDates);
+  const html = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const stage = i + 3;
+    html.push(`
+      <div>
+        <label for="extraSendDate${stage}">${esc(ordinal(stage))} Send Date</label>
+        <input id="extraSendDate${stage}" data-extra-send-date="${stage}" type="date" value="${esc(source[i] || "")}" />
+      </div>
+    `);
+  }
+
+  wrap.innerHTML = html.join("");
+  wrap.style.display = count > 0 ? "grid" : "none";
+  wrap.style.gridTemplateColumns = "repeat(4, minmax(150px, 1fr))";
+  wrap.style.gap = "10px";
+}
+
+function updateSendDateVisibility() {
+  const status = $("exportStatus")?.value || "Pending";
+  const round = effectiveSendRound(status, $("sendRound")?.value || 0);
+  const roundWrap = $("sendRoundWrap");
+  if (roundWrap) roundWrap.style.display = status === "Custom Send Stage" ? "" : "none";
+
+  const first = $("firstSendDate")?.closest("div");
+  const second = $("secondSendDate")?.closest("div");
+  if (first) first.style.display = round >= 1 ? "" : "none";
+  if (second) second.style.display = round >= 2 ? "" : "none";
+
+  renderExtraSendDateInputs();
 }
 
 function getExportFilters() {
@@ -481,15 +634,17 @@ function renderExports() {
 
   body.innerHTML = ME.exports.map((row) => {
     const status = row.confirmation_status || "Pending";
+    const checked = ME.selectedExportIds.has(Number(row.id)) ? "checked" : "";
+    const sendDates = renderSendDatesCell(row);
     return `
       <tr>
+        <td><input type="checkbox" data-export-check="${row.id}" ${checked} /></td>
         <td><b>${esc(row.file_name)}</b></td>
         <td>${esc(row.category || "-")}</td>
         <td>${esc(row.country || "-")}</td>
         <td>${esc(row.lead_count || 0)}</td>
         <td><span class="me-status ${statusClass(status)}">${esc(status)}</span></td>
-        <td>${esc(row.first_send_date || "-")}</td>
-        <td>${esc(row.second_send_date || "-")}</td>
+        <td>${sendDates}</td>
         <td>${esc(row.notes || "-")}</td>
         <td>${esc(row.created_by)}</td>
         <td>${esc(row.created_at)}</td>
@@ -497,6 +652,7 @@ function renderExports() {
           <div class="me-actions">
             <button class="btn ghost mini" type="button" data-edit-export="${row.id}">Edit</button>
             <button class="btn mini" type="button" data-download-export="${row.id}">Download</button>
+            <button class="btn danger mini" type="button" data-delete-export="${row.id}">Delete</button>
           </div>
         </td>
       </tr>
@@ -513,6 +669,76 @@ function renderExports() {
   document.querySelectorAll("[data-download-export]").forEach((btn) => {
     btn.addEventListener("click", () => downloadExport(Number(btn.dataset.downloadExport)));
   });
+
+  document.querySelectorAll("[data-delete-export]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteExport(Number(btn.dataset.deleteExport)));
+  });
+
+  document.querySelectorAll("[data-export-check]").forEach((box) => {
+    box.addEventListener("change", () => {
+      const id = Number(box.dataset.exportCheck);
+      if (box.checked) {
+        ME.selectedExportIds.add(id);
+      } else {
+        ME.selectedExportIds.delete(id);
+      }
+      updateSelectedExportCount();
+    });
+  });
+
+  updateSelectedExportCount();
+}
+
+function renderSendDatesCell(row) {
+  const round = effectiveSendRound(row);
+  if (round <= 0) return `<span class="me-muted-cell">No send date</span>`;
+
+  const dates = [];
+  if (round >= 1) dates.push({ label: "First", value: row.first_send_date || "" });
+  if (round >= 2) dates.push({ label: "Second", value: row.second_send_date || "" });
+
+  const extra = parseExtraSendDates(row.extra_send_dates);
+  for (let stage = 3; stage <= round; stage += 1) {
+    dates.push({ label: ordinal(stage), value: extra[stage - 3] || "" });
+  }
+
+  return dates.map((item) => `
+    <div><b>${esc(item.label)}:</b> ${esc(item.value || "-")}</div>
+  `).join("");
+}
+
+function updateSelectedExportCount() {
+  const count = ME.selectedExportIds.size;
+  const el = $("selectedExportCount");
+  if (el) el.textContent = `${count} export file${count === 1 ? "" : "s"} selected`;
+
+  const visibleIds = ME.exports.map((row) => Number(row.id));
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => ME.selectedExportIds.has(id));
+  const box = $("exportSelectAllBox");
+  if (box) box.checked = allVisibleSelected;
+}
+
+function selectAllVisibleExports() {
+  ME.exports.forEach((row) => ME.selectedExportIds.add(Number(row.id)));
+  renderExports();
+}
+
+function clearExportSelection() {
+  ME.selectedExportIds.clear();
+  renderExports();
+}
+
+async function deleteExport(exportId) {
+  if (!confirm("Move this export file record to trash?")) return;
+  try {
+    await api(`/api/marketing-emails/exports/${exportId}/delete`, { method: "POST" });
+    ME.selectedExportIds.delete(exportId);
+    await loadExports();
+    await loadTrash();
+    showMsg("exportTableMsg", "Export file moved to trash.", true);
+  } catch (err) {
+    showMsg("exportTableMsg", err.message, false);
+  }
 }
 
 async function createExport() {
@@ -666,10 +892,16 @@ function renderRequests() {
 
   body.innerHTML = ME.requests.map((row) => {
     const status = row.status || "PENDING";
-    const pendingActions = status === "PENDING" && ME.options.is_admin
-      ? `<button class="btn mini" type="button" data-approve-request="${row.id}">Approve</button>
-         <button class="btn ghost mini" type="button" data-deny-request="${row.id}">Deny</button>`
-      : `<span class="me-muted-cell">${status === "PENDING" ? "Pending" : "Decided"}</span>`;
+    const pendingActions = ME.options.is_admin
+      ? `${status === "PENDING" ? `
+           <button class="btn mini" type="button" data-approve-request="${row.id}">Approve</button>
+           <button class="btn ghost mini" type="button" data-deny-request="${row.id}">Deny</button>
+         ` : ""}
+         <button class="btn danger mini" type="button" data-delete-request="${row.id}">Delete</button>`
+      : `${status === "PENDING" ? `
+           <button class="btn ghost mini" type="button" data-edit-request="${row.id}">Edit</button>
+           <button class="btn danger mini" type="button" data-delete-request="${row.id}">Delete</button>
+         ` : `<span class="me-muted-cell">Decided</span>`}`;
 
     return `
       <tr>
@@ -690,6 +922,14 @@ function renderRequests() {
 
   document.querySelectorAll("[data-deny-request]").forEach((btn) => {
     btn.addEventListener("click", () => decideRequest(Number(btn.dataset.denyRequest), "DENIED"));
+  });
+
+  document.querySelectorAll("[data-edit-request]").forEach((btn) => {
+    btn.addEventListener("click", () => editRequest(Number(btn.dataset.editRequest)));
+  });
+
+  document.querySelectorAll("[data-delete-request]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteRequest(Number(btn.dataset.deleteRequest)));
   });
 }
 
@@ -724,6 +964,35 @@ async function decideRequest(requestId, status) {
   }
 }
 
+async function editRequest(requestId) {
+  const row = ME.requests.find((item) => Number(item.id) === requestId);
+  const note = prompt("Update request note", row?.request_note || "");
+  if (note === null) return;
+
+  try {
+    await api(`/api/marketing-emails/download-requests/${requestId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request_note: note })
+    });
+    await loadRequests();
+    showMsg("requestMsg", "Request updated.", true);
+  } catch (err) {
+    showMsg("requestMsg", err.message, false);
+  }
+}
+
+async function deleteRequest(requestId) {
+  if (!confirm("Delete this download request record?")) return;
+  try {
+    await api(`/api/marketing-emails/download-requests/${requestId}`, { method: "DELETE" });
+    await loadRequests();
+    showMsg("requestMsg", "Request deleted.", true);
+  } catch (err) {
+    showMsg("requestMsg", err.message, false);
+  }
+}
+
 async function loadDownloadLogs() {
   const out = await api("/api/marketing-emails/download-logs");
   ME.logs = out.data || [];
@@ -746,6 +1015,115 @@ function renderDownloadLogs() {
       <td>${esc(row.downloaded_at)}</td>
     </tr>
   `).join("");
+}
+
+async function loadTrash() {
+  if (!ME.options.is_admin) return;
+  const out = await api("/api/marketing-emails/trash");
+  ME.trash = out.data || { leads: [], exports: [] };
+  renderTrash();
+}
+
+function renderTrash() {
+  renderTrashLeads();
+  renderTrashExports();
+}
+
+function renderTrashLeads() {
+  const body = $("trashLeadBody");
+  if (!body) return;
+  const rows = ME.trash.leads || [];
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" class="me-muted-cell">No deleted leads.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = rows.map((row) => `
+    <tr>
+      <td><b>${esc(row.company_name || "-")}</b></td>
+      <td>${esc(row.email || "-")}</td>
+      <td>${esc(row.category || "-")}</td>
+      <td>${esc(row.country || "-")}</td>
+      <td>${esc(row.deleted_by || "-")}</td>
+      <td>${esc(row.deleted_at || "-")}</td>
+      <td>
+        <div class="me-actions">
+          <button class="btn mini" type="button" data-recover-trash="lead:${row.id}">Recover</button>
+          <button class="btn danger mini" type="button" data-permanent-trash="lead:${row.id}">Delete Permanently</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+
+  bindTrashActions();
+}
+
+function renderTrashExports() {
+  const body = $("trashExportBody");
+  if (!body) return;
+  const rows = ME.trash.exports || [];
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" class="me-muted-cell">No deleted export files.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = rows.map((row) => `
+    <tr>
+      <td><b>${esc(row.file_name || "-")}</b></td>
+      <td>${esc(row.category || "-")}</td>
+      <td>${esc(row.country || "-")}</td>
+      <td>${esc(row.lead_count || 0)}</td>
+      <td>${esc(row.deleted_by || "-")}</td>
+      <td>${esc(row.deleted_at || "-")}</td>
+      <td>
+        <div class="me-actions">
+          <button class="btn mini" type="button" data-recover-trash="export:${row.id}">Recover</button>
+          <button class="btn danger mini" type="button" data-permanent-trash="export:${row.id}">Delete Permanently</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+
+  bindTrashActions();
+}
+
+function bindTrashActions() {
+  document.querySelectorAll("[data-recover-trash]").forEach((btn) => {
+    btn.onclick = () => {
+      const [type, id] = btn.dataset.recoverTrash.split(":");
+      recoverTrashItem(type, Number(id));
+    };
+  });
+
+  document.querySelectorAll("[data-permanent-trash]").forEach((btn) => {
+    btn.onclick = () => {
+      const [type, id] = btn.dataset.permanentTrash.split(":");
+      permanentDeleteTrashItem(type, Number(id));
+    };
+  });
+}
+
+async function recoverTrashItem(type, id) {
+  try {
+    await api(`/api/marketing-emails/trash/${type}/${id}/recover`, { method: "POST" });
+    await loadLeads();
+    await loadExports();
+    await loadTrash();
+    showMsg("trashMsg", "Item recovered.", true);
+  } catch (err) {
+    showMsg("trashMsg", err.message, false);
+  }
+}
+
+async function permanentDeleteTrashItem(type, id) {
+  if (!confirm("Permanently delete this item? This cannot be undone.")) return;
+  try {
+    await api(`/api/marketing-emails/trash/${type}/${id}/permanent`, { method: "DELETE" });
+    await loadTrash();
+    showMsg("trashMsg", "Item permanently deleted.", true);
+  } catch (err) {
+    showMsg("trashMsg", err.message, false);
+  }
 }
 
 function switchTab(tabName) {
@@ -776,6 +1154,7 @@ async function refreshAll() {
     await loadPermissions();
     await loadRequests();
     await loadDownloadLogs();
+    await loadTrash();
   } catch (err) {
     showMsg("leadTableMsg", err.message, false);
   }
@@ -796,10 +1175,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadExports();
   });
   $("refreshAllBtn")?.addEventListener("click", refreshAll);
+  $("selectAllLeadsBtn")?.addEventListener("click", selectAllVisibleLeads);
+  $("clearLeadSelectionBtn")?.addEventListener("click", clearLeadSelection);
+  $("leadSelectAllBox")?.addEventListener("change", (event) => {
+    if (event.target.checked) {
+      selectAllVisibleLeads();
+    } else {
+      clearLeadSelection();
+    }
+  });
   $("bulkVerifyBtn")?.addEventListener("click", bulkVerify);
   $("createExportBtn")?.addEventListener("click", createExport);
   $("updateExportBtn")?.addEventListener("click", updateExport);
   $("clearExportBtn")?.addEventListener("click", clearExportForm);
+  $("exportStatus")?.addEventListener("change", updateSendDateVisibility);
+  $("sendRound")?.addEventListener("input", updateSendDateVisibility);
+  $("selectAllExportsBtn")?.addEventListener("click", selectAllVisibleExports);
+  $("clearExportSelectionBtn")?.addEventListener("click", clearExportSelection);
+  $("exportSelectAllBox")?.addEventListener("change", (event) => {
+    if (event.target.checked) {
+      selectAllVisibleExports();
+    } else {
+      clearExportSelection();
+    }
+  });
   $("requestDownloadBtn")?.addEventListener("click", requestDownloadAccess);
   $("searchInput")?.addEventListener("input", scheduleSearchReload);
   $("searchInput")?.addEventListener("keydown", async (event) => {
@@ -808,7 +1207,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       await loadLeads();
     }
   });
-  ["employeeFilter", "categoryFilter", "countryFilter", "statusFilter"].forEach((id) => {
+  ["employeeFilter", "categoryFilter", "countryFilter", "statusFilter", "callStatusFilter"].forEach((id) => {
     $(id)?.addEventListener("change", async () => {
       await loadLeads();
       await loadExports();

@@ -60,7 +60,7 @@
 
     .me-filters{
       display:grid;
-      grid-template-columns: repeat(6, minmax(130px, 1fr));
+      grid-template-columns: repeat(7, minmax(130px, 1fr));
       gap:10px;
       align-items:end;
       margin-bottom:12px;
@@ -89,11 +89,14 @@
     }
 
     .me-table-wrap{
-      overflow:auto;
+      width:100%;
+      overflow-x:auto;
+      overflow-y:auto;
       border:1px solid var(--line);
       border-radius:14px;
       background:#fff;
       max-height:58vh;
+      scrollbar-gutter:stable both-edges;
     }
 
     .me-table{
@@ -157,6 +160,10 @@
       grid-column:span 2;
     }
 
+    .me-mini-form .span4{
+      grid-column:1 / -1;
+    }
+
     .me-actions{
       display:flex;
       gap:8px;
@@ -214,6 +221,18 @@
 
     body[data-role="ADMIN"] .me-admin-only{
       display:block;
+    }
+
+    body[data-role="ADMIN"] .me-section.me-admin-only{
+      display:none;
+    }
+
+    body[data-role="ADMIN"] .me-section.me-admin-only.active{
+      display:block;
+    }
+
+    body[data-role="ADMIN"] .me-admin-only.me-tab{
+      display:inline-flex;
     }
 
     body[data-role="ADMIN"] .me-admin-only.me-actions{
@@ -305,6 +324,9 @@
           </div>
         </div>
 
+        <label for="leadCallStatus">Call Status</label>
+        <select id="leadCallStatus"></select>
+
         <label for="leadNote">Note</label>
         <textarea id="leadNote"></textarea>
 
@@ -332,6 +354,7 @@
         <button class="me-tab active" data-tab="leads" type="button">Leads</button>
         <button class="me-tab" data-tab="exports" type="button">Export Files</button>
         <button class="me-tab" data-tab="downloads" type="button">Download Access</button>
+        <button class="me-tab me-admin-only" data-tab="trash" type="button">Trash</button>
       </div>
 
       <section class="me-section active" id="tab-leads">
@@ -356,24 +379,31 @@
             <label for="statusFilter">Status</label>
             <select id="statusFilter"></select>
           </div>
+          <div>
+            <label for="callStatusFilter">Call Status</label>
+            <select id="callStatusFilter"></select>
+          </div>
           <button class="btn mini" id="applyFiltersBtn" type="button">Apply</button>
         </div>
 
-        <div class="me-actions me-admin-only" style="margin-bottom:10px;">
+        <div class="me-actions" style="margin-bottom:10px;">
+          <button class="btn ghost mini" id="selectAllLeadsBtn" type="button">Select All</button>
+          <button class="btn ghost mini" id="clearLeadSelectionBtn" type="button">Clear Selection</button>
           <select class="smallSelect" id="bulkStatusSelect"></select>
-          <button class="btn ghost mini" id="bulkVerifyBtn" type="button">Bulk Mark</button>
+          <button class="btn ghost mini me-admin-only inline" id="bulkVerifyBtn" type="button">Bulk Mark</button>
         </div>
 
         <div class="me-table-wrap">
           <table class="me-table">
             <thead>
               <tr>
-                <th>Select</th>
+                <th><input id="leadSelectAllBox" type="checkbox" /></th>
                 <th>Company</th>
                 <th>Email</th>
                 <th>Website</th>
                 <th>Category</th>
                 <th>Country</th>
+                <th>Call Status</th>
                 <th>Created By</th>
                 <th>Edited By</th>
                 <th>Edited At</th>
@@ -406,6 +436,10 @@
             <label for="exportStatus">Confirmation</label>
             <select id="exportStatus"></select>
           </div>
+          <div id="sendRoundWrap" style="display:none;">
+            <label for="sendRound">Send Stage Number</label>
+            <input id="sendRound" type="number" min="3" step="1" value="3" />
+          </div>
           <div>
             <label for="firstSendDate">First Send Date</label>
             <input id="firstSendDate" type="date" />
@@ -414,6 +448,7 @@
             <label for="secondSendDate">Second Send Date</label>
             <input id="secondSendDate" type="date" />
           </div>
+          <div class="span4" id="extraSendDatesWrap"></div>
           <div class="span2">
             <label for="exportNotes">Notes</label>
             <textarea id="exportNotes"></textarea>
@@ -431,13 +466,13 @@
           <table class="me-table">
             <thead>
               <tr>
+                <th><input id="exportSelectAllBox" type="checkbox" /></th>
                 <th>File Name</th>
                 <th>Category</th>
                 <th>Country</th>
                 <th>Lead Count</th>
                 <th>Confirmation</th>
-                <th>First Send</th>
-                <th>Second Send</th>
+                <th>Send Dates</th>
                 <th>Notes</th>
                 <th>Created By</th>
                 <th>Created At</th>
@@ -446,6 +481,11 @@
             </thead>
             <tbody id="exportTableBody"></tbody>
           </table>
+        </div>
+        <div class="me-actions" style="margin-top:10px;">
+          <button class="btn ghost mini" id="selectAllExportsBtn" type="button">Select All</button>
+          <button class="btn ghost mini" id="clearExportSelectionBtn" type="button">Clear Selection</button>
+          <span class="me-muted-cell" id="selectedExportCount">0 export files selected</span>
         </div>
         <p class="msg" id="exportTableMsg"></p>
       </section>
@@ -514,6 +554,45 @@
             <tbody id="downloadLogBody"></tbody>
           </table>
         </div>
+      </section>
+
+      <section class="me-section me-admin-only" id="tab-trash">
+        <h3>Lead Trash</h3>
+        <div class="me-table-wrap" style="max-height:320px;">
+          <table class="me-table" style="min-width:1100px;">
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Email</th>
+                <th>Category</th>
+                <th>Country</th>
+                <th>Deleted By</th>
+                <th>Deleted At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="trashLeadBody"></tbody>
+          </table>
+        </div>
+
+        <h3 style="margin-top:18px;">Export File Trash</h3>
+        <div class="me-table-wrap" style="max-height:320px;">
+          <table class="me-table" style="min-width:1100px;">
+            <thead>
+              <tr>
+                <th>File Name</th>
+                <th>Category</th>
+                <th>Country</th>
+                <th>Lead Count</th>
+                <th>Deleted By</th>
+                <th>Deleted At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="trashExportBody"></tbody>
+          </table>
+        </div>
+        <p class="msg" id="trashMsg"></p>
       </section>
     </div>
   </div>
