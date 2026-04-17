@@ -7,13 +7,18 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   <style>
     .me-page{
-      grid-template-columns: 420px 1fr;
+      grid-template-columns: 420px 34px minmax(0, 1fr);
+      align-items:start;
     }
 
     .me-page > *,
     .me-work-card,
     #tab-leads{
       min-width:0;
+    }
+
+    .me-page.form-collapsed{
+      grid-template-columns: 0 34px minmax(0, 1fr);
     }
 
     .me-form-card,
@@ -23,6 +28,38 @@
       border-radius:14px;
       padding:16px;
       box-shadow: var(--shadow);
+    }
+
+    .me-form-card{
+      overflow:hidden;
+      transition:opacity .18s ease, transform .18s ease, padding .18s ease, border-color .18s ease;
+    }
+
+    .me-page.form-collapsed .me-form-card{
+      opacity:0;
+      transform:translateX(-12px);
+      padding-left:0;
+      padding-right:0;
+      border-color:transparent;
+      pointer-events:none;
+    }
+
+    .me-collapse-rail{
+      display:flex;
+      justify-content:center;
+      align-self:start;
+      position:sticky;
+      top:84px;
+      z-index:3;
+    }
+
+    .me-collapse-toggle{
+      width:32px;
+      height:38px;
+      padding:0;
+      border-radius:10px;
+      font-size:13px;
+      line-height:1;
     }
 
     .me-form-card textarea,
@@ -204,12 +241,13 @@
     }
 
     .me-link{
-      color:#60a5fa;
+      color:#5b7fa6;
       font-weight:700;
       text-decoration:none;
     }
 
     .me-link:hover{
+      color:#466f9b;
       text-decoration:underline;
     }
 
@@ -283,6 +321,19 @@
     @media (max-width: 1200px){
       .me-page{
         grid-template-columns:1fr;
+      }
+
+      .me-page.form-collapsed{
+        grid-template-columns:1fr;
+      }
+
+      .me-collapse-rail{
+        position:static;
+        justify-content:flex-start;
+      }
+
+      .me-page.form-collapsed .me-form-card{
+        display:none;
       }
 
       .me-filters,
@@ -370,6 +421,10 @@
         </div>
         <p class="msg" id="leadFormMsg"></p>
       </div>
+    </div>
+
+    <div class="me-collapse-rail">
+      <button class="btn ghost mini me-collapse-toggle" id="leadFormToggle" type="button" aria-label="Collapse lead form">&lt;-</button>
     </div>
 
     <div class="me-work-card">

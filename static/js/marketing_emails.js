@@ -1287,6 +1287,26 @@ function setupTableScrollbars() {
   });
 }
 
+function setupLeadFormToggle() {
+  const page = document.querySelector(".me-page");
+  const btn = $("leadFormToggle");
+  if (!page || !btn) return;
+
+  const sync = () => {
+    const collapsed = page.classList.contains("form-collapsed");
+    btn.textContent = collapsed ? "->" : "<-";
+    btn.setAttribute("aria-label", collapsed ? "Expand lead form" : "Collapse lead form");
+  };
+
+  btn.addEventListener("click", () => {
+    page.classList.toggle("form-collapsed");
+    sync();
+    window.setTimeout(setupTableScrollbars, 220);
+  });
+
+  sync();
+}
+
 function scheduleSearchReload() {
   if (ME.searchTimer) clearTimeout(ME.searchTimer);
   ME.searchTimer = setTimeout(async () => {
@@ -1314,6 +1334,8 @@ async function refreshAll() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  setupLeadFormToggle();
+
   document.querySelectorAll(".me-tab").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
