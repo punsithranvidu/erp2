@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   <style>
     .me-page{
-      grid-template-columns: 420px 34px minmax(0, 1fr);
+      grid-template-columns: 420px minmax(0, 1fr);
       align-items:start;
     }
 
@@ -18,7 +18,7 @@
     }
 
     .me-page.form-collapsed{
-      grid-template-columns: 0 34px minmax(0, 1fr);
+      grid-template-columns: 0 minmax(0, 1fr);
     }
 
     .me-form-card,
@@ -31,35 +31,46 @@
     }
 
     .me-form-card{
-      overflow:hidden;
+      position:relative;
+      overflow:visible;
       transition:opacity .18s ease, transform .18s ease, padding .18s ease, border-color .18s ease;
     }
 
     .me-page.form-collapsed .me-form-card{
-      opacity:0;
-      transform:translateX(-12px);
+      opacity:1;
+      transform:none;
       padding-left:0;
       padding-right:0;
       border-color:transparent;
+      background:transparent;
+      box-shadow:none;
       pointer-events:none;
+    }
+
+    .me-page.form-collapsed .me-form-card > :not(.me-collapse-rail){
+      visibility:hidden;
     }
 
     .me-collapse-rail{
       display:flex;
       justify-content:center;
-      align-self:start;
-      position:sticky;
-      top:84px;
-      z-index:3;
+      align-items:center;
+      position:absolute;
+      right:-18px;
+      top:50%;
+      transform:translateY(-50%);
+      z-index:4;
+      pointer-events:auto;
     }
 
     .me-collapse-toggle{
-      width:32px;
-      height:38px;
+      width:34px;
+      height:46px;
       padding:0;
-      border-radius:10px;
+      border-radius:14px;
       font-size:13px;
       line-height:1;
+      box-shadow:0 8px 18px rgba(15,23,42,.10);
     }
 
     .me-form-card textarea,
@@ -103,10 +114,15 @@
 
     .me-filters{
       display:grid;
-      grid-template-columns: repeat(7, minmax(130px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
       gap:10px;
       align-items:end;
       margin-bottom:12px;
+    }
+
+    .me-filters .btn{
+      width:100%;
+      min-width:0;
     }
 
     .me-filters label,
@@ -328,12 +344,15 @@
       }
 
       .me-collapse-rail{
-        position:static;
-        justify-content:flex-start;
+        right:12px;
+        top:18px;
+        transform:none;
       }
 
       .me-page.form-collapsed .me-form-card{
-        display:none;
+        display:block;
+        min-height:54px;
+        padding:0;
       }
 
       .me-filters,
@@ -421,10 +440,10 @@
         </div>
         <p class="msg" id="leadFormMsg"></p>
       </div>
-    </div>
 
-    <div class="me-collapse-rail">
-      <button class="btn ghost mini me-collapse-toggle" id="leadFormToggle" type="button" aria-label="Collapse lead form">&lt;-</button>
+      <div class="me-collapse-rail">
+        <button class="btn ghost mini me-collapse-toggle" id="leadFormToggle" type="button" aria-label="Collapse lead form">&lt;-</button>
+      </div>
     </div>
 
     <div class="me-work-card">
