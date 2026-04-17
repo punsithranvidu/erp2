@@ -179,7 +179,7 @@
       position:absolute;
       z-index:20;
       right:0;
-      top:26px;
+      bottom:calc(100% + 8px);
       width:260px;
       border:1px solid rgba(15,23,42,.12);
       border-radius:10px;
@@ -326,7 +326,7 @@
       .notes-filters{grid-template-columns:1fr;}
       .notes-actionbar{align-items:flex-start;}
       .notes-actionbar-title{width:100%;}
-      .note-tip{right:-8px; width:min(260px, calc(100vw - 48px));}
+      .note-tip{right:-8px; bottom:calc(100% + 8px); width:min(260px, calc(100vw - 48px));}
     }
   </style>
 </head>
