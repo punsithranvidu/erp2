@@ -17,7 +17,7 @@ from routes.attendance import attendance_bp
 from routes.hs_codes import hs_codes_bp
 from routes.finance import finance_bp
 from routes.users import users_bp
-from routes.clients import clients_bp
+from routes.weekly_tasks import weekly_tasks_bp
 from routes.cash_advances import cash_advances_bp
 from routes.messages import messages_bp
 from routes.marketing_emails import marketing_emails_bp
@@ -77,7 +77,7 @@ MODULES = [
     "FINANCE",
     "DOCUMENT_STORAGE",
     "USERS",
-    "CLIENTS",
+    "WEEKLY_TASKS",
     "INVOICES",
     "CASH_ADVANCES",
     "FINANCE_TRASH",
@@ -330,6 +330,7 @@ def init_db():
             """)
         cur.execute("DROP TABLE IF EXISTS user_permissions_old")
     cur.execute("DELETE FROM user_permissions WHERE module='ADMIN_WORKSHEET'")
+    cur.execute("DELETE FROM user_permissions WHERE module='CLIENTS'")
     conn.commit()
 
     ucols = get_table_columns(conn, "users")
@@ -644,7 +645,7 @@ def init_db():
                     VALUES (%s,%s,1,1)
                 """, (uid, m))
             else:
-                if m in ("FINANCE", "CASH_ADVANCES", "DOCUMENT_STORAGE", "NOTES"):
+                if m in ("FINANCE", "CASH_ADVANCES", "DOCUMENT_STORAGE", "NOTES", "WEEKLY_TASKS"):
                     cur.execute("""
                         INSERT INTO user_permissions (user_id, module, can_access, can_edit)
                         VALUES (%s,%s,1,1)
@@ -832,7 +833,7 @@ app.register_blueprint(attendance_bp)
 app.register_blueprint(hs_codes_bp)
 app.register_blueprint(finance_bp)
 app.register_blueprint(users_bp)
-app.register_blueprint(clients_bp)
+app.register_blueprint(weekly_tasks_bp)
 app.register_blueprint(cash_advances_bp)
 app.register_blueprint(messages_bp)
 app.register_blueprint(marketing_emails_bp)

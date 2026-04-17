@@ -6,7 +6,7 @@ const MODULES = [
   { key: "FINANCE", label: "Finance" },
   { key: "DOCUMENT_STORAGE", label: "Document Storage" },
   { key: "USERS", label: "Employee Access" },
-  { key: "CLIENTS", label: "Clients" },
+  { key: "WEEKLY_TASKS", label: "Weekly Tasks" },
   { key: "INVOICES", label: "Invoices" },
   { key: "CASH_ADVANCES", label: "Cash Advances" },
   { key: "FINANCE_TRASH", label: "Finance Trash" },

@@ -1,0 +1,327 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Weekly Tasks</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <style>
+    .wt-page{grid-template-columns:1fr;}
+    .wt-shell{
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:14px;
+      box-shadow:var(--shadow);
+      padding:16px;
+      min-width:0;
+    }
+    .wt-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:12px;
+      margin-bottom:12px;
+    }
+    .wt-tabs{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      padding-bottom:10px;
+      border-bottom:1px solid var(--line);
+      margin-bottom:12px;
+    }
+    .wt-tab{
+      border:1px solid var(--line);
+      background:#fff;
+      color:var(--text);
+      border-radius:10px;
+      padding:8px 12px;
+      cursor:pointer;
+      font-weight:800;
+    }
+    .wt-tab.active{
+      border-color:rgba(37,99,235,.35);
+      background:rgba(37,99,235,.10);
+      color:var(--accent);
+    }
+    .wt-section{display:none;}
+    .wt-section.active{display:block;}
+    .wt-filters{
+      display:grid;
+      grid-template-columns:repeat(6, minmax(120px, 1fr));
+      gap:10px;
+      align-items:end;
+      margin:12px 0;
+    }
+    .wt-filters label,
+    .wt-add label{
+      display:block;
+      margin:0 0 5px;
+      color:var(--muted);
+      font-size:12px;
+      font-weight:800;
+    }
+    .wt-filters input,
+    .wt-filters select,
+    .wt-add input,
+    .wt-add select{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:9px 10px;
+      background:#fff;
+      color:var(--text);
+    }
+    .wt-board{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(230px, 1fr));
+      gap:12px;
+      align-items:start;
+      margin-top:12px;
+    }
+    .wt-card{
+      position:relative;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#fff;
+      min-height:260px;
+      padding:12px;
+      box-shadow:0 8px 22px rgba(15,23,42,.05);
+      overflow:hidden;
+      transition:transform .15s ease, box-shadow .15s ease;
+    }
+    .wt-card:hover{
+      transform:translateY(-1px);
+      box-shadow:0 12px 28px rgba(15,23,42,.07);
+    }
+    .wt-card::before{
+      content:"";
+      position:absolute;
+      left:0;
+      top:0;
+      bottom:0;
+      width:4px;
+      background:#dbeafe;
+    }
+    body[data-role="ADMIN"] .wt-card.health-healthy::before{background:#bbf7d0;}
+    body[data-role="ADMIN"] .wt-card.health-warm::before{background:#fde68a;}
+    body[data-role="ADMIN"] .wt-card.health-hot::before{background:#fdba74;}
+    body[data-role="ADMIN"] .wt-card.health-risk::before{background:#fca5a5;}
+    body[data-role="EMP"] .wt-card::before{background:#dbeafe;}
+    .wt-card-head{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      align-items:flex-start;
+      margin-bottom:10px;
+      padding-left:2px;
+    }
+    .wt-card-head h4{margin:0;}
+    .wt-health{
+      display:none;
+      color:var(--muted);
+      font-size:11px;
+      font-weight:800;
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:3px 7px;
+      background:#f8fafc;
+    }
+    body[data-role="ADMIN"] .wt-health{display:inline-flex;}
+    .wt-add{
+      display:grid;
+      gap:8px;
+      margin-bottom:10px;
+    }
+    .wt-task-list{
+      display:grid;
+      gap:7px;
+      max-height:360px;
+      overflow-y:auto;
+      padding-right:4px;
+    }
+    .wt-task{
+      border:1px solid var(--line);
+      border-radius:9px;
+      background:#fff;
+      padding:8px;
+    }
+    .wt-task.pending{
+      background:#fffbeb;
+      border-color:#fde68a;
+    }
+    .wt-task.done .wt-task-text{
+      text-decoration:line-through;
+      color:#64748b;
+    }
+    .wt-task.cancelled{
+      opacity:.72;
+      background:#f8fafc;
+    }
+    .wt-task-text{
+      font-weight:750;
+      line-height:1.35;
+      word-break:break-word;
+    }
+    .wt-badges{
+      display:flex;
+      gap:5px;
+      flex-wrap:wrap;
+      margin-top:7px;
+    }
+    .wt-badge{
+      display:inline-flex;
+      align-items:center;
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:2px 7px;
+      font-size:11px;
+      color:var(--muted);
+      background:#f8fafc;
+      font-weight:800;
+    }
+    .wt-badge.active{color:#166534; background:#f0fdf4; border-color:#bbf7d0;}
+    .wt-badge.done{color:#1d4ed8; background:#eff6ff; border-color:#bfdbfe;}
+    .wt-badge.cancelled{color:#991b1b; background:#fef2f2; border-color:#fecaca;}
+    .wt-actions{
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+      margin-top:8px;
+    }
+    .wt-review-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:12px;
+      margin-top:12px;
+    }
+    .wt-list{
+      display:grid;
+      gap:8px;
+      max-height:560px;
+      overflow:auto;
+      padding-right:4px;
+    }
+    .wt-review-item{
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:#fff;
+      padding:10px;
+    }
+    .wt-empty{
+      border:1px dashed var(--line);
+      border-radius:12px;
+      padding:28px;
+      text-align:center;
+      color:var(--muted);
+      background:#fff;
+    }
+    .wt-msg{margin-top:10px;}
+    @media (max-width:1300px){
+      .wt-board{grid-template-columns:repeat(2, minmax(260px, 1fr));}
+      .wt-filters{grid-template-columns:repeat(3, 1fr);}
+    }
+    @media (max-width:760px){
+      .wt-board,
+      .wt-review-grid,
+      .wt-filters{grid-template-columns:1fr;}
+    }
+  </style>
+</head>
+<body data-role="{{ role }}" data-user="{{ user }}" data-year="{{ year }}" data-month="{{ '%02d'|format(month) }}">
+  <div class="topbar">
+    <div>
+      <h2>Weekly Tasks</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page wt-page">
+    <div class="wt-shell">
+      <div class="wt-head">
+        <div>
+          <h3>Weekly Task Board</h3>
+          <p class="sub" id="wtScopeText">Current month planning board.</p>
+        </div>
+        <button class="btn ghost mini" id="wtRefreshBtn" type="button">Refresh</button>
+      </div>
+
+      <div class="wt-tabs">
+        <button class="wt-tab active" data-tab="board" type="button">Board</button>
+        {% if role == "ADMIN" %}
+        <button class="wt-tab" data-tab="review" type="button">Pending Review</button>
+        <button class="wt-tab" data-tab="trash" type="button">Trash</button>
+        {% endif %}
+      </div>
+
+      <section class="wt-section active" id="wt-tab-board">
+        <div class="wt-filters">
+          <div class="admin-only" style="display:none;">
+            <label for="wtEmployee">Employee</label>
+            <select id="wtEmployee"></select>
+          </div>
+          <div>
+            <label for="wtMonth">Month</label>
+            <input id="wtMonth" type="month" />
+          </div>
+          <div>
+            <label for="wtWeek">Week</label>
+            <select id="wtWeek">
+              <option value="0">All Weeks</option>
+              <option value="1">Week 1</option>
+              <option value="2">Week 2</option>
+              <option value="3">Week 3</option>
+              <option value="4">Week 4</option>
+            </select>
+          </div>
+          <div>
+            <label for="wtStatus">Status</label>
+            <select id="wtStatus">
+              <option value="ALL">All</option>
+              <option>Pending</option>
+              <option>Active</option>
+              <option>Done</option>
+              <option>Cancelled</option>
+            </select>
+          </div>
+          <div>
+            <label for="wtSearch">Search</label>
+            <input id="wtSearch" type="search" placeholder="Task text" />
+          </div>
+          <button class="btn" id="wtApplyBtn" type="button">Apply</button>
+        </div>
+
+        <div class="wt-board" id="wtBoard"></div>
+        <p class="msg wt-msg" id="wtBoardMsg"></p>
+      </section>
+
+      {% if role == "ADMIN" %}
+      <section class="wt-section" id="wt-tab-review">
+        <div class="wt-review-grid">
+          <div>
+            <h3>Employee-Created Tasks</h3>
+            <div class="wt-list" id="wtPendingTasks"></div>
+          </div>
+          <div>
+            <h3>Edit Requests</h3>
+            <div class="wt-list" id="wtEditRequests"></div>
+          </div>
+        </div>
+        <p class="msg wt-msg" id="wtReviewMsg"></p>
+      </section>
+
+      <section class="wt-section" id="wt-tab-trash">
+        <div class="wt-list" id="wtTrashList"></div>
+        <p class="msg wt-msg" id="wtTrashMsg"></p>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/weekly_tasks.js') }}"></script>
+</body>
+</html>
