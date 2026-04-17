@@ -120,6 +120,10 @@
       border-collapse:collapse;
     }
 
+    #leadsTableWrap .me-table{
+      min-width:1650px;
+    }
+
     .me-table th,
     .me-table td{
       padding:10px;
@@ -310,7 +314,7 @@
           <h3 id="leadFormTitle">Add Lead</h3>
           <p class="sub">Email must be unique in the full ERP.</p>
         </div>
-        <span class="badge" id="downloadStateBadge">Download: checking</span>
+        <!-- <span class="badge" id="downloadStateBadge">Download: checking</span> -->
       </div>
 
       <div class="form">
@@ -414,7 +418,7 @@
           <button class="btn ghost mini me-admin-only inline" id="bulkVerifyBtn" type="button">Bulk Mark</button>
         </div>
 
-        <div class="me-table-wrap">
+        <div class="me-table-wrap" id="leadsTableWrap">
           <table class="me-table">
             <thead>
               <tr>
@@ -435,6 +439,9 @@
             </thead>
             <tbody id="leadTableBody"></tbody>
           </table>
+        </div>
+        <div class="me-x-scroll" id="leadsBottomScroll">
+          <div class="me-x-scroll-inner"></div>
         </div>
         <div class="me-actions" style="margin-top:10px;">
           <span class="me-muted-cell" id="leadTotalText">0 leads</span>
