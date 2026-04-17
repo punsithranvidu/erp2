@@ -56,21 +56,45 @@
       justify-content:center;
       align-items:center;
       position:absolute;
-      right:-18px;
+      right:-12px;
       top:50%;
       transform:translateY(-50%);
       z-index:4;
       pointer-events:auto;
+      width:24px;
+      height:86px;
+    }
+
+    .me-collapse-rail::before{
+      content:"";
+      position:absolute;
+      top:0;
+      bottom:0;
+      left:50%;
+      width:1px;
+      background:var(--line);
+      transform:translateX(-50%);
     }
 
     .me-collapse-toggle{
-      width:34px;
-      height:46px;
+      position:relative;
+      width:24px;
+      height:34px;
       padding:0;
-      border-radius:14px;
-      font-size:13px;
+      border-radius:8px;
+      border:1px solid var(--line);
+      background:#fff;
+      color:#64748b;
+      font-size:14px;
+      font-weight:800;
       line-height:1;
-      box-shadow:0 8px 18px rgba(15,23,42,.10);
+      box-shadow:0 3px 10px rgba(15,23,42,.08);
+    }
+
+    .me-collapse-toggle:hover{
+      color:var(--accent);
+      border-color:rgba(37,99,235,.28);
+      background:#f8fafc;
     }
 
     .me-form-card textarea,
@@ -158,21 +182,6 @@
       background:#fff;
       max-height:58vh;
       scrollbar-gutter:stable both-edges;
-    }
-
-    .me-x-scroll{
-      width:100%;
-      overflow-x:auto;
-      overflow-y:hidden;
-      height:16px;
-      border:1px solid var(--line);
-      border-top:none;
-      border-radius:0 0 10px 10px;
-      background:#fff;
-    }
-
-    .me-x-scroll-inner{
-      height:1px;
     }
 
     .me-table{
@@ -347,6 +356,11 @@
         right:12px;
         top:18px;
         transform:none;
+        height:40px;
+      }
+
+      .me-collapse-rail::before{
+        display:none;
       }
 
       .me-page.form-collapsed .me-form-card{
@@ -442,7 +456,7 @@
       </div>
 
       <div class="me-collapse-rail">
-        <button class="btn ghost mini me-collapse-toggle" id="leadFormToggle" type="button" aria-label="Collapse lead form">&lt;-</button>
+        <button class="me-collapse-toggle" id="leadFormToggle" type="button" aria-label="Collapse lead form">&lt;</button>
       </div>
     </div>
 
@@ -522,10 +536,6 @@
             <tbody id="leadTableBody"></tbody>
           </table>
         </div>
-        <div class="me-x-scroll" id="leadsBottomScroll">
-          <div class="me-x-scroll-inner"></div>
-        </div>
-
         <div class="me-actions" style="margin-top:10px;">
           <span class="me-muted-cell" id="leadTotalText">0 leads</span>
         </div>

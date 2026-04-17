@@ -1244,47 +1244,7 @@ function switchTab(tabName) {
 }
 
 function setupTableScrollbars() {
-  document.querySelectorAll(".me-table-wrap").forEach((wrap) => {
-    const table = wrap.querySelector("table");
-    if (!table) return;
-
-    let scroll = wrap.nextElementSibling;
-    if (!scroll || !scroll.classList.contains("me-x-scroll")) {
-      scroll = document.createElement("div");
-      scroll.className = "me-x-scroll";
-      scroll.innerHTML = `<div class="me-x-scroll-inner"></div>`;
-      wrap.insertAdjacentElement("afterend", scroll);
-    }
-
-    const inner = scroll.querySelector(".me-x-scroll-inner");
-    if (!inner) return;
-    inner.style.width = `${table.scrollWidth}px`;
-    scroll.style.display = table.scrollWidth > wrap.clientWidth ? "block" : "none";
-
-    if (wrap.dataset.scrollSyncReady === "1") return;
-    wrap.dataset.scrollSyncReady = "1";
-
-    let fromWrap = false;
-    let fromScroll = false;
-
-    wrap.addEventListener("scroll", () => {
-      if (fromScroll) {
-        fromScroll = false;
-        return;
-      }
-      fromWrap = true;
-      scroll.scrollLeft = wrap.scrollLeft;
-    });
-
-    scroll.addEventListener("scroll", () => {
-      if (fromWrap) {
-        fromWrap = false;
-        return;
-      }
-      fromScroll = true;
-      wrap.scrollLeft = scroll.scrollLeft;
-    });
-  });
+  document.querySelectorAll(".me-x-scroll").forEach((scroll) => scroll.remove());
 }
 
 function setupLeadFormToggle() {
@@ -1294,7 +1254,7 @@ function setupLeadFormToggle() {
 
   const sync = () => {
     const collapsed = page.classList.contains("form-collapsed");
-    btn.textContent = collapsed ? "->" : "<-";
+    btn.textContent = collapsed ? ">" : "<";
     btn.setAttribute("aria-label", collapsed ? "Expand lead form" : "Collapse lead form");
   };
 
