@@ -1,3 +1,4 @@
+from calendar import monthrange
 from datetime import datetime
 from functools import wraps
 from zoneinfo import ZoneInfo
@@ -9,7 +10,7 @@ from .db import connect, get_table_columns
 weekly_tasks_bp = Blueprint("weekly_tasks", __name__)
 
 APP_TZ = ZoneInfo("Asia/Colombo")
-TASK_STATUSES = ("Pending", "Active", "Done", "Cancelled")
+TASK_STATUSES = ("Pending", "Active", "Started", "Done", "Cancelled")
 CONFIRMATION_STATUSES = ("PENDING", "CONFIRMED", "DENIED")
 EDIT_REQUEST_STATUSES = ("PENDING", "APPROVED", "DENIED")
 WEEKS = (1, 2, 3, 4)
@@ -117,6 +118,14 @@ def ensure_weekly_task_tables():
             updated_at TEXT,
             confirmed_by TEXT,
             confirmed_at TEXT,
+            started_by TEXT,
+            started_at TEXT,
+            done_by TEXT,
+            done_at TEXT,
+            cancelled_by TEXT,
+            cancelled_at TEXT,
+            moved_by TEXT,
+            moved_at TEXT,
             deleted_at TEXT,
             deleted_by TEXT,
             deleted_by_user_id BIGINT
@@ -161,6 +170,23 @@ def ensure_weekly_task_tables():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS weekly_task_week_locks (
+            id BIGSERIAL PRIMARY KEY,
+            owner_user_id BIGINT NOT NULL,
+            task_year INTEGER NOT NULL,
+            task_month INTEGER NOT NULL,
+            week_number INTEGER NOT NULL,
+            is_frozen INTEGER NOT NULL DEFAULT 1,
+            manual_unfrozen INTEGER NOT NULL DEFAULT 0,
+            frozen_at TEXT,
+            frozen_by TEXT,
+            unfrozen_at TEXT,
+            unfrozen_by TEXT,
+            UNIQUE(owner_user_id, task_year, task_month, week_number)
+        )
+    """)
+
     task_cols = get_table_columns(conn, "weekly_tasks")
     task_missing = {
         "owner_user_id": "ALTER TABLE weekly_tasks ADD COLUMN owner_user_id BIGINT",
@@ -182,6 +208,14 @@ def ensure_weekly_task_tables():
         "updated_at": "ALTER TABLE weekly_tasks ADD COLUMN updated_at TEXT",
         "confirmed_by": "ALTER TABLE weekly_tasks ADD COLUMN confirmed_by TEXT",
         "confirmed_at": "ALTER TABLE weekly_tasks ADD COLUMN confirmed_at TEXT",
+        "started_by": "ALTER TABLE weekly_tasks ADD COLUMN started_by TEXT",
+        "started_at": "ALTER TABLE weekly_tasks ADD COLUMN started_at TEXT",
+        "done_by": "ALTER TABLE weekly_tasks ADD COLUMN done_by TEXT",
+        "done_at": "ALTER TABLE weekly_tasks ADD COLUMN done_at TEXT",
+        "cancelled_by": "ALTER TABLE weekly_tasks ADD COLUMN cancelled_by TEXT",
+        "cancelled_at": "ALTER TABLE weekly_tasks ADD COLUMN cancelled_at TEXT",
+        "moved_by": "ALTER TABLE weekly_tasks ADD COLUMN moved_by TEXT",
+        "moved_at": "ALTER TABLE weekly_tasks ADD COLUMN moved_at TEXT",
         "deleted_at": "ALTER TABLE weekly_tasks ADD COLUMN deleted_at TEXT",
         "deleted_by": "ALTER TABLE weekly_tasks ADD COLUMN deleted_by TEXT",
         "deleted_by_user_id": "ALTER TABLE weekly_tasks ADD COLUMN deleted_by_user_id BIGINT",
@@ -229,11 +263,29 @@ def ensure_weekly_task_tables():
         if col not in hist_cols:
             cur.execute(sql)
 
+    lock_cols = get_table_columns(conn, "weekly_task_week_locks")
+    lock_missing = {
+        "owner_user_id": "ALTER TABLE weekly_task_week_locks ADD COLUMN owner_user_id BIGINT",
+        "task_year": "ALTER TABLE weekly_task_week_locks ADD COLUMN task_year INTEGER NOT NULL DEFAULT 0",
+        "task_month": "ALTER TABLE weekly_task_week_locks ADD COLUMN task_month INTEGER NOT NULL DEFAULT 0",
+        "week_number": "ALTER TABLE weekly_task_week_locks ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1",
+        "is_frozen": "ALTER TABLE weekly_task_week_locks ADD COLUMN is_frozen INTEGER NOT NULL DEFAULT 1",
+        "manual_unfrozen": "ALTER TABLE weekly_task_week_locks ADD COLUMN manual_unfrozen INTEGER NOT NULL DEFAULT 0",
+        "frozen_at": "ALTER TABLE weekly_task_week_locks ADD COLUMN frozen_at TEXT",
+        "frozen_by": "ALTER TABLE weekly_task_week_locks ADD COLUMN frozen_by TEXT",
+        "unfrozen_at": "ALTER TABLE weekly_task_week_locks ADD COLUMN unfrozen_at TEXT",
+        "unfrozen_by": "ALTER TABLE weekly_task_week_locks ADD COLUMN unfrozen_by TEXT",
+    }
+    for col, sql in lock_missing.items():
+        if col not in lock_cols:
+            cur.execute(sql)
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_owner_period ON weekly_tasks (owner_user_id, task_year, task_month, week_number)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_deleted ON weekly_tasks (deleted_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_status ON weekly_tasks (status, confirmation_status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_edit_requests_task_status ON weekly_task_edit_requests (task_id, request_status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_history_task ON weekly_task_history (task_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_week_locks_period ON weekly_task_week_locks (owner_user_id, task_year, task_month, week_number)")
 
     conn.commit()
     conn.close()
@@ -305,9 +357,11 @@ def can_modify_task(row):
     return is_admin() or int(row["owner_user_id"]) == int(current_user_id() or 0)
 
 
-def add_history(conn, task_id, action_type, old=None, new=None, note=None):
+def add_history(conn, task_id, action_type, old=None, new=None, note=None, actor_name=None, actor_user_id=None):
     old = old or {}
     new = new or {}
+    actor_name = actor_name if actor_name is not None else session.get("user", "system")
+    actor_user_id = actor_user_id if actor_user_id is not None else current_user_id()
     conn.execute("""
         INSERT INTO weekly_task_history (
             task_id, action_type, old_task_text, new_task_text,
@@ -328,8 +382,8 @@ def add_history(conn, task_id, action_type, old=None, new=None, note=None):
         new.get("task_year"),
         new.get("task_month"),
         new.get("week_number"),
-        session["user"],
-        current_user_id(),
+        actor_name,
+        actor_user_id,
         now_iso(),
         note,
     ))
@@ -343,6 +397,119 @@ def next_week(year, month, week):
     return year, month + 1, 1
 
 
+def week_end_date(year, month, week):
+    last_day = monthrange(year, month)[1]
+    if week == 1:
+        day = 7
+    elif week == 2:
+        day = 14
+    elif week == 3:
+        day = 21
+    else:
+        day = last_day
+    return datetime(year, month, min(day, last_day), 23, 59, 59)
+
+
+def week_is_over(year, month, week):
+    return datetime.now(APP_TZ).replace(tzinfo=None) > week_end_date(year, month, week)
+
+
+def get_week_lock(conn, owner_id, year, month, week):
+    return conn.execute("""
+        SELECT *
+        FROM weekly_task_week_locks
+        WHERE owner_user_id=%s AND task_year=%s AND task_month=%s AND week_number=%s
+        LIMIT 1
+    """, (owner_id, year, month, week)).fetchone()
+
+
+def is_week_frozen(conn, owner_id, year, month, week):
+    row = get_week_lock(conn, owner_id, year, month, week)
+    return bool(row and int(row["is_frozen"] or 0) == 1)
+
+
+def ensure_week_frozen(conn, owner_id, year, month, week, actor="system"):
+    existing = get_week_lock(conn, owner_id, year, month, week)
+    if existing and int(existing["manual_unfrozen"] or 0) == 1:
+        return
+    frozen_at = now_iso()
+    conn.execute("""
+        INSERT INTO weekly_task_week_locks (
+            owner_user_id, task_year, task_month, week_number,
+            is_frozen, manual_unfrozen, frozen_at, frozen_by
+        )
+        VALUES (%s,%s,%s,%s,1,0,%s,%s)
+        ON CONFLICT(owner_user_id, task_year, task_month, week_number)
+        DO UPDATE SET
+            is_frozen=1,
+            frozen_at=COALESCE(weekly_task_week_locks.frozen_at, excluded.frozen_at),
+            frozen_by=COALESCE(weekly_task_week_locks.frozen_by, excluded.frozen_by)
+        WHERE weekly_task_week_locks.manual_unfrozen=0
+    """, (owner_id, year, month, week, frozen_at, actor))
+
+
+def auto_carry_task(conn, old, actor="system"):
+    ny, nm, nw = next_week(int(old["task_year"]), int(old["task_month"]), int(old["week_number"]))
+    moved_at = now_iso()
+    new_carry = int(old["carry_forward_count"] or 0) + 1
+    old_after = conn.execute("""
+        UPDATE weekly_tasks
+        SET status='Cancelled',
+            moved_by=%s,
+            moved_at=%s,
+            cancelled_by=%s,
+            cancelled_at=%s,
+            updated_by=%s,
+            updated_at=%s
+        WHERE id=%s
+        RETURNING *
+    """, (actor, moved_at, actor, moved_at, actor, moved_at, old["id"])).fetchone()
+    new_row = conn.execute("""
+        INSERT INTO weekly_tasks (
+            owner_user_id, task_text, task_year, task_month, week_number,
+            target_year, target_month, target_week, status, confirmation_status,
+            carry_forward_count, source_task_id, created_by_user_id, created_by, created_at,
+            confirmed_by, confirmed_at, started_by, started_at, moved_by, moved_at
+        )
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'CONFIRMED',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        RETURNING *
+    """, (
+        old["owner_user_id"], old["task_text"], ny, nm, nw, ny, nm, nw,
+        old["status"], new_carry, old["id"], None, actor, moved_at,
+        actor, moved_at,
+        old["started_by"] if old["status"] == "Started" else None,
+        old["started_at"] if old["status"] == "Started" else None,
+        actor, moved_at,
+    )).fetchone()
+    add_history(conn, old["id"], "AUTO_CARRY_FROM", old=dict(old), new=dict(old_after), note=f"Auto moved to {ny}-{nm:02d} week {nw}", actor_name=actor, actor_user_id=None)
+    add_history(conn, new_row["id"], "AUTO_CARRY_TO", old=dict(old), new=dict(new_row), note=f"Auto moved from task #{old['id']}", actor_name=actor, actor_user_id=None)
+    return new_row
+
+
+def auto_process_completed_weeks(conn, owner_id, year, month):
+    for week in WEEKS:
+        if not week_is_over(year, month, week):
+            continue
+        lock = get_week_lock(conn, owner_id, year, month, week)
+        if lock and int(lock["manual_unfrozen"] or 0) == 1:
+            continue
+        tasks = conn.execute("""
+            SELECT *
+            FROM weekly_tasks
+            WHERE deleted_at IS NULL
+              AND owner_user_id=%s
+              AND task_year=%s
+              AND task_month=%s
+              AND week_number=%s
+              AND confirmation_status='CONFIRMED'
+              AND status IN ('Active','Started')
+            ORDER BY id ASC
+        """, (owner_id, year, month, week)).fetchall()
+        for task in tasks:
+            auto_carry_task(conn, task, actor="system")
+        ensure_week_frozen(conn, owner_id, year, month, week, actor="system")
+
+
 def task_dict(row):
     d = dict(row)
     pending = d.get("pending_edit_count")
@@ -351,6 +518,12 @@ def task_dict(row):
     d["can_edit_direct"] = 1 if is_admin() else 0
     d["can_request_edit"] = 1 if not is_admin() and int(row["owner_user_id"]) == int(current_user_id() or 0) and row["confirmation_status"] == "CONFIRMED" else 0
     return d
+
+
+def block_if_week_frozen(conn, row):
+    if is_week_frozen(conn, row["owner_user_id"], row["task_year"], row["task_month"], row["week_number"]):
+        return jsonify({"ok": False, "error": "This week is frozen. Ask admin to unfreeze it if changes are needed."}), 403
+    return None
 
 
 def week_health(tasks):
@@ -399,6 +572,9 @@ def api_weekly_tasks_list():
     conn = db()
     owner_id = selected_owner_id(conn, request.args.get("owner_user_id"))
     owner = get_user(conn, owner_id) if owner_id else None
+    if owner_id:
+        auto_process_completed_weeks(conn, owner_id, year, month)
+        conn.commit()
 
     where = [
         "t.deleted_at IS NULL",
@@ -440,11 +616,16 @@ def api_weekly_tasks_list():
     weeks = []
     for w in WEEKS:
         tasks = by_week[str(w)]
+        lock = get_week_lock(conn, owner_id, year, month, w) if owner_id else None
         weeks.append({
             "week": w,
             "tasks": tasks,
             "health": week_health(tasks),
             "carry_forward_total": sum(int(t["carry_forward_count"] or 0) for t in tasks),
+            "is_frozen": 1 if lock and int(lock["is_frozen"] or 0) == 1 else 0,
+            "manual_unfrozen": 1 if lock and int(lock["manual_unfrozen"] or 0) == 1 else 0,
+            "frozen_at": lock["frozen_at"] if lock else None,
+            "frozen_by": lock["frozen_by"] if lock else None,
         })
 
     conn.close()
@@ -480,10 +661,13 @@ def api_weekly_tasks_create():
     if not owner_id:
         conn.close()
         return jsonify({"ok": False, "error": "Owner user not found"}), 404
+    if is_week_frozen(conn, owner_id, year, month, week):
+        conn.close()
+        return jsonify({"ok": False, "error": "This week is frozen. Ask admin to unfreeze it if changes are needed."}), 403
 
     created_at = now_iso()
     confirmation = "CONFIRMED" if is_admin() else "PENDING"
-    status = "Active" if is_admin() else "Pending"
+    status = "Active"
     row = conn.execute("""
         INSERT INTO weekly_tasks (
             owner_user_id, task_text, task_year, task_month, week_number,
@@ -516,6 +700,10 @@ def api_weekly_tasks_confirm(task_id):
     if not old:
         conn.close()
         return jsonify({"ok": False, "error": "Task not found"}), 404
+    frozen_response = block_if_week_frozen(conn, old)
+    if frozen_response:
+        conn.close()
+        return frozen_response
     updated_at = now_iso()
     row = conn.execute("""
         UPDATE weekly_tasks
@@ -553,17 +741,33 @@ def api_weekly_tasks_status(task_id):
     if not can_access_task(old):
         conn.close()
         return jsonify({"ok": False, "error": "No access to this task"}), 403
+    frozen_response = block_if_week_frozen(conn, old)
+    if frozen_response:
+        conn.close()
+        return frozen_response
     if old["confirmation_status"] != "CONFIRMED":
         conn.close()
         return jsonify({"ok": False, "error": "Task must be confirmed first"}), 400
 
     updated_at = now_iso()
-    row = conn.execute("""
+    sets = ["status=%s", "updated_by=%s", "updated_at=%s"]
+    vals = [status, session["user"], updated_at]
+    if status == "Started" and old["status"] != "Started":
+        sets.extend(["started_by=%s", "started_at=%s"])
+        vals.extend([session["user"], updated_at])
+    if status == "Done" and old["status"] != "Done":
+        sets.extend(["done_by=%s", "done_at=%s"])
+        vals.extend([session["user"], updated_at])
+    if status == "Cancelled" and old["status"] != "Cancelled":
+        sets.extend(["cancelled_by=%s", "cancelled_at=%s"])
+        vals.extend([session["user"], updated_at])
+    vals.append(task_id)
+    row = conn.execute(f"""
         UPDATE weekly_tasks
-        SET status=%s, updated_by=%s, updated_at=%s
+        SET {", ".join(sets)}
         WHERE id=%s
         RETURNING *
-    """, (status, session["user"], updated_at, task_id)).fetchone()
+    """, tuple(vals)).fetchone()
     add_history(conn, task_id, "STATUS", old=dict(old), new=dict(row), note=f"Status changed to {status}")
     conn.commit()
     conn.close()
@@ -589,13 +793,29 @@ def api_weekly_tasks_update(task_id):
     if not old:
         conn.close()
         return jsonify({"ok": False, "error": "Task not found"}), 404
+    frozen_response = block_if_week_frozen(conn, old)
+    if frozen_response:
+        conn.close()
+        return frozen_response
     updated_at = now_iso()
-    row = conn.execute("""
+    sets = ["task_text=%s", "status=%s", "updated_by=%s", "updated_at=%s"]
+    vals = [text, status, session["user"], updated_at]
+    if status == "Started" and old["status"] != "Started":
+        sets.extend(["started_by=%s", "started_at=%s"])
+        vals.extend([session["user"], updated_at])
+    if status == "Done" and old["status"] != "Done":
+        sets.extend(["done_by=%s", "done_at=%s"])
+        vals.extend([session["user"], updated_at])
+    if status == "Cancelled" and old["status"] != "Cancelled":
+        sets.extend(["cancelled_by=%s", "cancelled_at=%s"])
+        vals.extend([session["user"], updated_at])
+    vals.append(task_id)
+    row = conn.execute(f"""
         UPDATE weekly_tasks
-        SET task_text=%s, status=%s, updated_by=%s, updated_at=%s
+        SET {", ".join(sets)}
         WHERE id=%s
         RETURNING *
-    """, (text, status, session["user"], updated_at, task_id)).fetchone()
+    """, tuple(vals)).fetchone()
     add_history(conn, task_id, "ADMIN_EDIT", old=dict(old), new=dict(row), note="Admin edited live task")
     conn.commit()
     conn.close()
@@ -619,6 +839,10 @@ def api_weekly_tasks_edit_request(task_id):
     if not can_access_task(task):
         conn.close()
         return jsonify({"ok": False, "error": "No access to this task"}), 403
+    frozen_response = block_if_week_frozen(conn, task)
+    if frozen_response:
+        conn.close()
+        return frozen_response
     if task["confirmation_status"] != "CONFIRMED":
         conn.close()
         return jsonify({"ok": False, "error": "Only confirmed tasks can request edits"}), 400
@@ -709,6 +933,10 @@ def api_weekly_tasks_carry_forward(task_id):
     if not can_access_task(old):
         conn.close()
         return jsonify({"ok": False, "error": "No access to this task"}), 403
+    frozen_response = block_if_week_frozen(conn, old)
+    if frozen_response:
+        conn.close()
+        return frozen_response
     if old["confirmation_status"] != "CONFIRMED":
         conn.close()
         return jsonify({"ok": False, "error": "Task must be confirmed before moving to next week"}), 400
@@ -721,22 +949,31 @@ def api_weekly_tasks_carry_forward(task_id):
     new_carry = int(old["carry_forward_count"] or 0) + 1
     old_after = conn.execute("""
         UPDATE weekly_tasks
-        SET status='Cancelled', updated_by=%s, updated_at=%s
+        SET status='Cancelled',
+            updated_by=%s,
+            updated_at=%s,
+            moved_by=%s,
+            moved_at=%s,
+            cancelled_by=%s,
+            cancelled_at=%s
         WHERE id=%s
         RETURNING *
-    """, (session["user"], created_at, task_id)).fetchone()
+    """, (session["user"], created_at, session["user"], created_at, session["user"], created_at, task_id)).fetchone()
     new_row = conn.execute("""
         INSERT INTO weekly_tasks (
             owner_user_id, task_text, task_year, task_month, week_number,
             target_year, target_month, target_week, status, confirmation_status,
             carry_forward_count, source_task_id, created_by_user_id, created_by, created_at,
-            confirmed_by, confirmed_at
+            confirmed_by, confirmed_at, started_by, started_at, moved_by, moved_at
         )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'Active','CONFIRMED',%s,%s,%s,%s,%s,%s,%s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'CONFIRMED',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         RETURNING *
     """, (
         old["owner_user_id"], old["task_text"], ny, nm, nw, ny, nm, nw,
-        new_carry, task_id, current_user_id(), session["user"], created_at,
+        old["status"], new_carry, task_id, current_user_id(), session["user"], created_at,
+        session["user"], created_at,
+        old["started_by"] if old["status"] == "Started" else None,
+        old["started_at"] if old["status"] == "Started" else None,
         session["user"], created_at,
     )).fetchone()
     add_history(conn, task_id, "CARRY_FORWARD_FROM", old=dict(old), new=dict(old_after), note=f"Moved to {ny}-{nm:02d} week {nw}")
@@ -758,6 +995,10 @@ def api_weekly_tasks_delete(task_id):
     if not can_modify_task(old):
         conn.close()
         return jsonify({"ok": False, "error": "No access to delete this task"}), 403
+    frozen_response = block_if_week_frozen(conn, old)
+    if frozen_response:
+        conn.close()
+        return frozen_response
     deleted_at = now_iso()
     row = conn.execute("""
         UPDATE weekly_tasks
@@ -804,6 +1045,40 @@ def api_weekly_tasks_review():
             "edit_requests": [dict(r) for r in edit_requests],
         }
     })
+
+
+@weekly_tasks_bp.route("/api/weekly-tasks/week-locks/unfreeze", methods=["POST"])
+@login_required
+@require_module("WEEKLY_TASKS", need_edit=True)
+def api_weekly_tasks_unfreeze():
+    if not is_admin():
+        return jsonify({"ok": False, "error": "Admin only"}), 403
+    data = request.json or {}
+    owner_id = parse_int(data.get("owner_user_id"), None)
+    year = parse_int(data.get("year"), None)
+    month = parse_int(data.get("month"), None)
+    week = parse_int(data.get("week"), None)
+    if not owner_id or not year or not month or week not in WEEKS:
+        return jsonify({"ok": False, "error": "Owner, year, month, and week are required"}), 400
+
+    unfrozen_at = now_iso()
+    conn = db()
+    conn.execute("""
+        INSERT INTO weekly_task_week_locks (
+            owner_user_id, task_year, task_month, week_number,
+            is_frozen, manual_unfrozen, unfrozen_at, unfrozen_by
+        )
+        VALUES (%s,%s,%s,%s,0,1,%s,%s)
+        ON CONFLICT(owner_user_id, task_year, task_month, week_number)
+        DO UPDATE SET
+            is_frozen=0,
+            manual_unfrozen=1,
+            unfrozen_at=excluded.unfrozen_at,
+            unfrozen_by=excluded.unfrozen_by
+    """, (owner_id, year, month, week, unfrozen_at, session["user"]))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": f"Week {week} unfrozen"})
 
 
 @weekly_tasks_bp.route("/api/weekly-tasks/trash", methods=["GET"])

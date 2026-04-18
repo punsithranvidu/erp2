@@ -1,6 +1,8 @@
 let WT_TAB = "board";
 let WT_USERS = [];
 let WT_OWNER_ID = "";
+let WT_TASKS = new Map();
+let WT_SELECTED_TASK = null;
 
 function $(id){
   return document.getElementById(id);
@@ -103,47 +105,97 @@ function badges(task){
   `;
 }
 
-function taskActions(task){
+function taskTooltip(task){
+  return `
+    <span class="wt-tip-line"><b>Created:</b> ${esc(task.created_at || "-")}</span>
+    <span class="wt-tip-line"><b>Created by:</b> ${esc(task.created_by || "-")}</span>
+    <span class="wt-tip-line"><b>Week:</b> ${esc(`${task.task_year}-${String(task.task_month).padStart(2, "0")} / Week ${task.week_number}`)}</span>
+    <span class="wt-tip-line"><b>Status:</b> ${esc(task.status || "-")}</span>
+    <span class="wt-tip-line"><b>Confirmed:</b> ${esc(task.confirmed_at || "-")} by ${esc(task.confirmed_by || "-")}</span>
+    <span class="wt-tip-line"><b>Last edited:</b> ${esc(task.updated_at || "-")} by ${esc(task.updated_by || "-")}</span>
+    <span class="wt-tip-line"><b>Started:</b> ${esc(task.started_at || "-")} by ${esc(task.started_by || "-")}</span>
+    <span class="wt-tip-line"><b>Done:</b> ${esc(task.done_at || "-")} by ${esc(task.done_by || "-")}</span>
+    <span class="wt-tip-line"><b>Cancelled:</b> ${esc(task.cancelled_at || "-")} by ${esc(task.cancelled_by || "-")}</span>
+    <span class="wt-tip-line"><b>Moved:</b> ${esc(task.carry_forward_count || 0)}x, latest ${esc(task.moved_at || "-")} by ${esc(task.moved_by || "-")}</span>
+    <span class="wt-tip-line"><b>Edit requests:</b> ${esc(task.pending_edit_count || 0)} pending</span>
+  `;
+}
+
+function availableActions(task){
   const confirmed = task.confirmation_status === "CONFIRMED";
   const admin = isAdmin();
-  const parts = [];
+  const actions = {
+    confirm: admin && task.confirmation_status === "PENDING",
+    start: confirmed && task.status !== "Started" && task.status !== "Done" && task.status !== "Cancelled",
+    done: confirmed && task.status !== "Done",
+    cancel: confirmed && task.status !== "Cancelled",
+    active: confirmed && task.status !== "Active",
+    carry: confirmed && task.status !== "Done" && task.status !== "Cancelled",
+    edit: admin,
+    requestEdit: !admin && Number(task.can_request_edit) === 1,
+    delete: true
+  };
+  if(Number(task.is_week_frozen || 0) === 1){
+    Object.keys(actions).forEach(key => { actions[key] = false; });
+  }
+  return actions;
+}
 
-  if(admin && task.confirmation_status === "PENDING"){
-    parts.push(`<button class="btn ghost mini" data-act="confirm" data-id="${task.id}" type="button">Confirm</button>`);
+function clearSelection(){
+  WT_SELECTED_TASK = null;
+  document.querySelectorAll(".wt-task.selected").forEach(el => el.classList.remove("selected"));
+  syncActionBar();
+}
+
+function selectTask(id, el){
+  const task = WT_TASKS.get(Number(id));
+  if(!task) return;
+  WT_SELECTED_TASK = task;
+  document.querySelectorAll(".wt-task.selected").forEach(item => item.classList.remove("selected"));
+  if(el) el.classList.add("selected");
+  syncActionBar();
+}
+
+function syncActionBar(){
+  const bar = $("wtActionBar");
+  if(!bar) return;
+  const task = WT_SELECTED_TASK;
+  bar.classList.toggle("active", !!task);
+  if(!task){
+    $("wtSelectedLabel").textContent = "No task selected";
+    return;
   }
-  if(confirmed && task.status !== "Done"){
-    parts.push(`<button class="btn ghost mini" data-act="done" data-id="${task.id}" type="button">Done</button>`);
-  }
-  if(confirmed && task.status !== "Cancelled"){
-    parts.push(`<button class="btn ghost mini" data-act="cancel" data-id="${task.id}" type="button">Cancel</button>`);
-  }
-  if(confirmed && task.status !== "Active"){
-    parts.push(`<button class="btn ghost mini" data-act="active" data-id="${task.id}" type="button">Active</button>`);
-  }
-  if(confirmed && task.status !== "Done" && task.status !== "Cancelled"){
-    parts.push(`<button class="btn ghost mini" data-act="carry" data-id="${task.id}" type="button">Move Next Week</button>`);
-  }
-  if(admin){
-    parts.push(`<button class="btn ghost mini" data-act="edit" data-id="${task.id}" type="button">Edit</button>`);
-  }else if(Number(task.can_request_edit) === 1){
-    parts.push(`<button class="btn ghost mini" data-act="request-edit" data-id="${task.id}" type="button">Request Edit</button>`);
-  }
-  parts.push(`<button class="btn ghost mini" data-act="delete" data-id="${task.id}" type="button">Delete</button>`);
-  return `<div class="wt-actions">${parts.join("")}</div>`;
+  $("wtSelectedLabel").textContent = `Selected: ${task.task_text || ""}`;
+  const actions = availableActions(task);
+  $("wtConfirmSelected").style.display = actions.confirm ? "" : "none";
+  $("wtStartSelected").style.display = actions.start ? "" : "none";
+  $("wtDoneSelected").style.display = actions.done ? "" : "none";
+  $("wtCancelSelected").style.display = actions.cancel ? "" : "none";
+  $("wtActiveSelected").style.display = actions.active ? "" : "none";
+  $("wtCarrySelected").style.display = actions.carry ? "" : "none";
+  $("wtEditSelected").style.display = actions.edit ? "" : "none";
+  $("wtRequestEditSelected").style.display = actions.requestEdit ? "" : "none";
+  $("wtDeleteSelected").style.display = actions.delete ? "" : "none";
 }
 
 function renderTask(task){
   return `
-    <div class="wt-task ${statusClass(task.status)} ${task.confirmation_status === "PENDING" ? "pending" : ""}" data-task-id="${task.id}">
-      <div class="wt-task-text">${esc(task.task_text)}</div>
+    <div class="wt-task ${statusClass(task.status)} ${task.confirmation_status === "PENDING" ? "pending" : ""}" data-task-id="${task.id}" role="button" tabindex="0">
+      <div class="wt-task-main">
+        <div class="wt-task-text">${esc(task.task_text)}</div>
+        <button class="wt-info-btn" type="button" aria-label="Task details">!
+          <span class="wt-tip">${taskTooltip(task)}</span>
+        </button>
+      </div>
       ${badges(task)}
-      ${taskActions(task)}
     </div>
   `;
 }
 
 function renderBoard(data){
   const board = $("wtBoard");
+  WT_TASKS = new Map();
+  clearSelection();
   const owner = data.owner;
   $("wtScopeText").textContent = owner
     ? `Viewing ${owner.full_name || owner.username} - ${data.year}-${String(data.month).padStart(2, "0")}`
@@ -151,17 +203,22 @@ function renderBoard(data){
 
   board.innerHTML = (data.weeks || []).map(week => {
     const healthText = week.health === "healthy" ? "Healthy" : `${week.carry_forward_total || 0} moved`;
-    const tasks = week.tasks || [];
+    const tasks = (week.tasks || []).map(task => ({ ...task, is_week_frozen: week.is_frozen || 0 }));
+    tasks.forEach(task => WT_TASKS.set(Number(task.id), task));
+    const frozen = Number(week.is_frozen || 0) === 1;
     return `
-      <div class="wt-card health-${esc(week.health)}">
+      <div class="wt-card health-${esc(week.health)} ${frozen ? "frozen" : ""}">
         <div class="wt-card-head">
           <div>
             <h4>Week ${week.week}</h4>
-            <p class="sub tiny">${tasks.length} task${tasks.length === 1 ? "" : "s"}</p>
+            <p class="sub tiny">${tasks.length} task${tasks.length === 1 ? "" : "s"}${frozen ? " | Frozen" : ""}</p>
           </div>
-          <span class="wt-health">${esc(healthText)}</span>
+          <div class="row" style="gap:6px;">
+            <span class="wt-health">${esc(healthText)}</span>
+            ${frozen && isAdmin() ? `<button class="btn ghost mini" data-unfreeze-week="${week.week}" type="button">Unfreeze</button>` : ""}
+          </div>
         </div>
-        ${weekAddHtml(week.week)}
+        ${frozen && !isAdmin() ? `<div class="wt-empty" style="padding:10px;margin-bottom:10px;">This week is frozen.</div>` : weekAddHtml(week.week)}
         <div class="wt-task-list">
           ${tasks.length ? tasks.map(renderTask).join("") : `<div class="wt-empty">No tasks yet.</div>`}
         </div>
@@ -243,7 +300,7 @@ async function editTask(id){
   if(text === null) return;
   const clean = text.trim();
   if(!clean) return;
-  const status = prompt("Status: Pending, Active, Done, Cancelled", "Active") || "Active";
+  const status = prompt("Status: Pending, Active, Started, Done, Cancelled", "Active") || "Active";
   await api(`/api/weekly-tasks/${id}`, {
     method: "PUT",
     body: JSON.stringify({ task_text: clean, status })
@@ -268,20 +325,56 @@ async function handleBoardClick(e){
     return;
   }
 
-  const btn = e.target.closest("[data-act]");
-  if(!btn) return;
-  const id = Number(btn.dataset.id);
+  const unfreeze = e.target.closest("[data-unfreeze-week]");
+  if(unfreeze){
+    await unfreezeWeek(Number(unfreeze.dataset.unfreezeWeek));
+    return;
+  }
+
+  if(e.target.closest(".wt-info-btn")) return;
+
+  const taskEl = e.target.closest("[data-task-id]");
+  if(taskEl){
+    selectTask(Number(taskEl.dataset.taskId), taskEl);
+  }
+}
+
+async function runSelectedAction(action){
+  if(!WT_SELECTED_TASK) return;
+  const id = Number(WT_SELECTED_TASK.id);
   try{
-    if(btn.dataset.act === "confirm") await confirmTask(id);
-    if(btn.dataset.act === "done") await setStatus(id, "Done");
-    if(btn.dataset.act === "cancel") await setStatus(id, "Cancelled");
-    if(btn.dataset.act === "active") await setStatus(id, "Active");
-    if(btn.dataset.act === "carry") await carryTask(id);
-    if(btn.dataset.act === "delete") await deleteTask(id);
-    if(btn.dataset.act === "edit") await editTask(id);
-    if(btn.dataset.act === "request-edit") await requestEdit(id);
+    if(action === "confirm") await confirmTask(id);
+    if(action === "start") await setStatus(id, "Started");
+    if(action === "done") await setStatus(id, "Done");
+    if(action === "cancel") await setStatus(id, "Cancelled");
+    if(action === "active") await setStatus(id, "Active");
+    if(action === "carry") await carryTask(id);
+    if(action === "delete") await deleteTask(id);
+    if(action === "edit") await editTask(id);
+    if(action === "request-edit") await requestEdit(id);
+    clearSelection();
     await loadBoard();
     showMsg("wtBoardMsg", "Task updated.", true);
+  }catch(err){
+    showMsg("wtBoardMsg", err.message, false);
+  }
+}
+
+async function unfreezeWeek(week){
+  if(!isAdmin()) return;
+  try{
+    const { year, month } = monthParts();
+    await api("/api/weekly-tasks/week-locks/unfreeze", {
+      method: "POST",
+      body: JSON.stringify({
+        owner_user_id: ownerParam(),
+        year,
+        month,
+        week
+      })
+    });
+    await loadBoard();
+    showMsg("wtBoardMsg", `Week ${week} unfrozen.`, true);
   }catch(err){
     showMsg("wtBoardMsg", err.message, false);
   }
@@ -409,6 +502,23 @@ function bindEvents(){
     if(e.key === "Enter") loadBoard();
   });
   $("wtBoard").addEventListener("click", handleBoardClick);
+  $("wtBoard").addEventListener("keydown", (e) => {
+    if(e.key !== "Enter" && e.key !== " ") return;
+    const taskEl = e.target.closest("[data-task-id]");
+    if(!taskEl) return;
+    e.preventDefault();
+    selectTask(Number(taskEl.dataset.taskId), taskEl);
+  });
+  $("wtConfirmSelected").addEventListener("click", () => runSelectedAction("confirm"));
+  $("wtStartSelected").addEventListener("click", () => runSelectedAction("start"));
+  $("wtDoneSelected").addEventListener("click", () => runSelectedAction("done"));
+  $("wtCancelSelected").addEventListener("click", () => runSelectedAction("cancel"));
+  $("wtActiveSelected").addEventListener("click", () => runSelectedAction("active"));
+  $("wtCarrySelected").addEventListener("click", () => runSelectedAction("carry"));
+  $("wtEditSelected").addEventListener("click", () => runSelectedAction("edit"));
+  $("wtRequestEditSelected").addEventListener("click", () => runSelectedAction("request-edit"));
+  $("wtDeleteSelected").addEventListener("click", () => runSelectedAction("delete"));
+  $("wtClearSelected").addEventListener("click", clearSelection);
   if(isAdmin()){
     $("wtEmployee").addEventListener("change", () => {
       WT_OWNER_ID = $("wtEmployee").value;

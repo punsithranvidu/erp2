@@ -87,7 +87,7 @@
       min-height:260px;
       padding:12px;
       box-shadow:0 8px 22px rgba(15,23,42,.05);
-      overflow:hidden;
+      overflow:visible;
       transition:transform .15s ease, box-shadow .15s ease;
     }
     .wt-card:hover{
@@ -141,10 +141,27 @@
       padding-right:4px;
     }
     .wt-task{
+      position:relative;
       border:1px solid var(--line);
       border-radius:9px;
       background:#fff;
       padding:8px;
+      cursor:pointer;
+      transition:background .15s ease, border-color .15s ease, box-shadow .15s ease;
+    }
+    .wt-task:hover{
+      background:#f8fafc;
+    }
+    .wt-task.selected{
+      border-color:rgba(37,99,235,.45);
+      background:#eff6ff;
+      box-shadow:0 0 0 3px rgba(37,99,235,.10);
+    }
+    .wt-card.frozen{
+      background:#f8fafc;
+    }
+    .wt-card.frozen .wt-add{
+      opacity:.62;
     }
     .wt-task.pending{
       background:#fffbeb;
@@ -181,8 +198,76 @@
       font-weight:800;
     }
     .wt-badge.active{color:#166534; background:#f0fdf4; border-color:#bbf7d0;}
+    .wt-badge.started{color:#075985; background:#f0f9ff; border-color:#bae6fd;}
     .wt-badge.done{color:#1d4ed8; background:#eff6ff; border-color:#bfdbfe;}
     .wt-badge.cancelled{color:#991b1b; background:#fef2f2; border-color:#fecaca;}
+    .wt-task-main{
+      display:flex;
+      gap:8px;
+      align-items:flex-start;
+    }
+    .wt-task-main .wt-task-text{
+      flex:1 1 auto;
+      min-width:0;
+    }
+    .wt-info-btn{
+      position:relative;
+      flex:0 0 auto;
+      width:22px;
+      height:22px;
+      border-radius:999px;
+      border:1px solid #d1d5db;
+      background:#f3f4f6;
+      color:#64748b;
+      font-size:12px;
+      font-weight:900;
+      cursor:help;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .wt-tip{
+      display:none;
+      position:absolute;
+      z-index:50;
+      right:0;
+      bottom:calc(100% + 8px);
+      width:280px;
+      border:1px solid rgba(15,23,42,.12);
+      border-radius:10px;
+      background:#fff;
+      box-shadow:0 18px 36px rgba(15,23,42,.14);
+      padding:10px;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.55;
+      text-align:left;
+    }
+    .wt-tip-line{display:block;}
+    .wt-info-btn:hover .wt-tip,
+    .wt-info-btn:focus .wt-tip{display:block;}
+    .wt-actionbar{
+      display:none;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:#f8fafc;
+      padding:9px 10px;
+      margin:10px 0 12px;
+    }
+    .wt-actionbar.active{display:flex;}
+    .wt-selected-label{
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      color:var(--muted);
+      font-size:13px;
+      font-weight:800;
+    }
     .wt-actions{
       display:flex;
       gap:6px;
@@ -225,6 +310,7 @@
       .wt-board,
       .wt-review-grid,
       .wt-filters{grid-template-columns:1fr;}
+      .wt-tip{right:-8px; width:min(280px, calc(100vw - 48px));}
     }
   </style>
 </head>
@@ -284,6 +370,7 @@
               <option value="ALL">All</option>
               <option>Pending</option>
               <option>Active</option>
+              <option>Started</option>
               <option>Done</option>
               <option>Cancelled</option>
             </select>
@@ -293,6 +380,22 @@
             <input id="wtSearch" type="search" placeholder="Task text" />
           </div>
           <button class="btn" id="wtApplyBtn" type="button">Apply</button>
+        </div>
+
+        <div class="wt-actionbar" id="wtActionBar">
+          <span class="wt-selected-label" id="wtSelectedLabel">No task selected</span>
+          <div class="wt-actions">
+            <button class="btn ghost mini" id="wtConfirmSelected" type="button">Confirm</button>
+            <button class="btn ghost mini" id="wtStartSelected" type="button">Started</button>
+            <button class="btn ghost mini" id="wtDoneSelected" type="button">Done</button>
+            <button class="btn ghost mini" id="wtCancelSelected" type="button">Cancel</button>
+            <button class="btn ghost mini" id="wtActiveSelected" type="button">Active</button>
+            <button class="btn ghost mini" id="wtCarrySelected" type="button">Move Next Week</button>
+            <button class="btn ghost mini" id="wtEditSelected" type="button">Edit</button>
+            <button class="btn ghost mini" id="wtRequestEditSelected" type="button">Request Edit</button>
+            <button class="btn ghost mini" id="wtDeleteSelected" type="button">Delete</button>
+            <button class="btn ghost mini" id="wtClearSelected" type="button">Unselect</button>
+          </div>
         </div>
 
         <div class="wt-board" id="wtBoard"></div>
