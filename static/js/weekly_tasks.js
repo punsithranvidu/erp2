@@ -3,6 +3,7 @@ let WT_USERS = [];
 let WT_OWNER_ID = "";
 let WT_TASKS = new Map();
 let WT_SELECTED_TASK = null;
+let WT_FLOATING_TIP = null;
 
 function $(id){
   return document.getElementById(id);
@@ -19,6 +20,10 @@ function esc(value){
 
 function isAdmin(){
   return (document.body.dataset.role || "") === "ADMIN";
+}
+
+function currentUsername(){
+  return document.body.dataset.user || "";
 }
 
 function showMsg(id, text, ok=true){
@@ -119,6 +124,42 @@ function taskTooltip(task){
     <span class="wt-tip-line"><b>Moved:</b> ${esc(task.carry_forward_count || 0)}x, latest ${esc(task.moved_at || "-")} by ${esc(task.moved_by || "-")}</span>
     <span class="wt-tip-line"><b>Edit requests:</b> ${esc(task.pending_edit_count || 0)} pending</span>
   `;
+}
+
+function floatingTip(){
+  if(WT_FLOATING_TIP) return WT_FLOATING_TIP;
+  WT_FLOATING_TIP = document.createElement("div");
+  WT_FLOATING_TIP.className = "wt-floating-tip";
+  WT_FLOATING_TIP.style.display = "none";
+  document.body.appendChild(WT_FLOATING_TIP);
+  return WT_FLOATING_TIP;
+}
+
+function positionFloatingTip(btn){
+  const tip = floatingTip();
+  const rect = btn.getBoundingClientRect();
+  const gap = 8;
+  const margin = 10;
+  const tipRect = tip.getBoundingClientRect();
+  let left = rect.right - tipRect.width;
+  left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
+  let top = rect.top - tipRect.height - gap;
+  if(top < margin) top = rect.bottom + gap;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function showFloatingTip(btn){
+  const source = btn.querySelector(".wt-tip");
+  if(!source) return;
+  const tip = floatingTip();
+  tip.innerHTML = source.innerHTML;
+  tip.style.display = "block";
+  positionFloatingTip(btn);
+}
+
+function hideFloatingTip(){
+  if(WT_FLOATING_TIP) WT_FLOATING_TIP.style.display = "none";
 }
 
 function availableActions(task){
@@ -485,6 +526,8 @@ async function loadUsers(){
   WT_USERS = out.data || [];
   const select = $("wtEmployee");
   select.innerHTML = WT_USERS.map(u => `<option value="${u.id}">${esc(u.full_name || u.username)} (${esc(u.role)})</option>`).join("");
+  const me = WT_USERS.find(u => u.username === currentUsername());
+  if(me) select.value = String(me.id);
   WT_OWNER_ID = select.value || "";
 }
 
@@ -502,6 +545,22 @@ function bindEvents(){
     if(e.key === "Enter") loadBoard();
   });
   $("wtBoard").addEventListener("click", handleBoardClick);
+  $("wtBoard").addEventListener("mouseover", (e) => {
+    const btn = e.target.closest(".wt-info-btn");
+    if(btn) showFloatingTip(btn);
+  });
+  $("wtBoard").addEventListener("mouseout", (e) => {
+    if(e.target.closest(".wt-info-btn")) hideFloatingTip();
+  });
+  $("wtBoard").addEventListener("focusin", (e) => {
+    const btn = e.target.closest(".wt-info-btn");
+    if(btn) showFloatingTip(btn);
+  });
+  $("wtBoard").addEventListener("focusout", (e) => {
+    if(e.target.closest(".wt-info-btn")) hideFloatingTip();
+  });
+  window.addEventListener("scroll", hideFloatingTip, true);
+  window.addEventListener("resize", hideFloatingTip);
   $("wtBoard").addEventListener("keydown", (e) => {
     if(e.key !== "Enter" && e.key !== " ") return;
     const taskEl = e.target.closest("[data-task-id]");
