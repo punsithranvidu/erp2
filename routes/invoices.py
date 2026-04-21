@@ -4,6 +4,8 @@ import pytz
 from .db import connect
 
 invoices_bp = Blueprint("invoices", __name__, url_prefix="/api/invoices")
+YEAR_START_NUMBER = 70
+NUMBER_PADDING = 4
 
 
 def db():
@@ -45,20 +47,21 @@ def get_next_number(doc_type):
         return row["number"], year, month
 
     c.execute("""
-        SELECT MAX(number) AS max_num
+        SELECT COUNT(*) AS row_count, MAX(number) AS max_num
         FROM document_numbers
         WHERE doc_type=%s AND year=%s
     """, (doc_type, year))
 
     max_row = c.fetchone()
-    max_num = max_row["max_num"] if max_row and max_row["max_num"] else 0
+    has_current_year_records = bool(max_row and int(max_row["row_count"] or 0) > 0)
+    max_num = int(max_row["max_num"] or 0) if max_row else 0
 
     conn.close()
-    return max_num + 1, year, month
+    return (max_num + 1 if has_current_year_records else YEAR_START_NUMBER), year, month
 
 
 def format_number(doc_type, year, month, number):
-    return f"{doc_type}-{year}/{str(month).zfill(2)}-{str(number).zfill(3)}"
+    return f"{doc_type}-{year}/{str(month).zfill(2)}-{str(number).zfill(NUMBER_PADDING)}"
 
 
 @invoices_bp.route("/next")
@@ -122,12 +125,14 @@ def reserve():
         ))
     else:
         c.execute("""
-            SELECT COALESCE(MAX(number), 0) AS max_num
+            SELECT COUNT(*) AS row_count, MAX(number) AS max_num
             FROM document_numbers
             WHERE doc_type=%s AND year=%s
         """, (doc_type, year))
         max_row = c.fetchone()
-        num = int(max_row["max_num"] or 0) + 1
+        has_current_year_records = bool(max_row and int(max_row["row_count"] or 0) > 0)
+        max_num = int(max_row["max_num"] or 0) if max_row else 0
+        num = max_num + 1 if has_current_year_records else YEAR_START_NUMBER
 
         c.execute("""
             INSERT INTO document_numbers
@@ -252,9 +257,10 @@ def search():
     c.execute("""
         SELECT doc_type, year, month, number, status
         FROM document_numbers
-        WHERE doc_type || '-' || year::text || '/' || LPAD(month::text, 2, '0') || '-' || LPAD(number::text, 3, '0') = %s
+        WHERE doc_type || '-' || year::text || '/' || LPAD(month::text, 2, '0') || '-' || LPAD(number::text, %s, '0') = %s
+           OR doc_type || '-' || year::text || '/' || LPAD(month::text, 2, '0') || '-' || LPAD(number::text, 3, '0') = %s
         LIMIT 1
-    """, (q,))
+    """, (NUMBER_PADDING, q, q))
 
     row = c.fetchone()
     conn.close()
@@ -269,5 +275,5 @@ def search():
         "ok": True,
         "found": True,
         "status": row["status"],
-        "number": f"{row['doc_type']}-{row['year']}/{str(row['month']).zfill(2)}-{str(row['number']).zfill(3)}"
+        "number": format_number(row["doc_type"], row["year"], row["month"], row["number"])
     })
