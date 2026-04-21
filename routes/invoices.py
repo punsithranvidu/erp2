@@ -35,10 +35,10 @@ def get_next_number(doc_type):
     c.execute("""
         SELECT number
         FROM document_numbers
-        WHERE doc_type=%s AND year=%s AND status='RESTORED'
+        WHERE doc_type=%s AND year=%s AND status='RESTORED' AND number >= %s
         ORDER BY number ASC
         LIMIT 1
-    """, (doc_type, year))
+    """, (doc_type, year, YEAR_START_NUMBER))
 
     row = c.fetchone()
 
@@ -49,8 +49,8 @@ def get_next_number(doc_type):
     c.execute("""
         SELECT COUNT(*) AS row_count, MAX(number) AS max_num
         FROM document_numbers
-        WHERE doc_type=%s AND year=%s
-    """, (doc_type, year))
+        WHERE doc_type=%s AND year=%s AND number >= %s
+    """, (doc_type, year, YEAR_START_NUMBER))
 
     max_row = c.fetchone()
     has_current_year_records = bool(max_row and int(max_row["row_count"] or 0) > 0)
@@ -101,11 +101,11 @@ def reserve():
     c.execute("""
         SELECT id, number
         FROM document_numbers
-        WHERE doc_type=%s AND year=%s AND status='RESTORED'
+        WHERE doc_type=%s AND year=%s AND status='RESTORED' AND number >= %s
         ORDER BY number ASC
         LIMIT 1
         FOR UPDATE
-    """, (doc_type, year))
+    """, (doc_type, year, YEAR_START_NUMBER))
 
     restored = c.fetchone()
 
@@ -127,8 +127,8 @@ def reserve():
         c.execute("""
             SELECT COUNT(*) AS row_count, MAX(number) AS max_num
             FROM document_numbers
-            WHERE doc_type=%s AND year=%s
-        """, (doc_type, year))
+            WHERE doc_type=%s AND year=%s AND number >= %s
+        """, (doc_type, year, YEAR_START_NUMBER))
         max_row = c.fetchone()
         has_current_year_records = bool(max_row and int(max_row["row_count"] or 0) > 0)
         max_num = int(max_row["max_num"] or 0) if max_row else 0
