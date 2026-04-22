@@ -35,9 +35,10 @@
           <p>Create employees and admins, reset passwords, manage permissions, and update account details.</p>
         </a>
 
-        <a class="card" href="/weekly-tasks">
+        <a class="card" href="/weekly-tasks" style="position:relative;">
           <h4>Weekly Tasks</h4>
           <p>Plan employee weekly tasks, confirm work, review edit requests, and track carry-forward progress.</p>
+          <span id="weeklyTasksBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
         <a class="card" href="/invoices">
@@ -82,9 +83,10 @@
           <p>Store and manage buyer emails, copied leads, reusable email lists, and outreach preparation.</p>
         </a>
 
-        <a class="card" href="/notes">
+        <a class="card" href="/notes" style="position:relative;">
           <h4>Notes</h4>
           <p>Shared work notes, reminders, due dates, and task follow-ups with history and trash recovery.</p>
+          <span id="notesBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
         <a class="card" href="/finance-trash">
@@ -144,17 +146,55 @@
       }catch(e){}
     }
 
+    function updateBadge(id, count){
+      const badge = document.getElementById(id);
+      if(!badge) return;
+      if(count > 0){
+        badge.style.display = "inline-flex";
+        badge.textContent = count > 99 ? "99+" : String(count);
+      }else{
+        badge.style.display = "none";
+        badge.textContent = "0";
+      }
+    }
+
+    async function loadNotesBadge(){
+      try{
+        if(document.hidden) return;
+        const res = await fetch("/api/notes/notification-count", { credentials: "same-origin" });
+        const out = await safeJson(res);
+        const count = Number(out?.data?.notification_count || 0);
+        updateBadge("notesBadge", count);
+      }catch(e){}
+    }
+
+    async function loadWeeklyTasksBadge(){
+      try{
+        if(document.hidden) return;
+        const res = await fetch("/api/weekly-tasks/notification-count", { credentials: "same-origin" });
+        const out = await safeJson(res);
+        const count = Number(out?.data?.notification_count || 0);
+        updateBadge("weeklyTasksBadge", count);
+      }catch(e){}
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
       loadMessageBadge();
       loadCalendarBadge();
+      loadNotesBadge();
+      loadWeeklyTasksBadge();
 
       setInterval(loadMessageBadge, 55000);
       setInterval(loadCalendarBadge, 45000);
+      setInterval(loadNotesBadge, 30 * 60 * 1000);
+      setInterval(loadWeeklyTasksBadge, 30 * 60 * 1000);
 
       document.addEventListener("visibilitychange", () => {
         if (!document.hidden) {
           loadMessageBadge();
           loadCalendarBadge();
+          loadNotesBadge();
+          loadWeeklyTasksBadge();
         }
       });
     });

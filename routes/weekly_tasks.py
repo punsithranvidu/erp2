@@ -187,6 +187,13 @@ def ensure_weekly_task_tables():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS weekly_task_notification_state (
+            user_id BIGINT PRIMARY KEY,
+            last_seen_at TEXT NOT NULL DEFAULT ''
+        )
+    """)
+
     task_cols = get_table_columns(conn, "weekly_tasks")
     task_missing = {
         "owner_user_id": "ALTER TABLE weekly_tasks ADD COLUMN owner_user_id BIGINT",
@@ -280,9 +287,19 @@ def ensure_weekly_task_tables():
         if col not in lock_cols:
             cur.execute(sql)
 
+    notification_cols = get_table_columns(conn, "weekly_task_notification_state")
+    notification_missing = {
+        "user_id": "ALTER TABLE weekly_task_notification_state ADD COLUMN user_id BIGINT",
+        "last_seen_at": "ALTER TABLE weekly_task_notification_state ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''",
+    }
+    for col, sql in notification_missing.items():
+        if col not in notification_cols:
+            cur.execute(sql)
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_owner_period ON weekly_tasks (owner_user_id, task_year, task_month, week_number)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_deleted ON weekly_tasks (deleted_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_status ON weekly_tasks (status, confirmation_status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_created_at ON weekly_tasks (created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_edit_requests_task_status ON weekly_task_edit_requests (task_id, request_status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_history_task ON weekly_task_history (task_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_week_locks_period ON weekly_task_week_locks (owner_user_id, task_year, task_month, week_number)")
@@ -316,6 +333,28 @@ def active_users(conn):
         ORDER BY COALESCE(full_name, username) ASC
     """).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_weekly_task_notification_seen_at(conn, user_id):
+    row = conn.execute("""
+        SELECT last_seen_at
+        FROM weekly_task_notification_state
+        WHERE user_id=%s
+        LIMIT 1
+    """, (user_id,)).fetchone()
+    return row["last_seen_at"] if row else ""
+
+
+def mark_weekly_task_notifications_seen(conn):
+    uid = current_user_id()
+    if not uid:
+        return
+    conn.execute("""
+        INSERT INTO weekly_task_notification_state (user_id, last_seen_at)
+        VALUES (%s,%s)
+        ON CONFLICT(user_id)
+        DO UPDATE SET last_seen_at=excluded.last_seen_at
+    """, (uid, now_iso()))
 
 
 def selected_owner_id(conn, requested_owner_id=None):
@@ -628,6 +667,8 @@ def api_weekly_tasks_list():
             "frozen_by": lock["frozen_by"] if lock else None,
         })
 
+    mark_weekly_task_notifications_seen(conn)
+    conn.commit()
     conn.close()
     return jsonify({
         "ok": True,
@@ -638,6 +679,39 @@ def api_weekly_tasks_list():
             "weeks": weeks,
         }
     })
+
+
+@weekly_tasks_bp.route("/api/weekly-tasks/notification-count", methods=["GET"])
+@login_required
+@require_module("WEEKLY_TASKS")
+def api_weekly_tasks_notification_count():
+    conn = db()
+    uid = int(current_user_id() or 0)
+    last_seen = get_weekly_task_notification_seen_at(conn, uid)
+
+    where = [
+        "t.deleted_at IS NULL",
+        "t.created_by_user_id<>%s",
+    ]
+    vals = [uid]
+    if last_seen:
+        where.append("t.created_at>%s")
+        vals.append(last_seen)
+
+    if is_admin():
+        where.append("creator.role='EMP'")
+    else:
+        where.append("t.owner_user_id=%s")
+        vals.append(uid)
+
+    row = conn.execute(f"""
+        SELECT COUNT(t.id) AS notification_count
+        FROM weekly_tasks t
+        LEFT JOIN users creator ON creator.id=t.created_by_user_id
+        WHERE {" AND ".join(where)}
+    """, tuple(vals)).fetchone()
+    conn.close()
+    return jsonify({"ok": True, "data": {"notification_count": int(row["notification_count"] or 0)}})
 
 
 @weekly_tasks_bp.route("/api/weekly-tasks", methods=["POST"])

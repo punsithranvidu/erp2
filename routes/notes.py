@@ -141,6 +141,13 @@ def ensure_notes_tables():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS note_notification_state (
+            user_id BIGINT PRIMARY KEY,
+            last_seen_at TEXT NOT NULL DEFAULT ''
+        )
+    """)
+
     cols = get_table_columns(conn, "notes")
     missing = {
         "note_text": "ALTER TABLE notes ADD COLUMN note_text TEXT NOT NULL DEFAULT ''",
@@ -199,6 +206,15 @@ def ensure_notes_tables():
         if col not in scols:
             cur.execute(sql)
 
+    ncols = get_table_columns(conn, "note_notification_state")
+    notification_missing = {
+        "user_id": "ALTER TABLE note_notification_state ADD COLUMN user_id BIGINT",
+        "last_seen_at": "ALTER TABLE note_notification_state ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''",
+    }
+    for col, sql in notification_missing.items():
+        if col not in ncols:
+            cur.execute(sql)
+
     cur.execute("""
         UPDATE notes
         SET audience='EVERYONE'
@@ -209,6 +225,7 @@ def ensure_notes_tables():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_created_by_user ON notes (created_by_user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_expected_end_date ON notes (expected_end_date)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_audience ON notes (audience)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes (created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_note_due_history_note_id ON note_due_date_history (note_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_note_edit_history_note_id ON note_edit_history (note_id)")
 
@@ -299,6 +316,28 @@ def set_note_setting(conn, key, value):
             edited_at=excluded.edited_at,
             edited_by=excluded.edited_by
     """, (key, value, now_iso(), session["user"]))
+
+
+def get_note_notification_seen_at(conn, user_id):
+    row = conn.execute("""
+        SELECT last_seen_at
+        FROM note_notification_state
+        WHERE user_id=%s
+        LIMIT 1
+    """, (user_id,)).fetchone()
+    return row["last_seen_at"] if row else ""
+
+
+def mark_note_notifications_seen(conn):
+    uid = current_user_id()
+    if not uid:
+        return
+    conn.execute("""
+        INSERT INTO note_notification_state (user_id, last_seen_at)
+        VALUES (%s,%s)
+        ON CONFLICT(user_id)
+        DO UPDATE SET last_seen_at=excluded.last_seen_at
+    """, (uid, now_iso()))
 
 
 def note_dict(row):
@@ -505,6 +544,8 @@ def api_notes_list():
         """, tuple(vals + [per_page, offset])).fetchall()
 
         active_pages = previous_active_pages(conn, where_sql, vals, page, per_page)
+    mark_note_notifications_seen(conn)
+    conn.commit()
     conn.close()
 
     return jsonify({
@@ -518,6 +559,52 @@ def api_notes_list():
         "search_mode": search_mode,
         "configured_default_page": configured_page,
     })
+
+
+@notes_bp.route("/api/notes/notification-count", methods=["GET"])
+@login_required
+@require_module("NOTES")
+def api_notes_notification_count():
+    conn = db()
+    viewer = get_current_user_row(conn)
+    if not viewer:
+        conn.close()
+        return jsonify({"ok": True, "data": {"notification_count": 0}})
+
+    uid = int(viewer["id"])
+    last_seen = get_note_notification_seen_at(conn, uid)
+    where = [
+        "n.is_deleted=0",
+        "n.created_by_user_id<>%s",
+    ]
+    vals = [uid]
+
+    if last_seen:
+        where.append("n.created_at>%s")
+        vals.append(last_seen)
+
+    if is_admin():
+        where.append("COALESCE(n.audience, 'EVERYONE') IN ('EVERYONE','ADMINS')")
+    else:
+        where.append("COALESCE(n.audience, 'EVERYONE')='EVERYONE'")
+        viewer_created_at = viewer["created_at"]
+        if viewer_created_at:
+            where.append("""
+                NOT (
+                    (n.expected_end_date IS NOT NULL AND TRIM(n.expected_end_date)<>'' AND n.expected_end_date < %s)
+                    OR (n.done_at IS NOT NULL AND TRIM(n.done_at)<>'' AND n.done_at < %s)
+                    OR (n.cancelled_at IS NOT NULL AND TRIM(n.cancelled_at)<>'' AND n.cancelled_at < %s)
+                )
+            """)
+            vals.extend([viewer_created_at, viewer_created_at, viewer_created_at])
+
+    row = conn.execute(f"""
+        SELECT COUNT(n.id) AS notification_count
+        FROM notes n
+        WHERE {" AND ".join(where)}
+    """, tuple(vals)).fetchone()
+    conn.close()
+    return jsonify({"ok": True, "data": {"notification_count": int(row["notification_count"] or 0)}})
 
 
 @notes_bp.route("/api/notes/default-page", methods=["POST"])

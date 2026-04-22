@@ -36,9 +36,10 @@
           <p>Open allowed folders, upload documents, create subfolders, and copy Drive links.</p>
         </a>
 
-        <a class="card" href="/weekly-tasks" data-mod="WEEKLY_TASKS">
+        <a class="card" href="/weekly-tasks" data-mod="WEEKLY_TASKS" style="position:relative;">
           <h4>Weekly Tasks</h4>
           <p>Plan weekly work, update task status, request edits, and move unfinished tasks forward.</p>
+          <span id="weeklyTasksBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
         <a class="card" href="/invoices" data-mod="INVOICES">
@@ -78,9 +79,10 @@
           <p>Store and use saved buyer emails and outreach lists without repeating work.</p>
         </a>
 
-        <a class="card" href="/notes" data-mod="NOTES">
+        <a class="card" href="/notes" data-mod="NOTES" style="position:relative;">
           <h4>Notes</h4>
           <p>Create shared work notes, track due dates, and keep task reminders organized.</p>
+          <span id="notesBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
         <a class="card disabled" href="javascript:void(0)" data-mod="REPORTS" data-inactive="1">
@@ -162,6 +164,42 @@
       }catch(e){}
     }
 
+    function updateBadge(id, count){
+      const badge = document.getElementById(id);
+      if(!badge) return;
+      if(count > 0){
+        badge.style.display = "inline-flex";
+        badge.textContent = count > 99 ? "99+" : String(count);
+      }else{
+        badge.style.display = "none";
+        badge.textContent = "0";
+      }
+    }
+
+    async function loadNotesBadge(me){
+      try{
+        if(document.hidden) return;
+        if(!hasAccess(me, "NOTES")) return;
+
+        const res = await fetch("/api/notes/notification-count", { credentials: "same-origin" });
+        const out = await safeJson(res);
+        const count = Number(out?.data?.notification_count || 0);
+        updateBadge("notesBadge", count);
+      }catch(e){}
+    }
+
+    async function loadWeeklyTasksBadge(me){
+      try{
+        if(document.hidden) return;
+        if(!hasAccess(me, "WEEKLY_TASKS")) return;
+
+        const res = await fetch("/api/weekly-tasks/notification-count", { credentials: "same-origin" });
+        const out = await safeJson(res);
+        const count = Number(out?.data?.notification_count || 0);
+        updateBadge("weeklyTasksBadge", count);
+      }catch(e){}
+    }
+
     document.addEventListener("DOMContentLoaded", async () => {
       const me = await loadMe();
 
@@ -194,14 +232,20 @@
 
       await loadMessageBadge(me);
       await loadCalendarBadge(me);
+      await loadNotesBadge(me);
+      await loadWeeklyTasksBadge(me);
 
       setInterval(() => loadMessageBadge(me), 55000);
       setInterval(() => loadCalendarBadge(me), 45000);
+      setInterval(() => loadNotesBadge(me), 30 * 60 * 1000);
+      setInterval(() => loadWeeklyTasksBadge(me), 30 * 60 * 1000);
 
       document.addEventListener("visibilitychange", () => {
         if (!document.hidden) {
           loadMessageBadge(me);
           loadCalendarBadge(me);
+          loadNotesBadge(me);
+          loadWeeklyTasksBadge(me);
         }
       });
     });
