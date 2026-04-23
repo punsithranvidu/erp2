@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Cash Advances</title>
+  <title>Petty Cash</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 
   <style>
@@ -18,8 +18,8 @@
 <body>
   <div class="topbar">
     <div>
-      <h2>Cash Advances</h2>
-      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+      <h2>Petty Cash</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ 'Employee' if role == 'EMP' else 'Admin' if role == 'ADMIN' else role }})</p>
     </div>
     <div class="row">
       <a class="btn ghost" href="/dashboard">⬅ Back</a>

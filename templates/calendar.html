@@ -429,7 +429,7 @@
   <div class="topbar">
     <div>
       <h2>Calendar</h2>
-      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ 'Employee' if role == 'EMP' else 'Admin' if role == 'ADMIN' else role }})</p>
     </div>
     <div class="row">
       <a class="btn ghost" href="/dashboard">⬅ Back</a>

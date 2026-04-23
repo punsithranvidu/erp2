@@ -8,7 +8,7 @@ const MODULES = [
   { key: "USERS", label: "Employee Access" },
   { key: "WEEKLY_TASKS", label: "Weekly Tasks" },
   { key: "INVOICES", label: "Invoices" },
-  { key: "CASH_ADVANCES", label: "Cash Advances" },
+  { key: "CASH_ADVANCES", label: "Petty Cash" },
   { key: "FINANCE_TRASH", label: "Finance Trash" },
   { key: "REPORTS", label: "Reports" },
   { key: "MESSAGES", label: "Messages" },

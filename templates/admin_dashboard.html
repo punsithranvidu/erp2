@@ -65,7 +65,7 @@
       position:relative;
       min-height:84px;
       display:grid;
-      grid-template-columns:auto 1fr auto;
+      grid-template-columns:auto 1fr;
       align-items:center;
       gap:14px;
       padding:16px;
@@ -111,12 +111,6 @@
       font-size:12px;
       line-height:1.35;
     }
-    .dash-arrow{
-      color:#94a3b8;
-      font-weight:900;
-      font-size:16px;
-      padding-left:4px;
-    }
     .dash-card.disabled{
       opacity:.62;
       cursor:not-allowed;
@@ -131,8 +125,26 @@
     #calendarBadge,
     #notesBadge{
       top:12px !important;
-      right:42px !important;
+      right:12px !important;
       z-index:2;
+      min-width:20px !important;
+      height:20px !important;
+      padding:0 6px !important;
+      border-radius:999px !important;
+      background:#b4232f !important;
+      color:#fff !important;
+      border:1px solid rgba(255,255,255,.85);
+      box-shadow:0 8px 18px rgba(180,35,47,.18), 0 0 0 2px rgba(255,255,255,.9);
+      font-size:11px !important;
+      font-weight:800 !important;
+      line-height:20px;
+      letter-spacing:0;
+      transform-origin:center;
+      animation:dashBadgeIn .18s ease-out;
+    }
+    @keyframes dashBadgeIn{
+      from{opacity:.7; transform:scale(.9);}
+      to{opacity:1; transform:scale(1);}
     }
     @media (max-width:720px){
       .dash-topbar,
@@ -165,7 +177,7 @@
   <div class="topbar dash-topbar">
     <div>
       <h2>Admin Dashboard</h2>
-      <p class="sub">Welcome, <b>{{ user }}</b> • Role: <b>{{ role }}</b></p>
+      <p class="sub">Welcome, <b>{{ user }}</b> • Role: <b>{{ 'Employee' if role == 'EMP' else 'Admin' if role == 'ADMIN' else role }}</b></p>
     </div>
     <a class="btn ghost" href="/logout">Logout</a>
   </div>
@@ -186,7 +198,6 @@
             <strong>Finance</strong>
             <small>Records, balances, exports</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <a class="dash-card" href="/document-storage">
@@ -195,7 +206,6 @@
             <strong>Document Storage</strong>
             <small>Folders and company files</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <a class="dash-card" href="/users">
@@ -204,7 +214,6 @@
             <strong>Employee Access</strong>
             <small>Users and permissions</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <a class="dash-card" href="/weekly-tasks">
@@ -213,7 +222,6 @@
             <strong>Weekly Tasks</strong>
             <small>Boards and task reviews</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
           <span id="weeklyTasksBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
@@ -223,16 +231,14 @@
             <strong>Invoices</strong>
             <small>INV, QT and PO numbers</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <a class="dash-card" href="/cash-advances">
           <span class="dash-icon">CA</span>
           <span class="dash-card-copy">
-            <strong>Cash Advances</strong>
+            <strong>Petty Cash</strong>
             <small>Advances and balances</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <a class="dash-card" href="/messages">
@@ -241,7 +247,6 @@
             <strong>Messages</strong>
             <small>Chats and groups</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
           <span id="msgBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
@@ -251,7 +256,6 @@
             <strong>Calendar</strong>
             <small>Schedules and reminders</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
           <span id="calendarBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
@@ -261,7 +265,6 @@
             <strong>HS Codes</strong>
             <small>Product code library</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <a class="dash-card" href="/worksheet">
@@ -270,7 +273,6 @@
             <strong>Worksheet</strong>
             <small>Daily work entries</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <a class="dash-card" href="/attendance">
@@ -279,7 +281,6 @@
             <strong>Attendance</strong>
             <small>Presence and availability</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <a class="dash-card" href="/marketing-emails">
@@ -288,7 +289,6 @@
             <strong>Marketing Emails</strong>
             <small>Leads and export files</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <a class="dash-card" href="/notes">
@@ -297,7 +297,6 @@
             <strong>Notes</strong>
             <small>Shared task notes</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
           <span id="notesBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
@@ -307,7 +306,6 @@
             <strong>Finance Trash</strong>
             <small>Deleted finance records</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </a>
 
         <div class="dash-card disabled">
@@ -316,7 +314,6 @@
             <strong>Reports</strong>
             <small>Unavailable</small>
           </span>
-          <span class="dash-arrow">&gt;</span>
         </div>
       </div>
     </div>

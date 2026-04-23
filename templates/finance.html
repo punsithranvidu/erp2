@@ -60,7 +60,7 @@
   <div class="topbar">
     <div>
       <h2>Finance</h2>
-      <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ 'Employee' if role == 'EMP' else 'Admin' if role == 'ADMIN' else role }})</p>
       <p class="sub small">Selected Bank: <b id="bankLabel">Loading...</b></p>
     </div>
     <div class="row">
