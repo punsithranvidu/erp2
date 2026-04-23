@@ -98,13 +98,6 @@ app.config["GOOGLE_SERVICE_ACCOUNT_JSON"] = os.environ.get(
     ""
 )
 
-BOOTSTRAP_USERS = {
-    "punsith": {"password": "punsith123", "role": "ADMIN"},
-    "dulmina": {"password": "dulmina123", "role": "ADMIN"},
-    "mihiran": {"password": "mihiran123", "role": "ADMIN"},
-    "emp1": {"password": "emp123", "role": "EMP"},
-}
-
 MODULES = [
     "FINANCE",
     "DOCUMENT_STORAGE",
@@ -238,6 +231,18 @@ def normalize_url(url: str) -> str:
     if low.startswith("mailto:") or low.startswith("tel:"):
         return u
     return "https://" + u
+
+
+def bootstrap_users_from_env():
+    username = (os.environ.get("BOOTSTRAP_ADMIN_USERNAME") or "").strip()
+    password = os.environ.get("BOOTSTRAP_ADMIN_PASSWORD") or ""
+    if not username or not password:
+        return []
+    return [{
+        "username": username,
+        "password": password,
+        "role": "ADMIN",
+    }]
 
 
 def login_required(f):
@@ -739,12 +744,17 @@ def init_db():
 
     ucount = cur.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
     if ucount == 0:
-        for uname, info in BOOTSTRAP_USERS.items():
+        bootstrap_users = bootstrap_users_from_env()
+        if not bootstrap_users:
+            app.logger.warning(
+                "No users exist. Set BOOTSTRAP_ADMIN_USERNAME and BOOTSTRAP_ADMIN_PASSWORD for one-time initial admin creation."
+            )
+        for info in bootstrap_users:
             cur.execute("""
                 INSERT INTO users (username, password_hash, role, active, created_at, created_by)
                 VALUES (%s,%s,%s,%s,%s,%s)
             """, (
-                uname,
+                info["username"],
                 generate_password_hash(info["password"]),
                 info["role"],
                 1,
