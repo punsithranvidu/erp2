@@ -83,7 +83,7 @@
         <div id="adminBankAdd" style="display:none; margin-top:10px;">
           <label class="small muted">Add New Bank Account (Admin)</label>
           <div class="row">
-            <input id="newBankName" placeholder="Example: HNB-LKR-107010008865" style="flex:1;" />
+            <input id="newBankName" style="flex:1;" />
             <button id="addBankBtn" type="button" class="btn ghost">＋ Add</button>
           </div>
           <p id="bankMsg" class="msg"></p>
@@ -92,10 +92,6 @@
 
           <label class="small muted">Manage Bank Accounts (Admin)</label>
           <div id="adminBankList" style="margin-top:10px;"></div>
-
-          <p class="hint">
-            Rename changes the bank name. Delete will disable the bank (safe) so old finance records stay.
-          </p>
         </div>
 
         <div class="hr"></div>
@@ -155,8 +151,8 @@
 
         <label>Proof of Payment</label>
         <select id="proofOfPayment" required>
-          <option value="HAS">HAS</option>
-          <option value="NO">NO</option>
+          <option value="HAS">Available</option>
+          <option value="NO">Unavailable</option>
         </select>
 
         <label>Invoice No / Reference No</label>
@@ -186,15 +182,15 @@
 
         <h4 class="miniTitle">Drive Links</h4>
         <label>Client Folder Link</label>
-        <input id="folderLink" placeholder="link" />
+        <input id="folderLink" />
         <label>Payment Proof Link</label>
-        <input id="proofLink" placeholder="link" />
+        <input id="proofLink" />
         <label>Invoice Link </label>
-        <input id="invoiceLink" placeholder="link" />
+        <input id="invoiceLink" />
         <label>PO Link (Drive)</label>
-        <input id="poLink" placeholder="link" />
+        <input id="poLink" />
         <label>Quotation Link </label>
-        <input id="quotationLink" placeholder="link" />
+        <input id="quotationLink" />
 
         <div class="row" style="margin-top:10px;">
           <button class="btn" type="submit">Save Record</button>
@@ -208,7 +204,6 @@
     <div class="panel wide" id="financeRightPanel">
       <div class="block">
         <h3>Summary & Records</h3>
-        <p class="sub small">Finance page shows only active records. Deleted items are managed inside Admin Dashboard → Trash.</p>
         <div class="hr"></div>
 
         <div class="row">
@@ -252,7 +247,6 @@
 
           <div class="block">
             <h4 class="miniTitle">Month Closing Balance (Manual)</h4>
-            <p class="sub small">Closing balance is per-bank. If you select ALL, this section will show an error.</p>
             <div class="hr"></div>
 
             <div class="form compact">
@@ -276,7 +270,7 @@
               <input id="balAmount" type="number" step="0.01" placeholder="End of month bank closing balance" />
 
               <label>Note</label>
-              <input id="balNote" placeholder="Example: HNB LKR 1 statement closing" />
+              <input id="balNote" />
 
               <div class="grid2">
                 <button class="btn ghost" id="loadBalanceBtn" type="button">Load</button>
@@ -310,9 +304,6 @@
                 <tbody id="financeTableBody"></tbody>
               </table>
             </div>
-
-            <div class="hr"></div>
-            <p class="hint">Links without https:// will auto-fix.</p>
           </div>
         </div>
       </div>

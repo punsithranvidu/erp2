@@ -11,7 +11,6 @@
     <div>
       <h2>Document Storage</h2>
       <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
-      <p class="sub small">Professional company document explorer with permissions, sharing, trash bin, and admin lock.</p>
     </div>
     <div class="row">
       <a class="btn ghost" href="/google-drive/connect">Connect / Refresh Google Drive</a>
@@ -47,16 +46,15 @@
         <h3>Create Folder</h3>
 
         <label>Folder Name</label>
-        <input id="folderName" placeholder="Example: Kamal / Shipment 001 / VAT" />
+        <input id="folderName" />
 
         <label>Notes</label>
-        <textarea id="folderNotes" rows="3" placeholder="Optional note"></textarea>
+        <textarea id="folderNotes" rows="3"></textarea>
 
         <div class="hr"></div>
 
         <h4 class="miniTitle">Who Can Access</h4>
-        <p class="sub small">Creator and admins are auto-added with edit access.</p>
-        <input id="shareSearch" placeholder="Search users..." />
+        <input id="shareSearch" placeholder="Search users" />
         <div id="shareUserBox" class="doc-share-box"></div>
 
         <button id="createFolderBtn" class="btn" type="button">Create Folder</button>
@@ -69,13 +67,13 @@
         <h3>Upload Document</h3>
 
         <label>Display Name (optional)</label>
-        <input id="uploadDisplayName" placeholder="Leave blank to use file name" />
+        <input id="uploadDisplayName" />
 
         <label>Choose File</label>
         <input id="uploadFile" type="file" />
 
         <label>Notes</label>
-        <textarea id="uploadNotes" rows="3" placeholder="Optional note"></textarea>
+        <textarea id="uploadNotes" rows="3"></textarea>
 
         <button id="uploadBtn" class="btn" type="button">Upload Document</button>
         <p id="uploadMsg" class="msg"></p>
@@ -88,10 +86,10 @@
         <p id="selectedItemText" class="sub small">No item selected.</p>
 
         <label>Name</label>
-        <input id="editName" placeholder="Select an item first" />
+        <input id="editName" />
 
         <label>Notes</label>
-        <textarea id="editNotes" rows="3" placeholder="Edit notes"></textarea>
+        <textarea id="editNotes" rows="3"></textarea>
 
         <label>Drive Link</label>
         <input id="editDriveLink" readonly />
@@ -107,7 +105,6 @@
         <div class="hr"></div>
 
         <h4 class="miniTitle">Permissions</h4>
-        <p class="sub small">Other users are also shared in Google Drive using their personal Google email.</p>
         <div id="editPermUserBox" class="doc-share-box"></div>
 
         <div class="row" style="margin-top:12px;">
@@ -126,11 +123,10 @@
       <div class="doc-header">
         <div>
           <h3>Company Document Storage</h3>
-          <p class="sub small">Double click folders to open. Use action buttons or selection panel.</p>
         </div>
 
         <div class="row">
-          <input id="listSearch" placeholder="Search current view..." class="doc-search" />
+          <input id="listSearch" placeholder="Search" class="doc-search" />
           {% if role == "ADMIN" %}
           <button id="trashSelectAllBtn" class="btn ghost mini" type="button" style="display:none;">Select All</button>
           <button id="trashClearAllBtn" class="btn ghost mini" type="button" style="display:none;">Clear</button>

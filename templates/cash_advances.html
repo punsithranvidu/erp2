@@ -20,7 +20,6 @@
     <div>
       <h2>Cash Advances</h2>
       <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
-      <p class="sub small">Track company-given money + expenses + out-of-pocket + top-ups + balance.</p>
     </div>
     <div class="row">
       <a class="btn ghost" href="/dashboard">⬅ Back</a>
@@ -61,13 +60,13 @@
         </div>
 
         <label>Purpose</label>
-        <input id="advPurpose" placeholder="Example: Transport / Supplier / etc" />
+        <input id="advPurpose" />
 
         <label>Given Date</label>
         <input id="advGivenDate" type="date" />
 
         <label>Proof Link (Drive)</label>
-        <input id="advProofLink" placeholder="drive.google.com/..." />
+        <input id="advProofLink" />
 
         <button id="createAdvanceBtn" class="btn" type="button">Create Advance</button>
         <p id="advMsg" class="msg"></p>
@@ -78,7 +77,6 @@
 
       <div class="block">
         <h4 class="miniTitle">Selected Advance</h4>
-        <p class="sub small">Choose an advance on the right table.</p>
 
         <div class="hr"></div>
 
@@ -100,19 +98,16 @@
         <h4 class="miniTitle">Add Expense Breakdown</h4>
 
         <label>Category</label>
-        <input id="expCategory" placeholder="Transport / Food / Supplier / etc" />
+        <input id="expCategory" />
 
         <label>Description</label>
-        <input id="expDescription" placeholder="Optional details" />
+        <input id="expDescription" />
 
         <label>Paid By</label>
         <select id="expPaidBy">
           <option value="COMPANY_ADVANCE">COMPANY (from advance)</option>
           <option value="EMPLOYEE_PERSONAL">EMPLOYEE PERSONAL (out of pocket)</option>
         </select>
-        <p class="muted2">
-          If balance is not enough: choose <b>EMPLOYEE PERSONAL</b>. Then balance can go negative (company owes).
-        </p>
 
         <div class="grid2">
           <div>
@@ -126,7 +121,7 @@
         </div>
 
         <label>Proof Link (Drive)</label>
-        <input id="expProof" placeholder="drive.google.com/..." />
+        <input id="expProof" />
 
         <button id="addExpenseBtn" class="btn" type="button">Add Expense</button>
         <p id="expMsg" class="msg"></p>
@@ -135,7 +130,6 @@
 
         {% if role == "ADMIN" %}
         <h4 class="miniTitle">Top-Up This Advance (Admin)</h4>
-        <p class="sub small">Use this when company sends more money to settle negative balance or add more budget.</p>
 
         <div class="grid2">
           <div>
@@ -149,7 +143,7 @@
         </div>
 
         <label>Top-Up Proof Link (Drive)</label>
-        <input id="topupProof" placeholder="drive.google.com/..." />
+        <input id="topupProof" />
 
         <button id="addTopupBtn" class="btn ghost" type="button">Add Top-Up</button>
         <p id="topupMsg" class="msg"></p>
@@ -160,7 +154,6 @@
 
       <div class="block">
         <h4 class="miniTitle">Summary & Export</h4>
-        <p class="sub small">Filter by Employee + Month and export to CSV.</p>
 
         <div class="hr"></div>
 
@@ -170,7 +163,7 @@
         <div class="grid2">
           <div>
             <label>Month (YYYY-MM)</label>
-            <input id="sumMonth" placeholder="2026-01" />
+            <input id="sumMonth" />
           </div>
           <div>
             <label>Status</label>
@@ -213,7 +206,6 @@
     <div class="panel wide">
       <div class="block">
         <h3>Advances & Balances</h3>
-        <p class="sub small">EMP: you will see only your advances. ADMIN: you will see all employees.</p>
       </div>
 
       <div class="hr"></div>
@@ -293,9 +285,6 @@
             <tbody id="expTableBody"></tbody>
           </table>
         </div>
-
-        <div class="hr"></div>
-        <p class="hint">Links without https:// will auto-fix.</p>
       </div>
     </div>
 

@@ -11,7 +11,6 @@
     <div>
       <h2>User Management</h2>
       <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
-      <p class="sub small">Admins can create users, edit details, set Google email access, reset passwords, set module access, and disable accounts.</p>
     </div>
     <div class="row">
       <a class="btn ghost" href="/dashboard">⬅ Back</a>
@@ -25,10 +24,10 @@
 
       <div class="block">
         <label>Username</label>
-        <input id="uUsername" placeholder="emp2" />
+        <input id="uUsername" />
 
         <label>Password</label>
-        <input id="uPassword" type="password" placeholder="emp23" />
+        <input id="uPassword" type="password" />
 
         <label>Role</label>
         <select id="uRole">
@@ -40,30 +39,28 @@
 
         <h4 class="miniTitle">Optional Details</h4>
         <label>Full Name</label>
-        <input id="uFullName" placeholder="Employee full name" />
+        <input id="uFullName" />
 
         <label>NIC</label>
-        <input id="uNic" placeholder="NIC number (optional)" />
+        <input id="uNic" />
 
         <label>Join Date</label>
         <input id="uJoinDate" type="date" />
 
         <label>Job Role</label>
-        <input id="uJobRole" placeholder="Driver / Store / Admin assistant..." />
+        <input id="uJobRole" />
 
         <label>Address</label>
-        <input id="uAddress" placeholder="Address (optional)" />
+        <input id="uAddress" />
 
         <label>Personal Google Email</label>
-        <input id="uGoogleEmail" type="email" placeholder="emp@gmail.com" />
-        <p class="sub small">Used for Google Drive sharing. Leave blank if this user should not open Drive links directly.</p>
+        <input id="uGoogleEmail" type="email" />
 
         <label>File Name</label>
-        <input id="uFileName" placeholder="CV / NIC Copy / Agreement" />
+        <input id="uFileName" />
 
         <label>File Link</label>
-        <input id="uFileLink" placeholder="drive.google.com/..." />
-        <p class="sub small">If link is added, the file name will be clickable in the table.</p>
+        <input id="uFileLink" />
 
         <button id="createUserBtn" class="btn" type="button">Create User</button>
         <p id="createMsg" class="msg"></p>
@@ -72,7 +69,6 @@
       <div class="hr"></div>
 
       <h3>Selected User</h3>
-      <p class="sub small">Click a user in the right table.</p>
 
       <div class="block">
         <div class="hr"></div>
@@ -80,36 +76,34 @@
 
         <h4 class="miniTitle">Edit Profile Details</h4>
         <label>Full Name</label>
-        <input id="eFullName" placeholder="Full name" />
+        <input id="eFullName" />
 
         <label>NIC</label>
-        <input id="eNic" placeholder="NIC" />
+        <input id="eNic" />
 
         <label>Join Date</label>
         <input id="eJoinDate" type="date" />
 
         <label>Job Role</label>
-        <input id="eJobRole" placeholder="Job role" />
+        <input id="eJobRole" />
 
         <label>Address</label>
-        <input id="eAddress" placeholder="Address" />
+        <input id="eAddress" />
 
         <label>Personal Google Email</label>
-        <input id="eGoogleEmail" type="email" placeholder="emp@gmail.com" />
-        <p class="sub small">This Google email will be shared automatically on folders/files when ERP permissions are given.</p>
+        <input id="eGoogleEmail" type="email" />
 
         <label>File Name</label>
-        <input id="eFileName" placeholder="CV / NIC Copy / Agreement" />
+        <input id="eFileName" />
 
         <label>File Link</label>
-        <input id="eFileLink" placeholder="drive.google.com/..." />
-        <p class="sub small">If link is added, the file name will become clickable in the users table.</p>
+        <input id="eFileLink" />
 
         <div class="hr"></div>
 
         <h4 class="miniTitle">Rename Username</h4>
         <label>New Username</label>
-        <input id="renameTo" placeholder="emp01" />
+        <input id="renameTo" />
         <button id="renameBtn" class="btn ghost" type="button">Rename</button>
         <p id="renameMsg" class="msg"></p>
 
@@ -117,7 +111,7 @@
 
         <h4 class="miniTitle">Reset Password</h4>
         <label>New Password</label>
-        <input id="newPass" type="password" placeholder="new password" />
+        <input id="newPass" type="password" />
         <button id="resetPassBtn" class="btn ghost" type="button">Update Password</button>
         <p id="passMsg" class="msg"></p>
 
@@ -142,7 +136,6 @@
         <div class="hr"></div>
 
         <h4 class="miniTitle">Module Access (EMP only)</h4>
-        <p class="sub small">Admins always have full access. For EMP users, choose what pages they can open.</p>
 
         <div class="form compact" id="permBox">
           <label class="small muted">Allowed Modules</label>
@@ -158,7 +151,6 @@
           <button id="disableBtn" class="btn ghost" type="button">Disable User</button>
           <button id="deleteBtn" class="btn danger" type="button">Delete User</button>
         </div>
-        <p class="sub small">Delete will permanently remove the user (only allowed if safe). Otherwise, disable is recommended.</p>
         <p id="dangerMsg" class="msg"></p>
       </div>
     </div>
@@ -193,9 +185,6 @@
           <tbody id="usersBody"></tbody>
         </table>
       </div>
-
-      <div class="hr"></div>
-      <p class="hint">Tip: save each user's personal Google email here so Document Storage can auto-share folders/files correctly.</p>
     </div>
   </div>
 

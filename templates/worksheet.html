@@ -255,13 +255,6 @@
       <div class="ws-page-head">
         <div class="ws-page-head-left">
           <h3>Daily Work Worksheet</h3>
-          <p>
-            {% if role == "ADMIN" %}
-              Admin can view any employee or admin worksheet from here. Your own records can also be saved here.
-            {% else %}
-              You can only see and manage your own worksheet here.
-            {% endif %}
-          </p>
         </div>
         <div>
           <span id="wsCurrentView" class="ws-view-badge">My Worksheet</span>
@@ -275,7 +268,7 @@
           <div class="field">
             <label for="wsUserSelect">Select User</label>
             <select id="wsUserSelect">
-              <option value="">-- Select user to view --</option>
+              <option value="">Select user</option>
             </select>
           </div>
 
@@ -292,15 +285,9 @@
             <button id="wsMyTableBtn" class="btn ghost mini" type="button">My Table</button>
           </div>
         </div>
-
-        <div class="ws-note">
-          Select any employee or admin name to see their table. If no user is selected, the table stays empty for admin view.
-        </div>
       </div>
 
-      <div id="wsAdminEmptyState" class="ws-admin-empty">
-        Select a user from the admin control panel to open a worksheet table.
-      </div>
+      <div id="wsAdminEmptyState" class="ws-admin-empty"></div>
       {% else %}
       <div class="ws-controls">
         <div class="field">
@@ -313,9 +300,6 @@
         </div>
       </div>
 
-      <div class="ws-note">
-        After you save, you can still edit. After you submit, the row is locked until admin reopens it.
-      </div>
       {% endif %}
 
       <p id="wsMsg" class="msg"></p>

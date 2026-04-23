@@ -345,11 +345,10 @@
   <div class="page notes-page">
     <div class="panel">
       <h3 id="noteFormTitle">Add Note</h3>
-      <p class="hint">Shared work notes, draft reminders, and task follow-ups.</p>
 
       <div class="form">
         <label for="noteText">Note Text</label>
-        <textarea id="noteText" rows="8" placeholder="Example: Follow up buyer document"></textarea>
+        <textarea id="noteText" rows="8"></textarea>
 
         <label for="expectedEndDate">Expected End Date</label>
         <input id="expectedEndDate" type="datetime-local" />
@@ -381,7 +380,7 @@
       <div class="notes-head">
         <div>
           <h3>Notes Board</h3>
-          <p class="sub" id="notesSub">Active shared notes.</p>
+          <p class="sub" id="notesSub"></p>
         </div>
         <button class="btn ghost mini" id="refreshNotesBtn" type="button">Refresh</button>
       </div>
@@ -461,7 +460,6 @@
       <div class="notes-head" style="margin-bottom:0;">
         <div>
           <h3 id="historyTitle">Note History</h3>
-          <p class="sub">Edit records and expected date changes.</p>
         </div>
         <button class="btn ghost mini" id="closeHistoryBtn" type="button">Close</button>
       </div>

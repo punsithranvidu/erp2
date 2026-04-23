@@ -260,7 +260,6 @@
 
       <div class="inv-card">
         <h3 class="inv-title">Live Number Generator</h3>
-        <p class="inv-sub">Reserve, restore, search and manage document numbers safely for multiple users.</p>
 
         <div class="seg">
           <button id="typeINV" class="btn active" type="button">Invoice</button>
@@ -283,7 +282,7 @@
         <div class="field-block">
           <h4>Restore Number</h4>
           <div class="field-row">
-            <input id="restoreInput" type="text" placeholder="Example: INV-2026/03-001" />
+            <input id="restoreInput" type="text" />
             <button id="restoreBtn" class="btn ghost" type="button">Restore</button>
           </div>
           <p id="restoreMsg" class="msg"></p>
@@ -292,23 +291,21 @@
         <div class="field-block">
           <h4>Search Number</h4>
           <div class="field-row">
-            <input id="searchInput" type="text" placeholder="Example: QT-2026/03-003" />
+            <input id="searchInput" type="text" />
             <button id="searchBtn" class="btn ghost" type="button">Search</button>
           </div>
-          <div id="searchResult" class="result-box">Search result will appear here.</div>
+          <div id="searchResult" class="result-box"></div>
         </div>
       </div>
 
       <div class="inv-card">
-        <h3 class="inv-title">Status Guide</h3>
-        <p class="inv-sub">Reserved means copied and waiting for your confirmation. Used means finalized. Restored means returned back for reuse.</p>
+        <h3 class="inv-title">Status</h3>
 
         <div class="history-box">
           <div class="history-item">
             <div class="history-top">
               <div>
                 <div class="history-number">RESERVED</div>
-                <div class="history-meta">Copied and temporarily held for the current user.</div>
               </div>
               <span class="status-pill status-reserved">RESERVED</span>
             </div>
@@ -318,7 +315,6 @@
             <div class="history-top">
               <div>
                 <div class="history-number">USED</div>
-                <div class="history-meta">Confirmed as final and should not be reused.</div>
               </div>
               <span class="status-pill status-used">USED</span>
             </div>
@@ -328,7 +324,6 @@
             <div class="history-top">
               <div>
                 <div class="history-number">RESTORED</div>
-                <div class="history-meta">Returned back and available for reuse before newer numbers.</div>
               </div>
               <span class="status-pill status-restored">RESTORED</span>
             </div>
@@ -342,7 +337,6 @@
   <div id="copyModal" class="modal-backdrop">
     <div class="modal-card">
       <h3>Number Copied</h3>
-      <p>The number below has been copied. Choose what to do next.</p>
       <div id="copiedNumberText" class="copied-number">-</div>
       <div class="modal-actions">
         <button id="copyOkBtn" class="btn" type="button">OK</button>
@@ -355,7 +349,6 @@
   <div id="restoreModal" class="modal-backdrop">
     <div class="modal-card">
       <h3>Restore Number</h3>
-      <p>This number will be marked as restored and returned for reuse.</p>
       <div id="restoreModalNumber" class="copied-number">-</div>
       <div class="modal-actions">
         <button id="restoreOkBtn" class="btn" type="button">OK</button>

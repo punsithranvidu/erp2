@@ -451,7 +451,7 @@
             <select id="viewUserSelect" class="cal-user-select"></select>
           </div>
 
-          <div id="viewModeNote" class="cal-view-note">Active calendar view</div>
+          <div id="viewModeNote" class="cal-view-note"></div>
 
           <div class="cal-grid" id="weekHead"></div>
           <div class="cal-grid" id="monthGrid"></div>
@@ -460,7 +460,7 @@
         <div>
           <div class="cal-side-block">
             <h4>Selected Day</h4>
-            <div id="selectedDateText" class="cal-mini">Choose a date</div>
+            <div id="selectedDateText" class="cal-mini"></div>
             <div id="selectedDateList" class="cal-list"></div>
           </div>
 
@@ -517,7 +517,7 @@
               </div>
 
               <label>Reason</label>
-              <textarea id="unReason" rows="3" placeholder="Explain the break / unavailable reason"></textarea>
+              <textarea id="unReason" rows="3"></textarea>
 
               <div class="cal-share-box">
                 <label>
@@ -587,10 +587,6 @@
                 </div>
               </div>
 
-              <div class="cal-soft-note">
-                Example: Event date 21st, early reminders on 18th, 19th, and 20th with different times.
-              </div>
-
               <div class="cal-share-box">
                 <label>
                   <input id="evShowInActive" type="checkbox">
@@ -629,7 +625,7 @@
                 </div>
 
                 <label>Holiday Title</label>
-                <input id="holidayTitle" placeholder="Example: Poya Day / Christmas / Company Holiday" />
+                <input id="holidayTitle" />
 
                 <label>Date</label>
                 <input id="holidayDate" type="date" />
@@ -643,7 +639,7 @@
                 </select>
 
                 <label>Notes</label>
-                <textarea id="holidayNotes" rows="2" placeholder="Optional note"></textarea>
+                <textarea id="holidayNotes" rows="2"></textarea>
 
                 <div class="holiday-action-row">
                   <button id="saveHolidayBtn" class="btn mini" type="button">Save Holiday</button>
@@ -660,7 +656,7 @@
             <div class="cal-history-head">
               <div>
                 <h4 style="margin:0;">Requests / History</h4>
-                <div class="history-month-note" id="historyMonthNote">Showing visible month only</div>
+                <div class="history-month-note" id="historyMonthNote"></div>
               </div>
               <div class="cal-history-actions">
                 <button id="refreshHistoryBtn" class="btn ghost mini" type="button">Refresh</button>

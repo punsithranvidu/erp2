@@ -493,7 +493,6 @@
     <div>
       <h2>Messages</h2>
       <p class="sub">Logged in as <b>{{ user }}</b> ({{ role }})</p>
-      <p class="sub small">Internal ERP messaging for admins and employees.</p>
     </div>
     <div class="row">
       <a class="btn ghost" href="/dashboard">⬅ Back</a>
@@ -516,7 +515,7 @@
             <button id="openTrashBtn" class="btn ghost mini" type="button">Trash</button>
           </div>
 
-          <input id="conversationSearch" class="msg-search" placeholder="Search conversations..." />
+          <input id="conversationSearch" class="msg-search" placeholder="Search" />
 
           <div class="hr"></div>
 
@@ -534,7 +533,7 @@
           <div class="msg-header">
             <div>
               <div id="chatTitle" class="msg-chat-title">No conversation selected</div>
-              <div id="chatSub" class="msg-chat-sub">Choose a person or group to start messaging.</div>
+              <div id="chatSub" class="msg-chat-sub"></div>
             </div>
             <div class="row">
               <button id="markReadBtn" class="btn ghost mini" type="button">Mark Read</button>
@@ -543,7 +542,7 @@
 
           <div class="msg-chat-wrap">
             <div id="messagesBox" class="msg-messages">
-              <div class="empty-chat">Open a conversation to view messages.</div>
+              <div class="empty-chat"></div>
             </div>
 
             <button id="scrollBottomBtn" class="msg-scroll-bottom" type="button" title="Go to latest message">↓</button>
@@ -600,7 +599,7 @@
       <div class="hr"></div>
 
       <label>Group Name</label>
-      <input id="groupNameInput" placeholder="Example: Export Team / Finance Team" />
+      <input id="groupNameInput" />
 
       <label style="margin-top:12px;">Select Members</label>
       <div id="groupMembersBox" class="group-members"></div>
