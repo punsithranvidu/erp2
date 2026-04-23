@@ -5,9 +5,164 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Admin Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <style>
+    body.dash-body{
+      background:#f4f7fb;
+    }
+    .dash-topbar{
+      width:min(1240px, calc(100% - 36px));
+      margin:18px auto 0;
+      border:1px solid rgba(226,232,240,.95);
+      border-radius:18px;
+      box-shadow:0 18px 45px rgba(15,23,42,.06);
+      background:rgba(255,255,255,.94);
+      position:sticky;
+      top:12px;
+      z-index:5;
+    }
+    .dash-topbar h2{
+      font-size:22px;
+      letter-spacing:0;
+    }
+    .dash-page{
+      width:min(1240px, calc(100% - 36px));
+      margin:18px auto 32px;
+      padding:0;
+      display:block;
+    }
+    .dash-panel{
+      border-radius:20px;
+      padding:22px;
+      border:1px solid rgba(226,232,240,.95);
+      box-shadow:0 18px 45px rgba(15,23,42,.06);
+      background:#fff;
+    }
+    .dash-section-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-end;
+      gap:16px;
+      margin-bottom:18px;
+      padding-bottom:14px;
+      border-bottom:1px solid #eef2f7;
+    }
+    .dash-section-head h3{
+      margin:0;
+      font-size:18px;
+      letter-spacing:0;
+    }
+    .dash-section-head p{
+      margin:4px 0 0;
+      color:#64748b;
+      font-size:13px;
+    }
+    .dash-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(270px, 1fr));
+      gap:14px;
+    }
+    .dash-card{
+      position:relative;
+      min-height:84px;
+      display:grid;
+      grid-template-columns:auto 1fr auto;
+      align-items:center;
+      gap:14px;
+      padding:16px;
+      border:1px solid #e5eaf2;
+      border-radius:14px;
+      background:linear-gradient(180deg, #fff 0%, #fbfdff 100%);
+      text-decoration:none;
+      color:#0f172a;
+      box-shadow:0 8px 24px rgba(15,23,42,.045);
+      transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease;
+    }
+    .dash-card:hover{
+      transform:translateY(-2px);
+      border-color:rgba(37,99,235,.28);
+      box-shadow:0 16px 32px rgba(15,23,42,.08);
+      background:#fff;
+    }
+    .dash-icon{
+      width:42px;
+      height:42px;
+      display:grid;
+      place-items:center;
+      border-radius:12px;
+      border:1px solid rgba(37,99,235,.14);
+      background:#f1f5fb;
+      color:#1e3a8a;
+      font-size:12px;
+      font-weight:800;
+      letter-spacing:.04em;
+    }
+    .dash-card-copy{
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .dash-card-copy strong{
+      font-size:15px;
+      line-height:1.2;
+    }
+    .dash-card-copy small{
+      color:#64748b;
+      font-size:12px;
+      line-height:1.35;
+    }
+    .dash-arrow{
+      color:#94a3b8;
+      font-weight:900;
+      font-size:16px;
+      padding-left:4px;
+    }
+    .dash-card.disabled{
+      opacity:.62;
+      cursor:not-allowed;
+      transform:none;
+    }
+    .dash-card.disabled:hover{
+      border-color:#e5eaf2;
+      box-shadow:0 8px 24px rgba(15,23,42,.045);
+    }
+    #weeklyTasksBadge,
+    #msgBadge,
+    #calendarBadge,
+    #notesBadge{
+      top:12px !important;
+      right:42px !important;
+      z-index:2;
+    }
+    @media (max-width:720px){
+      .dash-topbar,
+      .dash-page{
+        width:min(100% - 20px, 1240px);
+      }
+      .dash-topbar{
+        margin-top:10px;
+        align-items:flex-start;
+        gap:12px;
+        flex-direction:column;
+      }
+      .dash-panel{
+        padding:16px;
+      }
+      .dash-section-head{
+        align-items:flex-start;
+        flex-direction:column;
+      }
+      .dash-grid{
+        grid-template-columns:1fr;
+      }
+      .dash-card{
+        min-height:78px;
+      }
+    }
+  </style>
 </head>
-<body>
-  <div class="topbar">
+<body class="dash-body">
+  <div class="topbar dash-topbar">
     <div>
       <h2>Admin Dashboard</h2>
       <p class="sub">Welcome, <b>{{ user }}</b> • Role: <b>{{ role }}</b></p>
@@ -15,74 +170,153 @@
     <a class="btn ghost" href="/logout">Logout</a>
   </div>
 
-  <div class="page" style="grid-template-columns:1fr;">
-    <div class="panel wide">
-      <h3>Modules</h3>
+  <div class="dash-page">
+    <div class="dash-panel">
+      <div class="dash-section-head">
+        <div>
+          <h3>Modules</h3>
+          <p>Admin tools and company workspaces</p>
+        </div>
+      </div>
 
-      <div class="cards">
-        <a class="card" href="/finance">
-          <h4>Finance</h4>
+      <div class="dash-grid">
+        <a class="dash-card" href="/finance">
+          <span class="dash-icon">FN</span>
+          <span class="dash-card-copy">
+            <strong>Finance</strong>
+            <small>Records, balances, exports</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <a class="card" href="/document-storage">
-          <h4>Document Storage</h4>
+        <a class="dash-card" href="/document-storage">
+          <span class="dash-icon">DS</span>
+          <span class="dash-card-copy">
+            <strong>Document Storage</strong>
+            <small>Folders and company files</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <a class="card" href="/users">
-          <h4>Employee Access</h4>
+        <a class="dash-card" href="/users">
+          <span class="dash-icon">EA</span>
+          <span class="dash-card-copy">
+            <strong>Employee Access</strong>
+            <small>Users and permissions</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <a class="card" href="/weekly-tasks" style="position:relative;">
-          <h4>Weekly Tasks</h4>
+        <a class="dash-card" href="/weekly-tasks">
+          <span class="dash-icon">WT</span>
+          <span class="dash-card-copy">
+            <strong>Weekly Tasks</strong>
+            <small>Boards and task reviews</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
           <span id="weeklyTasksBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
-        <a class="card" href="/invoices">
-          <h4>Invoices</h4>
+        <a class="dash-card" href="/invoices">
+          <span class="dash-icon">IN</span>
+          <span class="dash-card-copy">
+            <strong>Invoices</strong>
+            <small>INV, QT and PO numbers</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <a class="card" href="/cash-advances">
-          <h4>Cash Advances</h4>
+        <a class="dash-card" href="/cash-advances">
+          <span class="dash-icon">CA</span>
+          <span class="dash-card-copy">
+            <strong>Cash Advances</strong>
+            <small>Advances and balances</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <a class="card" href="/messages" style="position:relative;">
-          <h4>Messages</h4>
+        <a class="dash-card" href="/messages">
+          <span class="dash-icon">MS</span>
+          <span class="dash-card-copy">
+            <strong>Messages</strong>
+            <small>Chats and groups</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
           <span id="msgBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
-        <a class="card" href="/calendar" style="position:relative;">
-          <h4>Calendar</h4>
+        <a class="dash-card" href="/calendar">
+          <span class="dash-icon">CL</span>
+          <span class="dash-card-copy">
+            <strong>Calendar</strong>
+            <small>Schedules and reminders</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
           <span id="calendarBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
-        <a class="card" href="/hs-codes">
-          <h4>HS Codes</h4>
+        <a class="dash-card" href="/hs-codes">
+          <span class="dash-icon">HS</span>
+          <span class="dash-card-copy">
+            <strong>HS Codes</strong>
+            <small>Product code library</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <a class="card" href="/worksheet">
-          <h4>Worksheet</h4>
+        <a class="dash-card" href="/worksheet">
+          <span class="dash-icon">WS</span>
+          <span class="dash-card-copy">
+            <strong>Worksheet</strong>
+            <small>Daily work entries</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <a class="card" href="/attendance">
-          <h4>Attendance</h4>
+        <a class="dash-card" href="/attendance">
+          <span class="dash-icon">AT</span>
+          <span class="dash-card-copy">
+            <strong>Attendance</strong>
+            <small>Presence and availability</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <a class="card" href="/marketing-emails">
-          <h4>Marketing Emails</h4>
+        <a class="dash-card" href="/marketing-emails">
+          <span class="dash-icon">ME</span>
+          <span class="dash-card-copy">
+            <strong>Marketing Emails</strong>
+            <small>Leads and export files</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <a class="card" href="/notes" style="position:relative;">
-          <h4>Notes</h4>
+        <a class="dash-card" href="/notes">
+          <span class="dash-icon">NT</span>
+          <span class="dash-card-copy">
+            <strong>Notes</strong>
+            <small>Shared task notes</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
           <span id="notesBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
         </a>
 
-        <a class="card" href="/finance-trash">
-          <h4>Finance Trash</h4>
+        <a class="dash-card" href="/finance-trash">
+          <span class="dash-icon">TR</span>
+          <span class="dash-card-copy">
+            <strong>Finance Trash</strong>
+            <small>Deleted finance records</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </a>
 
-        <div class="card disabled">
-          <h4>Reports</h4>
-          <p>Unavailable</p>
+        <div class="dash-card disabled">
+          <span class="dash-icon">RP</span>
+          <span class="dash-card-copy">
+            <strong>Reports</strong>
+            <small>Unavailable</small>
+          </span>
+          <span class="dash-arrow">&gt;</span>
         </div>
       </div>
     </div>

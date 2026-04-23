@@ -5,14 +5,112 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ERP Login</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <style>
+    body.login-body{
+      min-height:100vh;
+      background:#f4f7fb;
+      color:#0f172a;
+    }
+    .login-shell{
+      min-height:100vh;
+      display:grid;
+      place-items:center;
+      padding:24px;
+    }
+    .login-card{
+      width:min(440px, 100%);
+      border:1px solid rgba(226,232,240,.95);
+      border-radius:22px;
+      background:rgba(255,255,255,.96);
+      box-shadow:0 24px 60px rgba(15,23,42,.10);
+      padding:28px;
+    }
+    .login-brand{
+      display:flex;
+      gap:14px;
+      align-items:center;
+      margin-bottom:22px;
+    }
+    .login-logo{
+      width:50px;
+      height:50px;
+      display:grid;
+      place-items:center;
+      border-radius:14px;
+      border:1px solid rgba(37,99,235,.14);
+      background:#f1f5fb;
+      color:#1e3a8a;
+      font-size:14px;
+      font-weight:900;
+      letter-spacing:.04em;
+    }
+    .login-brand h1{
+      margin:0;
+      font-size:24px;
+      line-height:1.1;
+      letter-spacing:-.01em;
+    }
+    .login-brand p{
+      margin:5px 0 0;
+      color:#64748b;
+      font-size:13px;
+    }
+    .login-form label{
+      margin-top:14px;
+      color:#475569;
+      font-weight:700;
+      font-size:13px;
+    }
+    .login-form input{
+      min-height:46px;
+      border-radius:14px;
+      border-color:#dbe3ee;
+      background:#fbfdff;
+      transition:border-color .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+    .login-form input:focus{
+      background:#fff;
+      border-color:rgba(37,99,235,.45);
+      box-shadow:0 0 0 4px rgba(37,99,235,.11);
+    }
+    .login-button{
+      width:100%;
+      min-height:46px;
+      margin-top:18px;
+      border-radius:14px;
+      border-color:rgba(30,58,138,.18);
+      background:#1e3a8a;
+      color:#fff;
+      box-shadow:0 12px 24px rgba(30,58,138,.16);
+      transition:transform .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+    .login-button:hover{
+      background:#1d4ed8;
+      box-shadow:0 16px 30px rgba(30,58,138,.20);
+      transform:translateY(-1px);
+    }
+    .login-card .alert{
+      margin:0 0 16px;
+    }
+    @media (max-width:520px){
+      .login-shell{
+        padding:16px;
+      }
+      .login-card{
+        padding:22px;
+        border-radius:18px;
+      }
+    }
+  </style>
 </head>
-<body>
-  <div class="authWrap">
-    <div class="authCard">
-      <div class="brand">
-        <div class="logo">ERP</div>
+<body class="login-body">
+  <main class="login-shell">
+    <section class="login-card">
+      <div class="login-brand">
+        <div class="login-logo">ERP</div>
         <div>
           <h1>Sign in</h1>
+          <p>Company ERP access</p>
         </div>
       </div>
 
@@ -20,16 +118,16 @@
         <div class="alert">{{ error }}</div>
       {% endif %}
 
-      <form class="form" method="POST">
+      <form class="form login-form" method="POST">
         <label>Username</label>
         <input name="username" required />
 
         <label>Password</label>
         <input type="password" name="password" required />
 
-        <button class="btn" type="submit">Login</button>
+        <button class="btn login-button" type="submit">Login</button>
       </form>
-    </div>
-  </div>
+    </section>
+  </main>
 </body>
 </html>
