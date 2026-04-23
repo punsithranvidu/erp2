@@ -14,6 +14,7 @@ TASK_STATUSES = ("Pending", "Active", "Started", "Done", "Cancelled")
 CONFIRMATION_STATUSES = ("PENDING", "CONFIRMED", "DENIED")
 EDIT_REQUEST_STATUSES = ("PENDING", "APPROVED", "DENIED")
 WEEKS = (1, 2, 3, 4)
+MAX_TASK_TEXT_LENGTH = 1000
 
 
 def db():
@@ -73,6 +74,15 @@ def require_module(module: str, need_edit: bool = False):
 
 def clean_text(value):
     return (value or "").strip()
+
+
+def validate_task_text(value, label="Task text"):
+    text = clean_text(value)
+    if not text:
+        return None, f"{label} is required"
+    if len(text) > MAX_TASK_TEXT_LENGTH:
+        return None, f"{label} must be {MAX_TASK_TEXT_LENGTH} characters or less"
+    return text, None
 
 
 def parse_int(value, default=None):
@@ -719,14 +729,14 @@ def api_weekly_tasks_notification_count():
 @require_module("WEEKLY_TASKS", need_edit=True)
 def api_weekly_tasks_create():
     data = request.json or {}
-    text = clean_text(data.get("task_text"))
+    text, text_error = validate_task_text(data.get("task_text"))
     year = parse_int(data.get("year"), current_year_month()[0])
     month = parse_int(data.get("month"), current_year_month()[1])
     week = parse_int(data.get("week_number"), None)
     owner_requested = data.get("owner_user_id")
 
-    if not text:
-        return jsonify({"ok": False, "error": "Task text is required"}), 400
+    if text_error:
+        return jsonify({"ok": False, "error": text_error}), 400
     if week not in WEEKS:
         return jsonify({"ok": False, "error": "Week must be 1 to 4"}), 400
 
@@ -855,10 +865,10 @@ def api_weekly_tasks_update(task_id):
     if not is_admin():
         return jsonify({"ok": False, "error": "Admin only"}), 403
     data = request.json or {}
-    text = clean_text(data.get("task_text"))
+    text, text_error = validate_task_text(data.get("task_text"))
     status = normalize_status(data.get("status"))
-    if not text:
-        return jsonify({"ok": False, "error": "Task text is required"}), 400
+    if text_error:
+        return jsonify({"ok": False, "error": text_error}), 400
     if not status:
         return jsonify({"ok": False, "error": "Invalid status"}), 400
 
@@ -901,9 +911,9 @@ def api_weekly_tasks_update(task_id):
 @require_module("WEEKLY_TASKS", need_edit=True)
 def api_weekly_tasks_edit_request(task_id):
     data = request.json or {}
-    text = clean_text(data.get("requested_text"))
-    if not text:
-        return jsonify({"ok": False, "error": "Requested task text is required"}), 400
+    text, text_error = validate_task_text(data.get("requested_text"), "Requested task text")
+    if text_error:
+        return jsonify({"ok": False, "error": text_error}), 400
 
     conn = db()
     task = get_task(conn, task_id)

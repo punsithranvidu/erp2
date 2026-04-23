@@ -11,6 +11,7 @@ notes_bp = Blueprint("notes", __name__)
 NOTE_STATUSES = ("Active", "Done", "Cancelled")
 NOTE_AUDIENCES = ("EVERYONE", "ADMINS")
 NOTES_PER_PAGE = 8
+MAX_NOTE_TEXT_LENGTH = 1000
 APP_TZ = ZoneInfo("Asia/Colombo")
 
 
@@ -70,6 +71,15 @@ def clean_text(value):
 
 def clean_due(value):
     return clean_text(value) or None
+
+
+def validate_note_text(value):
+    text = clean_text(value)
+    if not text:
+        return None, "Note text is required"
+    if len(text) > MAX_NOTE_TEXT_LENGTH:
+        return None, f"Note text must be {MAX_NOTE_TEXT_LENGTH} characters or less"
+    return text, None
 
 
 def normalize_status(value):
@@ -632,12 +642,12 @@ def api_notes_default_page_set():
 @require_module("NOTES", need_edit=True)
 def api_notes_create():
     data = request.json or {}
-    note_text = clean_text(data.get("note_text"))
+    note_text, text_error = validate_note_text(data.get("note_text"))
     expected_end_date = clean_due(data.get("expected_end_date"))
     audience = normalize_audience(data.get("audience")) if is_admin() else "EVERYONE"
 
-    if not note_text:
-        return jsonify({"ok": False, "error": "Note text is required"}), 400
+    if text_error:
+        return jsonify({"ok": False, "error": text_error}), 400
 
     created_at = now_iso()
     conn = db()
@@ -683,13 +693,13 @@ def api_notes_create():
 @require_module("NOTES", need_edit=True)
 def api_notes_update(note_id):
     data = request.json or {}
-    note_text = clean_text(data.get("note_text"))
+    note_text, text_error = validate_note_text(data.get("note_text"))
     expected_end_date = clean_due(data.get("expected_end_date"))
     status = normalize_status(data.get("status"))
     requested_audience = normalize_audience(data.get("audience"))
 
-    if not note_text:
-        return jsonify({"ok": False, "error": "Note text is required"}), 400
+    if text_error:
+        return jsonify({"ok": False, "error": text_error}), 400
     if not status:
         return jsonify({"ok": False, "error": "Invalid note status"}), 400
 

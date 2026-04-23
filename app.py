@@ -1,5 +1,9 @@
 from flask import Flask, request, redirect, url_for, session, jsonify
 import os
+import logging
+import time
+import secrets
+from collections import defaultdict, deque
 from datetime import datetime
 from functools import wraps
 
@@ -24,7 +28,35 @@ from routes.marketing_emails import marketing_emails_bp
 from routes.notes import notes_bp
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "CHANGE_THIS_TO_A_RANDOM_SECRET")
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+if not os.environ.get("SECRET_KEY"):
+    app.logger.warning("SECURITY: SECRET_KEY is not set. Using a random runtime key; set SECRET_KEY in production.")
+
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
+
+security_logger = logging.getLogger("erp.security")
+if not security_logger.handlers:
+    security_logger.setLevel(logging.INFO)
+    security_handler = logging.FileHandler(os.environ.get("SECURITY_LOG_FILE", "/tmp/erp_security.log"))
+    security_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    security_logger.addHandler(security_handler)
+    security_logger.propagate = True
+
+RATE_BUCKETS = defaultdict(deque)
+LOGIN_FAILURES = defaultdict(deque)
+LOGIN_BLOCKED_UNTIL = {}
+
+GLOBAL_ROUTE_LIMIT = 60
+API_ROUTE_LIMIT = 60
+SENSITIVE_API_LIMIT = 30
+LOGIN_FAILED_LIMIT = 5
+LOGIN_WINDOW_SECONDS = 60
+LOGIN_BLOCK_SECONDS = 10 * 60
+FAILED_LOGIN_DELAY_SECONDS = 0.7
 
 DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or "").strip()
 if DATABASE_URL.startswith("postgres://"):
@@ -101,6 +133,99 @@ def db():
 
 def now_iso():
     return datetime.now().isoformat(timespec="seconds")
+
+
+def client_ip():
+    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    return forwarded or request.headers.get("X-Real-IP") or request.remote_addr or "unknown"
+
+
+def security_log(message, **extra):
+    details = " ".join(f"{k}={v}" for k, v in extra.items())
+    security_logger.warning("%s %s", message, details)
+
+
+def prune_bucket(bucket, now_ts, window_seconds):
+    while bucket and bucket[0] <= now_ts - window_seconds:
+        bucket.popleft()
+
+
+def check_rate_limit(scope, limit, window_seconds=60):
+    ip = client_ip()
+    now_ts = time.time()
+    key = (scope, ip)
+    bucket = RATE_BUCKETS[key]
+    prune_bucket(bucket, now_ts, window_seconds)
+    if len(bucket) >= limit:
+        security_log("rate_limit_blocked", ip=ip, scope=scope, path=request.path, limit=limit)
+        return False
+    bucket.append(now_ts)
+    return True
+
+
+def is_login_ip_blocked(ip=None):
+    ip = ip or client_ip()
+    until = float(LOGIN_BLOCKED_UNTIL.get(ip) or 0)
+    if until <= time.time():
+        LOGIN_BLOCKED_UNTIL.pop(ip, None)
+        return False
+    return True
+
+
+def register_failed_login(username):
+    ip = client_ip()
+    now_ts = time.time()
+    bucket = LOGIN_FAILURES[ip]
+    prune_bucket(bucket, now_ts, LOGIN_WINDOW_SECONDS)
+    bucket.append(now_ts)
+    security_log("failed_login", ip=ip, username=(username or "").strip()[:80], attempts=len(bucket))
+    if len(bucket) >= LOGIN_FAILED_LIMIT:
+        LOGIN_BLOCKED_UNTIL[ip] = now_ts + LOGIN_BLOCK_SECONDS
+        bucket.clear()
+        security_log("login_ip_temporarily_blocked", ip=ip, minutes=LOGIN_BLOCK_SECONDS // 60)
+
+
+def clear_failed_logins():
+    ip = client_ip()
+    LOGIN_FAILURES.pop(ip, None)
+    LOGIN_BLOCKED_UNTIL.pop(ip, None)
+
+
+def reset_login_failure_delay():
+    time.sleep(FAILED_LOGIN_DELAY_SECONDS)
+
+
+def current_rate_scope():
+    path = request.path or ""
+    if path.startswith("/static/"):
+        return None, None
+    if path == "/login":
+        return "login-route", 20
+    if path.startswith("/api/notes") or path.startswith("/api/weekly-tasks"):
+        return "sensitive-api", SENSITIVE_API_LIMIT
+    if path.startswith("/api/"):
+        return "api", API_ROUTE_LIMIT
+    return "route", GLOBAL_ROUTE_LIMIT
+
+
+@app.before_request
+def apply_basic_security_limits():
+    if request.path == "/login" and request.method == "POST" and is_login_ip_blocked():
+        ip = client_ip()
+        security_log("blocked_login_request", ip=ip, path=request.path)
+        return jsonify({"ok": False, "error": "Too many failed login attempts. Please try again later."}), 429
+
+    scope, limit = current_rate_scope()
+    if scope and not check_rate_limit(scope, limit):
+        return jsonify({"ok": False, "error": "Too many requests. Please slow down."}), 429
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-XSS-Protection", "1; mode=block")
+    return response
 
 
 def normalize_url(url: str) -> str:
@@ -817,6 +942,9 @@ app.config["GET_DEFAULT_BANK_ID_FUNC"] = get_default_bank_id
 app.config["GET_BANK_ID_FROM_REQUEST_FUNC"] = get_bank_id_from_request
 app.config["IS_ALL_BANKS_FUNC"] = is_all_banks
 app.config["PURGE_DELETED_OLDER_THAN_30_DAYS_FUNC"] = purge_deleted_older_than_30_days
+app.config["REGISTER_FAILED_LOGIN_FUNC"] = register_failed_login
+app.config["CLEAR_FAILED_LOGINS_FUNC"] = clear_failed_logins
+app.config["FAILED_LOGIN_DELAY_FUNC"] = reset_login_failure_delay
 app.config["MODULES"] = MODULES
 
 init_db()
