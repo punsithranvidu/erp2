@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Petty Cash</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg" type="image/jpeg">
+  <link rel="shortcut icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg">
 
   <style>
     .cash-page{ display:grid; grid-template-columns:420px 1fr; gap:16px; }
@@ -31,13 +33,13 @@
 
     <!-- LEFT PANEL -->
     <div class="panel">
-      <h3>Advance</h3>
+      <h3>Petty Cash</h3>
 
       {% if role == "ADMIN" %}
       <div class="block">
-        <h4 class="miniTitle">Create New Advance (Admin)</h4>
+        <h4 class="miniTitle">Create a New Petty Cash Record (Admin)</h4>
 
-        <label>User (Admin/EMP)</label>
+        <label>User (Admin/Employee)</label>
         <select id="advEmployee"></select>
 
         <label>Bank Account</label>
@@ -65,10 +67,10 @@
         <label>Given Date</label>
         <input id="advGivenDate" type="date" />
 
-        <label>Proof Link (Drive)</label>
+        <label>Proof Link</label>
         <input id="advProofLink" />
 
-        <button id="createAdvanceBtn" class="btn" type="button">Create Advance</button>
+        <button id="createAdvanceBtn" class="btn" type="button">Create Petty Cash</button>
         <p id="advMsg" class="msg"></p>
       </div>
 
@@ -76,14 +78,14 @@
       {% endif %}
 
       <div class="block">
-        <h4 class="miniTitle">Selected Advance</h4>
+        <h4 class="miniTitle">Selected Petty Cash</h4>
 
         <div class="hr"></div>
 
         {% if role == "ADMIN" %}
         <div class="grid2">
-          <button id="closeAdvanceBtn" type="button" class="btn danger">Close Advance (Admin)</button>
-          <button id="reopenAdvanceBtn" type="button" class="btn ghost">Re-Open (Unlock) (Admin)</button>
+          <button id="closeAdvanceBtn" type="button" class="btn danger">Close Petty Cash (Admin)</button>
+          <button id="reopenAdvanceBtn" type="button" class="btn ghost">Reopen (Unlock) (Admin)</button>
         </div>
         {% endif %}
 
@@ -120,7 +122,7 @@
           </div>
         </div>
 
-        <label>Proof Link (Drive)</label>
+        <label>Proof Link</label>
         <input id="expProof" />
 
         <button id="addExpenseBtn" class="btn" type="button">Add Expense</button>
@@ -142,7 +144,7 @@
           </div>
         </div>
 
-        <label>Top-Up Proof Link (Drive)</label>
+        <label>Top-Up Proof Link</label>
         <input id="topupProof" />
 
         <button id="addTopupBtn" class="btn ghost" type="button">Add Top-Up</button>
@@ -189,10 +191,10 @@
                 <th>Employee</th>
                 <th>Currency</th>
                 <th>Total Given</th>
-                <th>Total TopUps</th>
+                <th>Total Top-Ups</th>
                 <th>Total Spent</th>
                 <th>Total Balance</th>
-                <th>Advances</th>
+                <th>Petty Cash Records</th>
               </tr>
             </thead>
             <tbody id="sumBody"></tbody>

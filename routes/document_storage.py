@@ -717,18 +717,33 @@ def api_docs_items_list():
     conn = db()
 
     if parent_id in (None, "", "ROOT", "null"):
-        rows = conn.execute(
-            """
-            SELECT *
-            FROM doc_items
-            WHERE is_active=1
-              AND deleted_at IS NULL
-              AND parent_id IS NULL
-            ORDER BY
-              CASE WHEN item_type='FOLDER' THEN 0 ELSE 1 END,
-              LOWER(name) ASC
-            """
-        ).fetchall()
+        if role == "ADMIN":
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM doc_items
+                WHERE is_active=1
+                  AND deleted_at IS NULL
+                  AND parent_id IS NULL
+                ORDER BY
+                  CASE WHEN item_type='FOLDER' THEN 0 ELSE 1 END,
+                  LOWER(name) ASC
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM doc_items
+                WHERE is_active=1
+                  AND deleted_at IS NULL
+                  AND created_by=%s
+                ORDER BY
+                  CASE WHEN item_type='FOLDER' THEN 0 ELSE 1 END,
+                  LOWER(name) ASC
+                """,
+                (username,),
+            ).fetchall()
     else:
         rows = conn.execute(
             """
@@ -753,6 +768,20 @@ def api_docs_items_list():
         if role == "ADMIN":
             out.append(item)
             continue
+
+        if parent_id in (None, "", "ROOT", "null"):
+            ancestors = get_item_ancestors(conn, r)
+            nested_under_my_item = False
+
+            for parent in ancestors:
+                if parent["deleted_at"] or int(parent["is_active"] or 0) != 1:
+                    continue
+                if (parent["created_by"] or "") == username:
+                    nested_under_my_item = True
+                    break
+
+            if nested_under_my_item:
+                continue
 
         if has_item_access_or_inherited(conn, r, uid, username, role, need_edit=False):
             out.append(item)
