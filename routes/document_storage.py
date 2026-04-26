@@ -1533,11 +1533,6 @@ def api_document_storage_sync_drive():
             if not row.get("deleted_at") and int(row.get("is_active") or 0) == 1:
                 active_db_by_drive.setdefault(drive_id, row)
 
-        admin_rows = conn.execute(
-            "SELECT id FROM users WHERE role='ADMIN' AND active=1 ORDER BY id ASC"
-        ).fetchall()
-        admin_user_ids = [int(r["id"]) for r in admin_rows]
-
         current_user = session["user"]
         sync_ts = now_iso()
         counts = {
@@ -1547,17 +1542,6 @@ def api_document_storage_sync_drive():
             "updated": 0,
         }
 
-        def grant_admin_only_permissions(item_id):
-            conn.execute("DELETE FROM doc_item_permissions WHERE item_id=%s", (item_id,))
-            for user_id in admin_user_ids:
-                conn.execute(
-                    """
-                    INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
-                    VALUES (%s, %s, 1, 1)
-                    """,
-                    (item_id, user_id),
-                )
-
         def touch_row(row, parent_id, item):
             row["parent_id"] = parent_id
             row["item_type"] = item["item_type"]
@@ -1565,6 +1549,7 @@ def api_document_storage_sync_drive():
             row["web_view_link"] = item["web_view_link"]
             row["mime_type"] = item["mime_type"]
             row["notes"] = "Synced from Google Drive"
+            row["admin_locked"] = 1
             row["is_active"] = 1
             row["deleted_at"] = None
             row["deleted_by"] = None
@@ -1624,6 +1609,7 @@ def api_document_storage_sync_drive():
                         web_view_link=%s,
                         mime_type=%s,
                         notes=%s,
+                        admin_locked=1,
                         is_active=1,
                         deleted_at=NULL,
                         deleted_by=NULL,
@@ -1643,7 +1629,6 @@ def api_document_storage_sync_drive():
                         existing_any["id"],
                     ),
                 )
-                grant_admin_only_permissions(int(existing_any["id"]))
                 touch_row(existing_any, parent_id, item)
                 active_db_by_drive[drive_id] = existing_any
                 counts["added"] += 1
@@ -1656,7 +1641,7 @@ def api_document_storage_sync_drive():
                     drive_id, web_view_link, mime_type, notes,
                     admin_locked, is_active, created_at, created_by,
                     deleted_at, deleted_by
-                ) VALUES (%s, %s, %s, 'GENERAL', %s, %s, %s, %s, 0, 1, %s, %s, NULL, NULL)
+                ) VALUES (%s, %s, %s, 'GENERAL', %s, %s, %s, %s, 1, 1, %s, %s, NULL, NULL)
                 RETURNING id
                 """,
                 (
@@ -1673,7 +1658,6 @@ def api_document_storage_sync_drive():
             ).fetchone()
 
             item_id = int(row["id"])
-            grant_admin_only_permissions(item_id)
             new_row = {
                 "id": item_id,
                 "parent_id": parent_id,
@@ -1684,7 +1668,7 @@ def api_document_storage_sync_drive():
                 "web_view_link": item["web_view_link"],
                 "mime_type": item["mime_type"],
                 "notes": "Synced from Google Drive",
-                "admin_locked": 0,
+                "admin_locked": 1,
                 "is_active": 1,
                 "created_at": sync_ts,
                 "created_by": current_user,
