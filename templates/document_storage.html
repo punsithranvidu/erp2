@@ -39,6 +39,12 @@
           <button id="refreshDocsBtn" class="btn ghost mini" type="button">Refresh</button>
         </div>
 
+        {% if role == "ADMIN" %}
+        <div class="row" style="margin-top:8px;">
+          <button id="syncDriveBtn" class="btn ghost mini" type="button">Sync Drive</button>
+        </div>
+        {% endif %}
+
         <p id="pathText" class="hint">Root</p>
       </div>
 
@@ -129,9 +135,6 @@
 
         <div class="row">
           <input id="listSearch" placeholder="Search" class="doc-search" />
-          {% if role == "ADMIN" %}
-          <button id="syncDriveBtn" class="btn ghost mini" type="button">Sync Drive</button>
-          {% endif %}
           {% if role == "ADMIN" %}
           <button id="trashSelectAllBtn" class="btn ghost mini" type="button" style="display:none;">Select All</button>
           <button id="trashClearAllBtn" class="btn ghost mini" type="button" style="display:none;">Clear</button>
