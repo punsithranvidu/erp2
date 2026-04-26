@@ -527,6 +527,54 @@ async function uploadDocument(){
   }
 }
 
+async function syncDrive(){
+  const btn = $("syncDriveBtn");
+  const originalText = btn ? btn.textContent : "Sync Drive";
+
+  try{
+    if(btn){
+      btn.disabled = true;
+      btn.textContent = "Syncing...";
+    }
+
+    const res = await fetch("/api/document-storage/sync-drive", {
+      method: "POST",
+      credentials: "same-origin"
+    });
+
+    const out = await safeJson(res);
+    if(!res.ok) throw new Error(out.error || "Drive sync failed");
+
+    clearSelection(false);
+    await loadItems();
+
+    const data = out.data || {};
+    const parts = [
+      `Added ${Number(data.added || 0)}`,
+      `Removed ${Number(data.removed || 0)}`,
+      `Updated ${Number(data.updated || 0)}`,
+      `Unchanged ${Number(data.unchanged || 0)}`
+    ];
+
+    if(Number(data.skipped_messages_folders || 0) > 0){
+      parts.push(`Skipped messages folder ${Number(data.skipped_messages_folders)}`);
+    }
+
+    if(Number(data.skipped_missing_parent || 0) > 0){
+      parts.push(`Skipped missing parent ${Number(data.skipped_missing_parent)}`);
+    }
+
+    showMsg("listMsg", `Drive sync complete. ${parts.join(" · ")}.`, true);
+  }catch(err){
+    showMsg("listMsg", err.message, false);
+  }finally{
+    if(btn){
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+}
+
 async function saveSelectedItem(){
   try{
     if(!EDITING_ID) throw new Error("Select an item first.");
@@ -824,11 +872,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const trashClearAllBtn = $("trashClearAllBtn");
   const trashRestoreSelectedBtn = $("trashRestoreSelectedBtn");
   const trashDeleteSelectedBtn = $("trashDeleteSelectedBtn");
+  const syncDriveBtn = $("syncDriveBtn");
 
   if(trashSelectAllBtn) trashSelectAllBtn.addEventListener("click", selectAllTrash);
   if(trashClearAllBtn) trashClearAllBtn.addEventListener("click", clearAllTrashSelection);
   if(trashRestoreSelectedBtn) trashRestoreSelectedBtn.addEventListener("click", () => bulkTrashAction("restore"));
   if(trashDeleteSelectedBtn) trashDeleteSelectedBtn.addEventListener("click", () => bulkTrashAction("delete_forever"));
+  if(syncDriveBtn) syncDriveBtn.addEventListener("click", syncDrive);
 
   setTrashButtons(false);
   await loadItems();

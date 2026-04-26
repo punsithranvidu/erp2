@@ -130,6 +130,9 @@
         <div class="row">
           <input id="listSearch" placeholder="Search" class="doc-search" />
           {% if role == "ADMIN" %}
+          <button id="syncDriveBtn" class="btn ghost mini" type="button">Sync Drive</button>
+          {% endif %}
+          {% if role == "ADMIN" %}
           <button id="trashSelectAllBtn" class="btn ghost mini" type="button" style="display:none;">Select All</button>
           <button id="trashClearAllBtn" class="btn ghost mini" type="button" style="display:none;">Clear</button>
           <button id="trashRestoreSelectedBtn" class="btn ghost mini" type="button" style="display:none;">Restore Selected</button>
