@@ -1005,6 +1005,30 @@ def api_weekly_tasks_edit_request_deny(request_id):
     return review_edit_request(request_id, False)
 
 
+@weekly_tasks_bp.route("/api/weekly-tasks/edit-requests/<int:request_id>/delete", methods=["DELETE"])
+@login_required
+@require_module("WEEKLY_TASKS", need_edit=True)
+def api_weekly_tasks_edit_request_delete(request_id):
+    if not is_admin():
+        return jsonify({"ok": False, "error": "Admin only"}), 403
+
+    conn = db()
+    req = conn.execute("""
+        SELECT id
+        FROM weekly_task_edit_requests
+        WHERE id=%s
+        LIMIT 1
+    """, (request_id,)).fetchone()
+    if not req:
+        conn.close()
+        return jsonify({"ok": False, "error": "Edit request not found"}), 404
+
+    conn.execute("DELETE FROM weekly_task_edit_requests WHERE id=%s", (request_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Edit request deleted"})
+
+
 @weekly_tasks_bp.route("/api/weekly-tasks/<int:task_id>/carry-forward", methods=["POST"])
 @login_required
 @require_module("WEEKLY_TASKS", need_edit=True)

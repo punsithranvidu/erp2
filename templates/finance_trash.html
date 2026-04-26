@@ -7,6 +7,51 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   <link rel="icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg" type="image/jpeg">
   <link rel="shortcut icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg">
+  <style>
+    .finance-trash-page{
+      grid-template-columns: 1fr;
+    }
+    .finance-trash-panel{
+      width: 100%;
+      max-width: 100%;
+    }
+    .finance-trash-toolbar{
+      display:flex;
+      flex-wrap:wrap;
+      gap:12px;
+      align-items:center;
+    }
+    .finance-trash-msg{
+      margin-left:auto;
+      min-height:22px;
+    }
+    .finance-trash-table-wrap{
+      width:100%;
+      overflow:auto;
+    }
+    .finance-trash-table{
+      width:100%;
+      min-width:1200px;
+    }
+    .finance-trash-table th,
+    .finance-trash-table td{
+      white-space:nowrap;
+      padding:12px 14px;
+    }
+    .finance-trash-actions{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      justify-content:flex-start;
+      flex-wrap:wrap;
+    }
+    @media (max-width: 768px){
+      .finance-trash-msg{
+        margin-left:0;
+        width:100%;
+      }
+    }
+  </style>
 </head>
 <body>
   <div class="topbar">
@@ -19,18 +64,18 @@
     </div>
   </div>
 
-  <div class="page">
-    <div class="panel wide">
-      <div class="row">
+  <div class="page finance-trash-page">
+    <div class="panel wide finance-trash-panel">
+      <div class="finance-trash-toolbar">
         <button class="btn ghost" id="refreshTrashBtn">Refresh</button>
         <button class="btn danger" id="purgeBtn">Purge Expired (30+ days)</button>
-        <span id="msg" class="msg"></span>
+        <span id="msg" class="msg finance-trash-msg"></span>
       </div>
 
       <div class="hr"></div>
 
-      <div class="tableWrap">
-        <table class="table">
+      <div class="tableWrap finance-trash-table-wrap">
+        <table class="table finance-trash-table">
           <thead>
             <tr>
               <th>ID</th>
@@ -105,7 +150,10 @@
 
           const bankName = safeText(r.bank_name || ""); // will be empty if API doesn't join bank (ok)
           const actionHtml = editable
-            ? `<button class="btn mini ok" data-restore="${r.id}">Restore</button>`
+            ? `<div class="finance-trash-actions">
+                 <button class="btn mini ok" data-restore="${r.id}">Restore</button>
+                 <button class="btn danger mini" data-delete-forever="${r.id}">Delete Permanently</button>
+               </div>`
             : `<span class="pill muted">View only</span>`;
 
           tr.innerHTML = `
@@ -124,6 +172,7 @@
 
           if(editable){
             const btn = tr.querySelector(`[data-restore="${r.id}"]`);
+            const deleteBtn = tr.querySelector(`[data-delete-forever="${r.id}"]`);
             if(btn){
               btn.addEventListener("click", async ()=>{
                 try{
@@ -131,6 +180,20 @@
                   const out = await safeJson(rr);
                   if(!rr.ok) throw new Error(out.error || "Restore failed");
                   msg(`Restored record ${r.id}`, true);
+                  await loadTrash();
+                }catch(e){
+                  msg(e.message, false);
+                }
+              });
+            }
+            if(deleteBtn){
+              deleteBtn.addEventListener("click", async ()=>{
+                if(!confirm("Are you sure? This cannot be undone.")) return;
+                try{
+                  const rr = await fetch(`/api/finance/${r.id}/delete-forever`, { method: "DELETE" });
+                  const out = await safeJson(rr);
+                  if(!rr.ok) throw new Error(out.error || "Permanent delete failed");
+                  msg(`Permanently deleted record ${r.id}`, true);
                   await loadTrash();
                 }catch(e){
                   msg(e.message, false);

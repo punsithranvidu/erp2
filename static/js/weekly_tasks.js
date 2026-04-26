@@ -441,6 +441,7 @@ function reviewItem(row, type){
       <div class="wt-actions">
         <button class="btn mini" data-approve-edit="${row.id}" type="button">Approve</button>
         <button class="btn ghost mini" data-deny-edit="${row.id}" type="button">Deny</button>
+        <button class="btn danger mini" data-delete-edit="${row.id}" type="button">Delete Request</button>
       </div>
     </div>
   `;
@@ -464,10 +465,15 @@ async function handleReviewClick(e){
   const task = e.target.closest("[data-review-task]");
   const approve = e.target.closest("[data-approve-edit]");
   const deny = e.target.closest("[data-deny-edit]");
+  const del = e.target.closest("[data-delete-edit]");
   try{
     if(task) await confirmTask(Number(task.dataset.reviewTask));
     if(approve) await api(`/api/weekly-tasks/edit-requests/${approve.dataset.approveEdit}/approve`, { method: "POST" });
     if(deny) await api(`/api/weekly-tasks/edit-requests/${deny.dataset.denyEdit}/deny`, { method: "POST" });
+    if(del){
+      if(!confirm("Delete this request permanently?")) return;
+      await api(`/api/weekly-tasks/edit-requests/${del.dataset.deleteEdit}/delete`, { method: "DELETE" });
+    }
     await loadReview();
     await loadBoard();
     showMsg("wtReviewMsg", "Review updated.", true);

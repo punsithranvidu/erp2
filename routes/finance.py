@@ -816,6 +816,28 @@ def api_finance_restore(rid):
     return jsonify({"ok": True})
 
 
+@finance_bp.route("/api/finance/<int:rid>/delete-forever", methods=["DELETE"])
+@login_required
+@require_module("FINANCE_TRASH", need_edit=True)
+def api_finance_delete_forever(rid):
+    conn = db()
+    row = conn.execute("""
+        SELECT id
+        FROM finance_records
+        WHERE id=%s
+          AND deleted_at IS NOT NULL
+        LIMIT 1
+    """, (rid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "Trash record not found"}), 404
+
+    conn.execute("DELETE FROM finance_records WHERE id=%s", (rid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
 @finance_bp.route("/api/finance/purge", methods=["POST"])
 @login_required
 @require_module("FINANCE_TRASH", need_edit=True)

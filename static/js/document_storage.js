@@ -618,7 +618,7 @@ async function deleteSelectedItem(){
     if(!res.ok) throw new Error(out.error || "Delete failed");
 
     clearSelection();
-    showMsg("editMsg", out.warning ? `Moved to trash. ${out.warning}` : "Moved to trash.", true);
+    showMsg("editMsg", "Moved to trash.", true);
     await loadItems();
   }catch(err){
     showMsg("editMsg", err.message, false);
