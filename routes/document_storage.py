@@ -1487,8 +1487,8 @@ def api_document_storage_sync_drive():
 
     conn = None
     try:
-        max_folder_depth = 2
-        max_folder_scans = 100
+        max_folder_scans = 400
+        max_synced_items = 5000
         conn = db()
         root_drive_id = get_root_drive_folder_id()
         drive_items_raw = drive_list_children(root_drive_id)
@@ -1496,6 +1496,7 @@ def api_document_storage_sync_drive():
         root_drive_items = []
         skipped = 0
         errors = []
+        stop_scan = False
 
         def normalize_drive_item(item):
             name = (item.get("name") or "").strip()
@@ -1734,18 +1735,17 @@ def api_document_storage_sync_drive():
 
         soft_delete_missing_rows(root_scope_rows, root_drive_ids)
 
-        folders_to_scan = [(row, 1) for row in root_folder_rows if row and row.get("item_type") == "FOLDER"]
+        folders_to_scan = [row for row in root_folder_rows if row and row.get("item_type") == "FOLDER"]
         scanned_folder_ids = set()
         folder_scans = 0
+        processed_items = len(root_drive_items)
 
         while folders_to_scan:
-            folder_row, depth = folders_to_scan.pop(0)
+            folder_row = folders_to_scan.pop(0)
             folder_drive_id = (folder_row.get("drive_id") or "").strip()
             if not folder_drive_id:
                 continue
             if folder_drive_id in scanned_folder_ids:
-                continue
-            if depth > max_folder_depth:
                 continue
             if folder_scans >= max_folder_scans:
                 errors.append(f"Stopped after scanning {max_folder_scans} folders to keep sync fast.")
@@ -1772,12 +1772,19 @@ def api_document_storage_sync_drive():
             child_drive_ids = set()
 
             for item in child_items:
+                if processed_items >= max_synced_items:
+                    errors.append(f"Stopped after syncing {max_synced_items} items to keep sync fast.")
+                    stop_scan = True
+                    break
                 child_drive_ids.add(item["drive_id"])
+                processed_items += 1
                 child_row = upsert_synced_item(folder_row["id"], item)
-                if depth < max_folder_depth and item["item_type"] == "FOLDER" and child_row:
-                    folders_to_scan.append((child_row, depth + 1))
+                if item["item_type"] == "FOLDER" and child_row:
+                    folders_to_scan.append(child_row)
 
             soft_delete_missing_rows(child_scope_rows, child_drive_ids)
+            if stop_scan:
+                break
 
         conn.commit()
         conn.close()
