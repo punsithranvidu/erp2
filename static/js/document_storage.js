@@ -229,7 +229,10 @@ async function loadItems(){
       url = `/api/docs/items?${params.toString()}`;
     }
 
-    const res = await fetch(url, { credentials: "same-origin" });
+    const res = await fetch(url, {
+      credentials: "same-origin",
+      cache: "no-store"
+    });
     const out = await safeJson(res);
     if(!res.ok) throw new Error(out.error || "Failed to load items");
 

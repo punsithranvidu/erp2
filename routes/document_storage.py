@@ -859,7 +859,9 @@ def api_docs_items_list():
             out.append(item)
 
     conn.close()
-    return jsonify({"ok": True, "data": out})
+    resp = jsonify({"ok": True, "data": out})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @document_storage_bp.route("/api/docs/shared", methods=["GET"])
