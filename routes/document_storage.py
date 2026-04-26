@@ -693,6 +693,282 @@ def sync_drive_shares_safe(conn, item_id, drive_id):
         )
 
 
+def normalize_drive_sync_item(item):
+    name = (item.get("name") or "").strip()
+    drive_id = (item.get("id") or "").strip()
+    if not drive_id:
+        return None
+    return {
+        "drive_id": drive_id,
+        "name": name,
+        "mime_type": item.get("mimeType"),
+        "web_view_link": item.get("webViewLink"),
+        "item_type": "FOLDER" if item.get("mimeType") == "application/vnd.google-apps.folder" else "DOCUMENT",
+    }
+
+
+def sync_drive_scope(conn, current_user, parent_row=None, sync_ts=None):
+    sync_ts = sync_ts or now_iso()
+    counts = {
+        "added": 0,
+        "removed": 0,
+        "unchanged": 0,
+        "updated": 0,
+    }
+    errors = []
+    skipped = 0
+
+    is_root_scope = parent_row is None
+    if is_root_scope:
+        scope_parent_id = None
+        scope_drive_id = get_root_drive_folder_id()
+        scope_label = "ROOT"
+    else:
+        if not parent_row:
+            return {"counts": counts, "errors": errors, "skipped": skipped}
+        if (parent_row.get("item_type") or "") != "FOLDER":
+            return {"counts": counts, "errors": errors, "skipped": skipped}
+        scope_drive_id = (parent_row.get("drive_id") or "").strip()
+        if not scope_drive_id:
+            return {"counts": counts, "errors": errors, "skipped": skipped}
+        if (parent_row.get("name") or "").strip().lower() == "messages":
+            skipped += 1
+            return {"counts": counts, "errors": errors, "skipped": skipped}
+        scope_parent_id = int(parent_row["id"])
+        scope_label = parent_row.get("name") or f"folder:{scope_parent_id}"
+
+    drive_items_raw = drive_list_children(scope_drive_id)
+    drive_items = []
+
+    for item in drive_items_raw:
+        name = (item.get("name") or "").strip()
+        if is_root_scope and name.lower() == "messages":
+            skipped += 1
+            continue
+
+        normalized = normalize_drive_sync_item(item)
+        if not normalized:
+            errors.append(f"Skipped a Drive item with no id in {scope_label}.")
+            continue
+        drive_items.append(normalized)
+
+    db_rows = conn.execute(
+        """
+        SELECT *
+        FROM doc_items
+        WHERE drive_id IS NOT NULL
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    db_rows = [dict(r) for r in db_rows]
+
+    active_db_by_drive = {}
+    any_db_by_drive = {}
+    for row in db_rows:
+        drive_id = (row.get("drive_id") or "").strip()
+        if not drive_id:
+            continue
+        any_db_by_drive.setdefault(drive_id, row)
+        if not row.get("deleted_at") and int(row.get("is_active") or 0) == 1:
+            active_db_by_drive.setdefault(drive_id, row)
+
+    def touch_row(row, parent_id, item):
+        row["parent_id"] = parent_id
+        row["item_type"] = item["item_type"]
+        row["name"] = item["name"]
+        row["web_view_link"] = item["web_view_link"]
+        row["mime_type"] = item["mime_type"]
+        row["notes"] = "Synced from Google Drive"
+        row["is_active"] = 1
+        row["deleted_at"] = None
+        row["deleted_by"] = None
+
+    def upsert_synced_item(parent_id, item):
+        drive_id = item["drive_id"]
+
+        existing_active = active_db_by_drive.get(drive_id)
+        if existing_active:
+            changed = (
+                existing_active.get("parent_id") != parent_id or
+                (existing_active.get("name") or "") != item["name"] or
+                (existing_active.get("web_view_link") or "") != item["web_view_link"] or
+                (existing_active.get("mime_type") or "") != item["mime_type"] or
+                (existing_active.get("item_type") or "") != item["item_type"]
+            )
+            if changed:
+                conn.execute(
+                    """
+                    UPDATE doc_items
+                    SET parent_id=%s,
+                        item_type=%s,
+                        name=%s,
+                        web_view_link=%s,
+                        mime_type=%s,
+                        notes=%s,
+                        edited_at=%s,
+                        edited_by=%s
+                    WHERE id=%s
+                    """,
+                    (
+                        parent_id,
+                        item["item_type"],
+                        item["name"],
+                        item["web_view_link"],
+                        item["mime_type"],
+                        "Synced from Google Drive",
+                        sync_ts,
+                        current_user,
+                        existing_active["id"],
+                    ),
+                )
+                touch_row(existing_active, parent_id, item)
+                counts["updated"] += 1
+            else:
+                counts["unchanged"] += 1
+            return existing_active
+
+        existing_any = any_db_by_drive.get(drive_id)
+        if existing_any:
+            conn.execute(
+                """
+                UPDATE doc_items
+                SET parent_id=%s,
+                    item_type=%s,
+                    name=%s,
+                    web_view_link=%s,
+                    mime_type=%s,
+                    notes=%s,
+                    admin_locked=1,
+                    is_active=1,
+                    deleted_at=NULL,
+                    deleted_by=NULL,
+                    edited_at=%s,
+                    edited_by=%s
+                WHERE id=%s
+                """,
+                (
+                    parent_id,
+                    item["item_type"],
+                    item["name"],
+                    item["web_view_link"],
+                    item["mime_type"],
+                    "Synced from Google Drive",
+                    sync_ts,
+                    current_user,
+                    existing_any["id"],
+                ),
+            )
+            touch_row(existing_any, parent_id, item)
+            active_db_by_drive[drive_id] = existing_any
+            counts["added"] += 1
+            return existing_any
+
+        row = conn.execute(
+            """
+            INSERT INTO doc_items (
+                parent_id, item_type, name, category,
+                drive_id, web_view_link, mime_type, notes,
+                admin_locked, is_active, created_at, created_by,
+                deleted_at, deleted_by
+            ) VALUES (%s, %s, %s, 'GENERAL', %s, %s, %s, %s, 1, 1, %s, %s, NULL, NULL)
+            RETURNING id
+            """,
+            (
+                parent_id,
+                item["item_type"],
+                item["name"],
+                drive_id,
+                item["web_view_link"],
+                item["mime_type"],
+                "Synced from Google Drive",
+                sync_ts,
+                current_user,
+            ),
+        ).fetchone()
+
+        new_row = {
+            "id": int(row["id"]),
+            "parent_id": parent_id,
+            "item_type": item["item_type"],
+            "name": item["name"],
+            "category": "GENERAL",
+            "drive_id": drive_id,
+            "web_view_link": item["web_view_link"],
+            "mime_type": item["mime_type"],
+            "notes": "Synced from Google Drive",
+            "admin_locked": 1,
+            "is_active": 1,
+            "created_at": sync_ts,
+            "created_by": current_user,
+            "deleted_at": None,
+            "deleted_by": None,
+        }
+        any_db_by_drive[drive_id] = new_row
+        active_db_by_drive[drive_id] = new_row
+        counts["added"] += 1
+        return new_row
+
+    if is_root_scope:
+        scope_rows = conn.execute(
+            """
+            SELECT *
+            FROM doc_items
+            WHERE parent_id IS NULL
+            """
+        ).fetchall()
+    else:
+        scope_rows = conn.execute(
+            """
+            SELECT *
+            FROM doc_items
+            WHERE parent_id=%s
+            """,
+            (scope_parent_id,),
+        ).fetchall()
+
+    scope_rows = [dict(r) for r in scope_rows]
+    present_drive_ids = set()
+
+    for item in drive_items:
+        present_drive_ids.add(item["drive_id"])
+        upsert_synced_item(scope_parent_id, item)
+
+    for row in scope_rows:
+        drive_id = (row.get("drive_id") or "").strip()
+        if not drive_id:
+            continue
+        if row.get("deleted_at") or int(row.get("is_active") or 0) != 1:
+            continue
+        if is_root_scope and row.get("item_type") == "FOLDER" and (row.get("name") or "").strip().lower() == "messages":
+            continue
+        if drive_id in present_drive_ids:
+            continue
+        conn.execute(
+            """
+            UPDATE doc_items
+            SET deleted_at=%s, deleted_by=%s, edited_at=%s, edited_by=%s
+            WHERE id=%s
+            """,
+            (sync_ts, current_user, sync_ts, current_user, row["id"]),
+        )
+        counts["removed"] += 1
+
+    return {"counts": counts, "errors": errors, "skipped": skipped}
+
+
+def sync_drive_folder_children_safe(conn, parent_row, current_user):
+    try:
+        return sync_drive_scope(conn, current_user, parent_row=parent_row, sync_ts=now_iso())
+    except Exception as e:
+        current_app.logger.warning(
+            "Document Storage folder-open sync skipped for parent_id=%s drive_id=%s: %s",
+            parent_row.get("id") if parent_row else None,
+            parent_row.get("drive_id") if parent_row else None,
+            e,
+        )
+        return {"counts": {"added": 0, "removed": 0, "unchanged": 0, "updated": 0}, "errors": [str(e)], "skipped": 0}
+
+
 @document_storage_bp.route("/google-drive/connect", methods=["GET"])
 @login_required
 def google_drive_connect():
@@ -787,6 +1063,23 @@ def api_docs_items_list():
     username = session.get("user")
     role = session.get("role")
     conn = db()
+
+    if role == "ADMIN" and parent_id not in (None, "", "ROOT", "null"):
+        try:
+            parent_row = get_item_row(conn, int(parent_id))
+            if parent_row and (parent_row["item_type"] or "") == "FOLDER" and (parent_row["drive_id"] or "").strip():
+                sync_drive_folder_children_safe(conn, dict(parent_row), username)
+                conn.commit()
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            current_app.logger.warning(
+                "Document Storage folder-open sync skipped for parent_id=%s: %s",
+                parent_id,
+                e,
+            )
 
     if parent_id in (None, "", "ROOT", "null"):
         if role == "ADMIN":
@@ -1487,304 +1780,12 @@ def api_document_storage_sync_drive():
 
     conn = None
     try:
-        max_folder_scans = 400
-        max_synced_items = 5000
         conn = db()
-        root_drive_id = get_root_drive_folder_id()
-        drive_items_raw = drive_list_children(root_drive_id)
-
-        root_drive_items = []
-        skipped = 0
-        errors = []
-        stop_scan = False
-
-        def normalize_drive_item(item):
-            name = (item.get("name") or "").strip()
-            drive_id = (item.get("id") or "").strip()
-            if not drive_id:
-                return None
-            return {
-                "drive_id": drive_id,
-                "name": name,
-                "mime_type": item.get("mimeType"),
-                "web_view_link": item.get("webViewLink"),
-                "item_type": "FOLDER" if item.get("mimeType") == "application/vnd.google-apps.folder" else "DOCUMENT",
-            }
-
-        db_rows = conn.execute(
-            """
-            SELECT *
-            FROM doc_items
-            ORDER BY id ASC
-            """
-        ).fetchall()
-
-        db_rows = [dict(r) for r in db_rows]
-        active_db_by_drive = {}
-        any_db_by_drive = {}
-
-        for row in db_rows:
-            drive_id = (row.get("drive_id") or "").strip()
-            if not drive_id:
-                continue
-            if row.get("item_type") == "FOLDER" and (row.get("name") or "").strip().lower() == "messages":
-                continue
-
-            any_db_by_drive.setdefault(drive_id, row)
-            if not row.get("deleted_at") and int(row.get("is_active") or 0) == 1:
-                active_db_by_drive.setdefault(drive_id, row)
-
         current_user = session["user"]
-        sync_ts = now_iso()
-        counts = {
-            "added": 0,
-            "removed": 0,
-            "unchanged": 0,
-            "updated": 0,
-        }
-
-        def touch_row(row, parent_id, item):
-            row["parent_id"] = parent_id
-            row["item_type"] = item["item_type"]
-            row["name"] = item["name"]
-            row["web_view_link"] = item["web_view_link"]
-            row["mime_type"] = item["mime_type"]
-            row["notes"] = "Synced from Google Drive"
-            row["admin_locked"] = 1
-            row["is_active"] = 1
-            row["deleted_at"] = None
-            row["deleted_by"] = None
-
-        def upsert_synced_item(parent_id, item):
-            drive_id = item["drive_id"]
-
-            existing_active = active_db_by_drive.get(drive_id)
-            if existing_active:
-                changed = (
-                    existing_active.get("parent_id") != parent_id or
-                    (existing_active.get("name") or "") != item["name"] or
-                    (existing_active.get("web_view_link") or "") != item["web_view_link"] or
-                    (existing_active.get("mime_type") or "") != item["mime_type"] or
-                    (existing_active.get("item_type") or "") != item["item_type"]
-                )
-                if changed:
-                    conn.execute(
-                        """
-                        UPDATE doc_items
-                        SET parent_id=%s,
-                            item_type=%s,
-                            name=%s,
-                            web_view_link=%s,
-                            mime_type=%s,
-                            notes=%s,
-                            edited_at=%s,
-                            edited_by=%s
-                        WHERE id=%s
-                        """,
-                        (
-                            parent_id,
-                            item["item_type"],
-                            item["name"],
-                            item["web_view_link"],
-                            item["mime_type"],
-                            "Synced from Google Drive",
-                            sync_ts,
-                            current_user,
-                            existing_active["id"],
-                        ),
-                    )
-                    touch_row(existing_active, parent_id, item)
-                    counts["updated"] += 1
-                else:
-                    counts["unchanged"] += 1
-                return existing_active
-
-            existing_any = any_db_by_drive.get(drive_id)
-            if existing_any:
-                conn.execute(
-                    """
-                    UPDATE doc_items
-                    SET parent_id=%s,
-                        item_type=%s,
-                        name=%s,
-                        web_view_link=%s,
-                        mime_type=%s,
-                        notes=%s,
-                        admin_locked=1,
-                        is_active=1,
-                        deleted_at=NULL,
-                        deleted_by=NULL,
-                        edited_at=%s,
-                        edited_by=%s
-                    WHERE id=%s
-                    """,
-                    (
-                        parent_id,
-                        item["item_type"],
-                        item["name"],
-                        item["web_view_link"],
-                        item["mime_type"],
-                        "Synced from Google Drive",
-                        sync_ts,
-                        current_user,
-                        existing_any["id"],
-                    ),
-                )
-                touch_row(existing_any, parent_id, item)
-                active_db_by_drive[drive_id] = existing_any
-                counts["added"] += 1
-                return existing_any
-
-            row = conn.execute(
-                """
-                INSERT INTO doc_items (
-                    parent_id, item_type, name, category,
-                    drive_id, web_view_link, mime_type, notes,
-                    admin_locked, is_active, created_at, created_by,
-                    deleted_at, deleted_by
-                ) VALUES (%s, %s, %s, 'GENERAL', %s, %s, %s, %s, 1, 1, %s, %s, NULL, NULL)
-                RETURNING id
-                """,
-                (
-                    parent_id,
-                    item["item_type"],
-                    item["name"],
-                    drive_id,
-                    item["web_view_link"],
-                    item["mime_type"],
-                    "Synced from Google Drive",
-                    sync_ts,
-                    current_user,
-                ),
-            ).fetchone()
-
-            item_id = int(row["id"])
-            new_row = {
-                "id": item_id,
-                "parent_id": parent_id,
-                "item_type": item["item_type"],
-                "name": item["name"],
-                "category": "GENERAL",
-                "drive_id": drive_id,
-                "web_view_link": item["web_view_link"],
-                "mime_type": item["mime_type"],
-                "notes": "Synced from Google Drive",
-                "admin_locked": 1,
-                "is_active": 1,
-                "created_at": sync_ts,
-                "created_by": current_user,
-                "deleted_at": None,
-                "deleted_by": None,
-            }
-            db_rows.append(new_row)
-            any_db_by_drive[drive_id] = new_row
-            active_db_by_drive[drive_id] = new_row
-            counts["added"] += 1
-            return new_row
-
-        def soft_delete_missing_rows(scope_rows, present_drive_ids):
-            for row in scope_rows:
-                drive_id = (row.get("drive_id") or "").strip()
-                if not drive_id:
-                    continue
-                if row.get("deleted_at") or int(row.get("is_active") or 0) != 1:
-                    continue
-                if drive_id in present_drive_ids:
-                    continue
-
-                conn.execute(
-                    """
-                    UPDATE doc_items
-                    SET deleted_at=%s, deleted_by=%s, edited_at=%s, edited_by=%s
-                    WHERE id=%s
-                    """,
-                    (sync_ts, current_user, sync_ts, current_user, row["id"]),
-                )
-                row["deleted_at"] = sync_ts
-                row["deleted_by"] = current_user
-                counts["removed"] += 1
-
-        for item in drive_items_raw:
-            name = (item.get("name") or "").strip()
-            if name.lower() == "messages":
-                skipped += 1
-                continue
-            normalized = normalize_drive_item(item)
-            if not normalized:
-                errors.append("Skipped a Drive item with no id.")
-                continue
-            root_drive_items.append(normalized)
-
-        root_scope_rows = [
-            row for row in db_rows
-            if row.get("parent_id") is None
-            and not (
-                row.get("item_type") == "FOLDER" and
-                (row.get("name") or "").strip().lower() == "messages"
-            )
-        ]
-
-        root_drive_ids = set()
-        root_folder_rows = []
-
-        for item in root_drive_items:
-            root_drive_ids.add(item["drive_id"])
-            row = upsert_synced_item(None, item)
-            if item["item_type"] == "FOLDER" and row:
-                root_folder_rows.append(row)
-
-        soft_delete_missing_rows(root_scope_rows, root_drive_ids)
-
-        folders_to_scan = [row for row in root_folder_rows if row and row.get("item_type") == "FOLDER"]
-        scanned_folder_ids = set()
-        folder_scans = 0
-        processed_items = len(root_drive_items)
-
-        while folders_to_scan:
-            folder_row = folders_to_scan.pop(0)
-            folder_drive_id = (folder_row.get("drive_id") or "").strip()
-            if not folder_drive_id:
-                continue
-            if folder_drive_id in scanned_folder_ids:
-                continue
-            if folder_scans >= max_folder_scans:
-                errors.append(f"Stopped after scanning {max_folder_scans} folders to keep sync fast.")
-                break
-
-            scanned_folder_ids.add(folder_drive_id)
-            folder_scans += 1
-
-            try:
-                child_drive_items_raw = drive_list_children(folder_drive_id)
-            except Exception as e:
-                errors.append(f"Failed to scan folder '{folder_row.get('name') or 'Unknown'}': {e}")
-                continue
-
-            child_items = []
-            for item in child_drive_items_raw:
-                normalized = normalize_drive_item(item)
-                if not normalized:
-                    errors.append(f"Skipped a child item with no id in folder '{folder_row.get('name') or 'Unknown'}'.")
-                    continue
-                child_items.append(normalized)
-
-            child_scope_rows = [row for row in db_rows if row.get("parent_id") == folder_row["id"]]
-            child_drive_ids = set()
-
-            for item in child_items:
-                if processed_items >= max_synced_items:
-                    errors.append(f"Stopped after syncing {max_synced_items} items to keep sync fast.")
-                    stop_scan = True
-                    break
-                child_drive_ids.add(item["drive_id"])
-                processed_items += 1
-                child_row = upsert_synced_item(folder_row["id"], item)
-                if item["item_type"] == "FOLDER" and child_row:
-                    folders_to_scan.append(child_row)
-
-            soft_delete_missing_rows(child_scope_rows, child_drive_ids)
-            if stop_scan:
-                break
+        result = sync_drive_scope(conn, current_user, parent_row=None, sync_ts=now_iso())
+        counts = result["counts"]
+        errors = result["errors"]
+        skipped = result["skipped"]
 
         conn.commit()
         conn.close()
