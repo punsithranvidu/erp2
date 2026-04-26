@@ -24,7 +24,7 @@
       <p class="sub">Logged in as <b>{{ user }}</b> ({{ 'Employee' if role == 'EMP' else 'Admin' if role == 'ADMIN' else role }})</p>
     </div>
     <div class="row">
-      <a class="btn ghost" href="/dashboard">⬅ Back</a>
+      <a class="btn ghost" href="/dashboard">Back</a>
       <a class="btn ghost" href="/logout">Logout</a>
     </div>
   </div>
@@ -107,7 +107,7 @@
 
         <label>Paid By</label>
         <select id="expPaidBy">
-          <option value="COMPANY_ADVANCE">COMPANY (from advance)</option>
+          <option value="COMPANY_ADVANCE">COMPANY (from Petty Cash)</option>
           <option value="EMPLOYEE_PERSONAL">EMPLOYEE PERSONAL (out of pocket)</option>
         </select>
 
@@ -207,13 +207,13 @@
     <!-- RIGHT PANEL -->
     <div class="panel wide">
       <div class="block">
-        <h3>Advances & Balances</h3>
+        <h3>Petty Cash Records & Balances</h3>
       </div>
 
       <div class="hr"></div>
 
       <div class="block">
-        <h4 class="miniTitle">Advances</h4>
+        <h4 class="miniTitle">Petty Cash Records</h4>
         <div class="hr"></div>
 
         <div class="tableWrap">
@@ -243,7 +243,7 @@
       <div class="hr"></div>
 
       <div class="block">
-        <h4 class="miniTitle">Top-Ups for Selected Advance</h4>
+        <h4 class="miniTitle">Top-Ups for Selected Petty Cash</h4>
         <div class="hr"></div>
 
         <div class="tableWrap">
@@ -265,7 +265,7 @@
 
         <div class="hr"></div>
 
-        <h4 class="miniTitle">Expense Breakdown for Selected Advance</h4>
+        <h4 class="miniTitle">Expense Breakdown for Selected Petty Cash Record</h4>
         <div class="hr"></div>
 
         <div class="tableWrap">
