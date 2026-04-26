@@ -3,6 +3,7 @@ import os
 import io
 import json
 import shutil
+import httplib2
 from functools import wraps
 from datetime import datetime
 
@@ -11,6 +12,7 @@ os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 from .db import connect
 
 from google.oauth2.credentials import Credentials
+from google_auth_httplib2 import AuthorizedHttp
 from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -20,6 +22,7 @@ from googleapiclient.errors import HttpError
 
 document_storage_bp = Blueprint("document_storage", __name__)
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
+DRIVE_HTTP_TIMEOUT_SECONDS = 8
 
 
 def db():
@@ -242,7 +245,8 @@ def get_oauth_drive_service():
         clear_oauth_token_file()
         raise ValueError("Google Drive connection expired or was revoked. Please click Connect / Refresh Google Drive again.")
 
-    return build("drive", "v3", credentials=creds, cache_discovery=False)
+    http = AuthorizedHttp(creds, http=httplib2.Http(timeout=DRIVE_HTTP_TIMEOUT_SECONDS))
+    return build("drive", "v3", http=http, cache_discovery=False)
 
 
 def get_redirect_uri():
@@ -677,6 +681,18 @@ def sync_drive_shares(conn, item_id, drive_id):
             pass
 
 
+def sync_drive_shares_safe(conn, item_id, drive_id):
+    try:
+        sync_drive_shares(conn, item_id, drive_id)
+    except Exception as e:
+        current_app.logger.warning(
+            "Document Storage Drive share sync skipped for item_id=%s drive_id=%s: %s",
+            item_id,
+            drive_id,
+            e,
+        )
+
+
 @document_storage_bp.route("/google-drive/connect", methods=["GET"])
 @login_required
 def google_drive_connect():
@@ -1087,7 +1103,7 @@ def api_docs_create_folder():
         item_id = row["id"]
 
         save_item_permissions(conn, item_id, session["user"], permissions)
-        sync_drive_shares(conn, item_id, created.get("id"))
+        sync_drive_shares_safe(conn, item_id, created.get("id"))
         conn.commit()
 
         row = conn.execute("SELECT * FROM doc_items WHERE id=%s", (item_id,)).fetchone()
@@ -1173,7 +1189,7 @@ def api_docs_upload():
         item_id = row["id"]
 
         save_item_permissions(conn, item_id, session["user"], permissions)
-        sync_drive_shares(conn, item_id, uploaded.get("id"))
+        sync_drive_shares_safe(conn, item_id, uploaded.get("id"))
         conn.commit()
 
         row = conn.execute("SELECT * FROM doc_items WHERE id=%s", (item_id,)).fetchone()
@@ -1256,7 +1272,7 @@ def api_docs_item_update(item_id):
 
     if permissions is not None:
         save_item_permissions(conn, item_id, item["created_by"], permissions)
-        sync_drive_shares(conn, item_id, item["drive_id"])
+        sync_drive_shares_safe(conn, item_id, item["drive_id"])
 
     conn.commit()
     row = conn.execute("SELECT * FROM doc_items WHERE id=%s", (item_id,)).fetchone()
@@ -1466,6 +1482,12 @@ def api_docs_bulk_trash_action():
 def api_document_storage_sync_drive():
     if not is_admin():
         return jsonify({"ok": False, "error": "Admin only"}), 403
+
+    if not current_app.config.get("DOCUMENT_STORAGE_DRIVE_SYNC_ENABLED", False):
+        return jsonify({
+            "ok": False,
+            "error": "Drive sync is temporarily disabled while we optimize large sync runs. Normal document storage actions still work."
+        }), 503
 
     conn = None
     try:
