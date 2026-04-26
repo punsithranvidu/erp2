@@ -4,18 +4,14 @@ import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import psycopg
-from psycopg.rows import dict_row
+from .db import connect as db_connect
 
 calendar_bp = Blueprint("calendar", __name__)
 APP_TZ = ZoneInfo("Asia/Colombo")
 
 
 def db():
-    return psycopg.connect(
-        current_app.config["DATABASE_URL"],
-        row_factory=dict_row
-    )
+    return db_connect(current_app.config["DATABASE_URL"])
 
 
 def now_iso():
