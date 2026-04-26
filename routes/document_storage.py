@@ -1483,137 +1483,120 @@ def api_document_storage_sync_drive():
     if not is_admin():
         return jsonify({"ok": False, "error": "Admin only"}), 403
 
-    if not current_app.config.get("DOCUMENT_STORAGE_DRIVE_SYNC_ENABLED", False):
-        return jsonify({
-            "ok": False,
-            "error": "Drive sync is temporarily disabled while we optimize large sync runs. Normal document storage actions still work."
-        }), 503
-
     conn = None
     try:
         conn = db()
         root_drive_id = get_root_drive_folder_id()
-        drive_items, skipped_messages_folders, ignored_root_drive_ids = drive_walk_sync_tree(root_drive_id)
+        drive_items_raw = drive_list_children(root_drive_id)
+
+        drive_items = []
+        skipped = 0
+        errors = []
+
+        for item in drive_items_raw:
+            name = (item.get("name") or "").strip()
+            if name.lower() == "messages":
+                skipped += 1
+                continue
+            drive_id = (item.get("id") or "").strip()
+            if not drive_id:
+                errors.append("Skipped a Drive item with no id.")
+                continue
+            drive_items.append({
+                "drive_id": drive_id,
+                "name": name,
+                "mime_type": item.get("mimeType"),
+                "web_view_link": item.get("webViewLink"),
+                "item_type": "FOLDER" if item.get("mimeType") == "application/vnd.google-apps.folder" else "DOCUMENT",
+            })
 
         db_rows = conn.execute(
             """
             SELECT *
             FROM doc_items
+            WHERE parent_id IS NULL
             ORDER BY id ASC
             """
         ).fetchall()
 
         db_rows = [dict(r) for r in db_rows]
-        db_by_id = {int(r["id"]): r for r in db_rows}
-        db_by_drive_any = {}
-        db_by_drive_active = {}
+        active_db_by_drive = {}
+        any_db_by_drive = {}
 
         for row in db_rows:
             drive_id = (row.get("drive_id") or "").strip()
             if not drive_id:
                 continue
+            if row.get("item_type") == "FOLDER" and (row.get("name") or "").strip().lower() == "messages":
+                continue
 
-            db_by_drive_any.setdefault(drive_id, row)
+            any_db_by_drive.setdefault(drive_id, row)
             if not row.get("deleted_at") and int(row.get("is_active") or 0) == 1:
-                db_by_drive_active.setdefault(drive_id, row)
+                active_db_by_drive.setdefault(drive_id, row)
 
-        def row_in_ignored_subtree(row):
-            if not row:
-                return False
-
-            if (row.get("drive_id") or "") in ignored_root_drive_ids:
-                return True
-
-            parent_id = row.get("parent_id")
-            while parent_id is not None:
-                parent = db_by_id.get(int(parent_id))
-                if not parent:
-                    break
-                if (parent.get("drive_id") or "") in ignored_root_drive_ids:
-                    return True
-                parent_id = parent.get("parent_id")
-
-            return False
-
-        active_parent_map = {drive_id: int(row["id"]) for drive_id, row in db_by_drive_active.items()}
-        drive_ids = {item["drive_id"] for item in drive_items if item.get("drive_id")}
-
-        added = 0
-        removed = 0
-        unchanged = 0
-        updated = 0
-        skipped_missing_parent = 0
+        admin_rows = conn.execute(
+            "SELECT id FROM users WHERE role='ADMIN' AND active=1 ORDER BY id ASC"
+        ).fetchall()
+        admin_user_ids = [int(r["id"]) for r in admin_rows]
 
         current_user = session["user"]
         sync_ts = now_iso()
+        drive_ids = set()
+        added = 0
+        removed = 0
+        unchanged = 0
 
-        for item in drive_items:
-            drive_id = (item.get("drive_id") or "").strip()
-            if not drive_id:
-                continue
-
-            existing_any = db_by_drive_any.get(drive_id)
-            parent_drive_id = item.get("parent_drive_id")
-
-            resolved_parent_id = None
-            if parent_drive_id and parent_drive_id != root_drive_id:
-                resolved_parent_id = active_parent_map.get(parent_drive_id)
-                if resolved_parent_id is None and not existing_any:
-                    skipped_missing_parent += 1
-                    continue
-
-            if existing_any:
-                if existing_any.get("deleted_at") or int(existing_any.get("is_active") or 0) != 1:
-                    continue
-
-                desired_parent_id = existing_any.get("parent_id")
-                if parent_drive_id == root_drive_id:
-                    desired_parent_id = None
-                elif resolved_parent_id is not None:
-                    desired_parent_id = resolved_parent_id
-
-                changed = (
-                    (existing_any.get("name") or "") != (item.get("name") or "") or
-                    (existing_any.get("web_view_link") or "") != (item.get("web_view_link") or "") or
-                    (existing_any.get("mime_type") or "") != (item.get("mime_type") or "") or
-                    (existing_any.get("item_type") or "") != (item.get("item_type") or "") or
-                    existing_any.get("parent_id") != desired_parent_id
+        def grant_admin_only_permissions(item_id):
+            conn.execute("DELETE FROM doc_item_permissions WHERE item_id=%s", (item_id,))
+            for user_id in admin_user_ids:
+                conn.execute(
+                    """
+                    INSERT INTO doc_item_permissions (item_id, user_id, can_access, can_edit)
+                    VALUES (%s, %s, 1, 1)
+                    """,
+                    (item_id, user_id),
                 )
 
-                if changed:
-                    conn.execute(
-                        """
-                        UPDATE doc_items
-                        SET parent_id=%s,
-                            item_type=%s,
-                            name=%s,
-                            web_view_link=%s,
-                            mime_type=%s,
-                            edited_at=%s,
-                            edited_by=%s
-                        WHERE id=%s
-                        """,
-                        (
-                            desired_parent_id,
-                            item.get("item_type"),
-                            item.get("name"),
-                            item.get("web_view_link"),
-                            item.get("mime_type"),
-                            sync_ts,
-                            current_user,
-                            existing_any["id"],
-                        ),
-                    )
-                    existing_any["parent_id"] = desired_parent_id
-                    existing_any["item_type"] = item.get("item_type")
-                    existing_any["name"] = item.get("name")
-                    existing_any["web_view_link"] = item.get("web_view_link")
-                    existing_any["mime_type"] = item.get("mime_type")
-                    updated += 1
-                else:
-                    unchanged += 1
+        for item in drive_items:
+            drive_id = item["drive_id"]
+            drive_ids.add(drive_id)
 
-                active_parent_map[drive_id] = int(existing_any["id"])
+            existing_active = active_db_by_drive.get(drive_id)
+            if existing_active:
+                unchanged += 1
+                continue
+
+            existing_any = any_db_by_drive.get(drive_id)
+            if existing_any:
+                conn.execute(
+                    """
+                    UPDATE doc_items
+                    SET parent_id=NULL,
+                        item_type=%s,
+                        name=%s,
+                        web_view_link=%s,
+                        mime_type=%s,
+                        notes=%s,
+                        is_active=1,
+                        deleted_at=NULL,
+                        deleted_by=NULL,
+                        edited_at=%s,
+                        edited_by=%s
+                    WHERE id=%s
+                    """,
+                    (
+                        item["item_type"],
+                        item["name"],
+                        item["web_view_link"],
+                        item["mime_type"],
+                        "Synced from Google Drive",
+                        sync_ts,
+                        current_user,
+                        existing_any["id"],
+                    ),
+                )
+                grant_admin_only_permissions(int(existing_any["id"]))
+                added += 1
                 continue
 
             row = conn.execute(
@@ -1623,50 +1606,31 @@ def api_document_storage_sync_drive():
                     drive_id, web_view_link, mime_type, notes,
                     admin_locked, is_active, created_at, created_by,
                     deleted_at, deleted_by
-                ) VALUES (%s, %s, %s, 'GENERAL', %s, %s, %s, %s, 0, 1, %s, %s, NULL, NULL)
+                ) VALUES (NULL, %s, %s, 'GENERAL', %s, %s, %s, %s, 0, 1, %s, %s, NULL, NULL)
                 RETURNING id
                 """,
                 (
-                    resolved_parent_id,
-                    item.get("item_type"),
-                    item.get("name"),
+                    item["item_type"],
+                    item["name"],
                     drive_id,
-                    item.get("web_view_link"),
-                    item.get("mime_type"),
+                    item["web_view_link"],
+                    item["mime_type"],
                     "Synced from Google Drive",
                     sync_ts,
                     current_user,
                 ),
             ).fetchone()
 
-            item_id = int(row["id"])
-            save_item_permissions(conn, item_id, current_user, [])
-
-            new_row = {
-                "id": item_id,
-                "parent_id": resolved_parent_id,
-                "item_type": item.get("item_type"),
-                "name": item.get("name"),
-                "drive_id": drive_id,
-                "web_view_link": item.get("web_view_link"),
-                "mime_type": item.get("mime_type"),
-                "deleted_at": None,
-                "is_active": 1,
-                "created_by": current_user,
-            }
-            db_by_id[item_id] = new_row
-            db_by_drive_any[drive_id] = new_row
-            db_by_drive_active[drive_id] = new_row
-            active_parent_map[drive_id] = item_id
+            grant_admin_only_permissions(int(row["id"]))
             added += 1
 
         for row in db_rows:
             drive_id = (row.get("drive_id") or "").strip()
             if not drive_id:
                 continue
-            if row.get("deleted_at") or int(row.get("is_active") or 0) != 1:
+            if row.get("item_type") == "FOLDER" and (row.get("name") or "").strip().lower() == "messages":
                 continue
-            if row_in_ignored_subtree(row):
+            if row.get("deleted_at") or int(row.get("is_active") or 0) != 1:
                 continue
             if drive_id in drive_ids:
                 continue
@@ -1684,23 +1648,38 @@ def api_document_storage_sync_drive():
         conn.commit()
         conn.close()
 
+        data = {
+            "added": added,
+            "removed": removed,
+            "unchanged": unchanged,
+            "updated": 0,
+            "skipped": skipped,
+            "skipped_messages_folders": skipped,
+            "errors": errors,
+        }
+
         return jsonify({
             "ok": True,
-            "data": {
-                "added": added,
-                "removed": removed,
-                "unchanged": unchanged,
-                "updated": updated,
-                "skipped_messages_folders": skipped_messages_folders,
-                "skipped_missing_parent": skipped_missing_parent,
-            }
+            "success": True,
+            "added": added,
+            "removed": removed,
+            "unchanged": unchanged,
+            "skipped": skipped,
+            "errors": errors,
+            "data": data,
         })
 
     except Exception as e:
+        current_app.logger.exception("Document Storage Drive sync failed")
         try:
             if conn:
                 conn.rollback()
                 conn.close()
         except Exception:
             pass
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({
+            "ok": False,
+            "success": False,
+            "error": str(e),
+            "errors": [str(e)],
+        }), 500
