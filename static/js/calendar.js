@@ -461,6 +461,15 @@ async function loadMonth() {
   renderMonth();
 }
 
+async function loadMonthSafe() {
+  try {
+    await loadMonth();
+  } catch (err) {
+    console.error("Calendar month load failed:", err);
+    renderMonth();
+  }
+}
+
 function filterRequestsForVisibleMonth(rows) {
   return (rows || []).filter((r) => {
     const start = String(r.start_date || "");
@@ -1325,7 +1334,7 @@ function shiftMonth(delta) {
   const d = new Date(y, m - 1 + delta, 1);
   CURRENT_MONTH = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   updateHistoryMonthNote();
-  loadMonth();
+  loadMonthSafe();
   loadRequests();
 }
 
@@ -1338,7 +1347,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateHistoryMonthNote();
   updatePanelsByView();
 
-  await loadMonth();
+  renderMonth();
+
+  await loadMonthSafe();
   await loadSchedules();
   await loadRequests();
   await ensureNotificationPermission();
@@ -1364,7 +1375,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     updateViewModeNote();
     updatePanelsByView();
     await loadSchedules();
-    await loadMonth();
+    await loadMonthSafe();
     await loadRequests();
   });
 
@@ -1376,7 +1387,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     CURRENT_MONTH = now.month;
     SELECTED_DATE = now.date;
     updateHistoryMonthNote();
-    await loadMonth();
+    await loadMonthSafe();
     await loadRequests();
   });
 

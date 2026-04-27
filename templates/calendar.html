@@ -10,9 +10,13 @@
   <style>
     .cal-wrap{
       display:grid;
-      grid-template-columns:1.35fr .95fr;
+      grid-template-columns:minmax(0,1.35fr) minmax(320px,.95fr);
       gap:16px;
       align-items:start;
+    }
+
+    .cal-wrap > div{
+      min-width:0;
     }
 
     .cal-toolbar,
@@ -25,9 +29,10 @@
 
     .cal-grid{
       display:grid;
-      grid-template-columns:repeat(7,1fr);
+      grid-template-columns:repeat(7,minmax(0,1fr));
       gap:8px;
       margin-top:12px;
+      min-width:0;
     }
 
     .cal-week{
@@ -43,6 +48,7 @@
       border:1px solid #e5e7eb;
       border-radius:14px;
       min-height:130px;
+      min-width:0;
       padding:8px;
       cursor:pointer;
       transition:all .18s ease;
