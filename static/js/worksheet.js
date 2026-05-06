@@ -139,7 +139,7 @@ function updateAdminModeButtons() {
 
 function openAdminNotice() {
   const modal = $("wsAdminNotice");
-  if (!modal || !isAdmin()) return;
+  if (!modal) return;
   requestAnimationFrame(() => {
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
@@ -527,10 +527,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (isAdmin()) {
       await loadUsersForAdmin();
       await loadMyWorksheet();
-      openAdminNotice();
     } else {
       await loadMyWorksheet();
     }
+
+    openAdminNotice();
 
     $("wsLoadBtn")?.addEventListener("click", async () => {
       try {
