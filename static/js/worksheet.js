@@ -137,6 +137,22 @@ function updateAdminModeButtons() {
   }
 }
 
+function openAdminNotice() {
+  const modal = $("wsAdminNotice");
+  if (!modal || !isAdmin()) return;
+  requestAnimationFrame(() => {
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+  });
+}
+
+function closeAdminNotice() {
+  const modal = $("wsAdminNotice");
+  if (!modal) return;
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+}
+
 function rowClass(row) {
   return Number(row.is_workday || 0) === 0 ? "ws-day-off" : "";
 }
@@ -510,11 +526,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (isAdmin()) {
       await loadUsersForAdmin();
-      CURRENT_MODE = "admin-view";
-      CURRENT_TARGET_USER_ID = null;
-      CURRENT_TARGET_ROLE = "";
-      CURRENT_TARGET_NAME = "";
-      renderRows();
+      await loadMyWorksheet();
+      openAdminNotice();
     } else {
       await loadMyWorksheet();
     }
@@ -550,10 +563,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         if ($("wsUserSelect").value) {
           await loadAdminSelectedWorksheet();
         } else {
-          renderRows();
+          await loadMyWorksheet();
         }
       } catch (err) {
         showMsg(err.message, false);
+      }
+    });
+
+    $("wsAdminNoticeClose")?.addEventListener("click", closeAdminNotice);
+    $("wsAdminNotice")?.addEventListener("click", (e) => {
+      if (e.target === $("wsAdminNotice")) {
+        closeAdminNotice();
       }
     });
   } catch (err) {

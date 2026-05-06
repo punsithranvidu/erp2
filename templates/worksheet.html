@@ -228,6 +228,93 @@
       border:1px solid #e2e8f0;
     }
 
+    .ws-notice-modal{
+      position:fixed;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      background:rgba(15,23,42,.38);
+      backdrop-filter:blur(4px);
+      z-index:1200;
+      opacity:0;
+      visibility:hidden;
+      transition:opacity .22s ease, visibility .22s ease;
+    }
+
+    .ws-notice-modal.open{
+      opacity:1;
+      visibility:visible;
+    }
+
+    .ws-notice-card{
+      width:min(520px,100%);
+      background:#fff;
+      border:1px solid #dbeafe;
+      border-radius:18px;
+      box-shadow:0 22px 48px rgba(15,23,42,.18);
+      padding:20px 20px 18px;
+      transform:translateY(10px) scale(.98);
+      transition:transform .24s ease;
+    }
+
+    .ws-notice-modal.open .ws-notice-card{
+      transform:translateY(0) scale(1);
+    }
+
+    .ws-notice-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:12px;
+    }
+
+    .ws-notice-head h4{
+      margin:0;
+      color:#0f172a;
+      font-size:18px;
+    }
+
+    .ws-notice-close{
+      width:34px;
+      height:34px;
+      min-width:34px;
+      border-radius:999px;
+      border:1px solid #dbeafe;
+      background:#f8fbff;
+      color:#334155;
+      font-size:18px;
+      line-height:1;
+      cursor:pointer;
+      transition:all .18s ease;
+    }
+
+    .ws-notice-close:hover{
+      background:#eff6ff;
+      border-color:#bfdbfe;
+    }
+
+    .ws-notice-copy{
+      color:#475569;
+      font-size:14px;
+      line-height:1.65;
+    }
+
+    .ws-notice-copy p{
+      margin:0 0 10px 0;
+    }
+
+    .ws-notice-copy ul{
+      margin:0 0 12px 18px;
+      padding:0;
+    }
+
+    .ws-notice-copy li{
+      margin:0 0 6px 0;
+    }
+
     @media (max-width: 900px){
       .ws-controls{
         flex-direction:column;
@@ -324,6 +411,30 @@
       </div>
     </div>
   </div>
+
+  {% if role == "ADMIN" %}
+  <div id="wsAdminNotice" class="ws-notice-modal" aria-hidden="true">
+    <div class="ws-notice-card">
+      <div class="ws-notice-head">
+        <div>
+          <h4>Worksheet Notice</h4>
+        </div>
+        <button id="wsAdminNoticeClose" class="ws-notice-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="ws-notice-copy">
+        <p>Worksheet details should be written clearly and specifically.</p>
+        <p>Employees must explain:</p>
+        <ul>
+          <li>what work was done</li>
+          <li>exact task details</li>
+          <li>real time taken to complete the task</li>
+        </ul>
+        <p>This helps compare completed work with monthly company performance and overall business results.</p>
+        <p>This system and workflow guidance has been validated internally.</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <script src="{{ url_for('static', filename='js/worksheet.js') }}"></script>
 </body>
