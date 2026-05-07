@@ -1,0 +1,270 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Individual Achievement</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg" type="image/jpeg">
+  <link rel="shortcut icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg">
+  <style>
+    .ia-page{
+      grid-template-columns:360px 1fr;
+      align-items:start;
+    }
+    .ia-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:12px;
+      margin-bottom:14px;
+      flex-wrap:wrap;
+    }
+    .ia-head h3,
+    .ia-section-head h3{
+      margin:0;
+    }
+    .ia-filters{
+      display:grid;
+      grid-template-columns:minmax(220px, 1.6fr) minmax(180px, 1fr) auto auto;
+      gap:10px;
+      align-items:end;
+      margin-bottom:16px;
+    }
+    .ia-filters label{
+      display:block;
+      font-size:12px;
+      font-weight:700;
+      color:#64748b;
+      margin:0 0 5px;
+    }
+    .ia-filters input,
+    .ia-filters select{
+      width:100%;
+      box-sizing:border-box;
+    }
+    .ia-section{
+      margin-top:18px;
+    }
+    .ia-section:first-of-type{
+      margin-top:0;
+    }
+    .ia-section-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-end;
+      gap:10px;
+      margin-bottom:10px;
+      flex-wrap:wrap;
+    }
+    .ia-table-wrap{
+      overflow:auto;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:#fff;
+    }
+    .ia-table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:980px;
+    }
+    .ia-table th,
+    .ia-table td{
+      border-bottom:1px solid #eef2f7;
+      padding:10px;
+      text-align:left;
+      vertical-align:top;
+      font-size:13px;
+    }
+    .ia-table th{
+      background:#f8fafc;
+      color:#334155;
+      font-weight:700;
+      white-space:nowrap;
+    }
+    .ia-copy{
+      white-space:pre-wrap;
+      min-width:220px;
+      line-height:1.5;
+    }
+    .ia-meta{
+      font-size:12px;
+      color:#64748b;
+      white-space:nowrap;
+    }
+    .ia-visibility{
+      display:inline-flex;
+      align-items:center;
+      border-radius:999px;
+      padding:4px 9px;
+      border:1px solid #dbeafe;
+      background:#eff6ff;
+      color:#1d4ed8;
+      font-size:12px;
+      font-weight:700;
+      white-space:nowrap;
+    }
+    .ia-visibility.admins{
+      border-color:#fde68a;
+      background:#fffbeb;
+      color:#92400e;
+    }
+    .ia-visibility.only-me{
+      border-color:#e5e7eb;
+      background:#f8fafc;
+      color:#475569;
+    }
+    .ia-actions{
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+    }
+    .ia-empty{
+      padding:26px 20px;
+      text-align:center;
+      color:#64748b;
+      font-size:13px;
+    }
+    .ia-note{
+      margin:0 0 14px;
+      color:#64748b;
+      font-size:13px;
+      line-height:1.55;
+    }
+    @media (max-width: 1100px){
+      .ia-page{
+        grid-template-columns:1fr;
+      }
+    }
+    @media (max-width: 760px){
+      .ia-filters{
+        grid-template-columns:1fr;
+      }
+    }
+  </style>
+</head>
+<body data-user="{{ user }}" data-role="{{ role }}">
+  <div class="topbar">
+    <div>
+      <h2>Individual Achievement</h2>
+      <p class="sub">Logged in as <b>{{ user }}</b> ({{ 'Employee' if role == 'EMP' else 'Admin' if role == 'ADMIN' else role }})</p>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/dashboard">Back</a>
+      <a class="btn ghost" href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page ia-page">
+    <div class="panel">
+      <h3 id="iaFormTitle">Add Achievement</h3>
+      <p class="ia-note">Record important work achievements with the time period, work done, time spent, results, and sharing visibility.</p>
+
+      <div class="form">
+        <label for="iaTimePeriod">Time Period</label>
+        <input id="iaTimePeriod" type="text" placeholder="Example: February 2024 to April 2024" />
+
+        <label for="iaAchievedWork">Achieved Work / Done Work</label>
+        <textarea id="iaAchievedWork" rows="6" placeholder="Describe the achievement clearly"></textarea>
+
+        <label for="iaTimeSpent">Time Spent</label>
+        <input id="iaTimeSpent" type="text" placeholder="Example: 2+ months" />
+
+        <label for="iaResultsGot">Results Achieved</label>
+        <textarea id="iaResultsGot" rows="7" placeholder="Explain the results and impact"></textarea>
+
+        <label for="iaVisibility">Visibility</label>
+        <select id="iaVisibility">
+          <option value="EVERYONE">Share with Everyone</option>
+          <option value="ADMINS">Admins Only</option>
+          <option value="ONLY_ME">Only Me</option>
+        </select>
+
+        <div class="row" style="margin-top:14px;">
+          <button class="btn" id="iaSaveBtn" type="button">Save</button>
+          <button class="btn ghost" id="iaClearBtn" type="button">Clear</button>
+        </div>
+        <div class="msg" id="iaMsg"></div>
+      </div>
+    </div>
+
+    <div class="panel wide">
+      <div class="ia-head">
+        <div>
+          <h3>Achievements</h3>
+          <p class="sub">View your own achievements and other visible/shared entries.</p>
+        </div>
+        <button class="btn ghost mini" id="iaRefreshBtn" type="button">Refresh</button>
+      </div>
+
+      <div class="ia-filters">
+        <div>
+          <label for="iaSearch">Search</label>
+          <input id="iaSearch" type="search" placeholder="Search work, results, time period, or time spent" />
+        </div>
+        <div>
+          <label for="iaUserFilter">Filter by User</label>
+          <select id="iaUserFilter">
+            <option value="">All visible users</option>
+          </select>
+        </div>
+        <button class="btn" id="iaApplyFiltersBtn" type="button">Apply</button>
+        <button class="btn ghost" id="iaResetFiltersBtn" type="button">Reset</button>
+      </div>
+
+      <div class="ia-section">
+        <div class="ia-section-head">
+          <div>
+            <h3>My Achievements</h3>
+            <p class="sub" id="iaMyCount">0 records</p>
+          </div>
+        </div>
+        <div class="ia-table-wrap">
+          <table class="ia-table">
+            <thead>
+              <tr>
+                <th style="width:160px;">Time Period</th>
+                <th>Achieved Work</th>
+                <th style="width:140px;">Time Spent</th>
+                <th>Results Achieved</th>
+                <th style="width:150px;">Visibility</th>
+                <th style="width:170px;">Updated</th>
+                <th style="width:150px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="iaMyBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="ia-section">
+        <div class="ia-section-head">
+          <div>
+            <h3 id="iaVisibleTitle">Visible Achievements</h3>
+            <p class="sub" id="iaVisibleCount">0 records</p>
+          </div>
+        </div>
+        <div class="ia-table-wrap">
+          <table class="ia-table">
+            <thead>
+              <tr>
+                <th style="width:170px;">Employee</th>
+                <th style="width:160px;">Time Period</th>
+                <th>Achieved Work</th>
+                <th style="width:140px;">Time Spent</th>
+                <th>Results Achieved</th>
+                <th style="width:150px;">Visibility</th>
+                <th style="width:170px;">Updated</th>
+                <th style="width:150px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="iaVisibleBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/individual_achievement.js') }}"></script>
+</body>
+</html>

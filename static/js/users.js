@@ -17,7 +17,8 @@ const MODULES = [
   { key: "WORKSHEET", label: "Worksheet" },
   { key: "ATTENDANCE", label: "Attendance" },
   { key: "MARKETING_EMAILS", label: "Marketing Emails" },
-  { key: "NOTES", label: "Notes" }
+  { key: "NOTES", label: "Notes" },
+  { key: "INDIVIDUAL_ACHIEVEMENT", label: "Individual Achievement" }
 ];
 
 function showMsg(id, text, ok){
