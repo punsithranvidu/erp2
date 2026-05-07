@@ -450,6 +450,9 @@ def achievement_to_dict(row, contributors=None):
         "updated_at": row.get("updated_at") or "",
         "updated_by": row.get("updated_by") or "",
         "updated_by_user_id": row.get("updated_by_user_id"),
+        "deleted_at": row.get("deleted_at") or "",
+        "deleted_by": row.get("deleted_by") or "",
+        "deleted_by_user_id": row.get("deleted_by_user_id"),
         "edited_at": edited_at,
         "edited_by": edited_by,
         "contributors": contributor_rows,
@@ -479,6 +482,25 @@ def fetch_achievement_rows(conn, where_sql, vals, q):
           {search_sql}
         ORDER BY COALESCE(ia.updated_at, ia.created_at) DESC, ia.id DESC
     """, tuple(params)).fetchall()
+
+    row_dicts = [dict(r) for r in rows]
+    contributor_map = get_contributors_map(conn, [row["id"] for row in row_dicts])
+    return [achievement_to_dict(row, contributor_map.get(int(row["id"]), [])) for row in row_dicts]
+
+
+def fetch_deleted_achievement_rows(conn):
+    rows = conn.execute("""
+        SELECT
+            ia.*,
+            u.username AS owner_username,
+            u.full_name AS owner_full_name,
+            u.role AS owner_role
+        FROM individual_achievements ia
+        LEFT JOIN users u ON u.id=ia.user_id
+        WHERE COALESCE(ia.is_deleted, 0)=1
+        ORDER BY COALESCE(ia.deleted_at, ia.updated_at, ia.created_at) DESC, ia.id DESC
+        LIMIT 1000
+    """).fetchall()
 
     row_dicts = [dict(r) for r in rows]
     contributor_map = get_contributors_map(conn, [row["id"] for row in row_dicts])
@@ -867,4 +889,75 @@ def api_individual_achievement_delete(achievement_id):
     ))
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "message": "Achievement deleted successfully"})
+    return jsonify({"ok": True, "message": "Achievement moved to trash successfully"})
+
+
+@individual_achievement_bp.route("/api/individual-achievement/trash", methods=["GET"])
+@login_required
+@require_module("INDIVIDUAL_ACHIEVEMENT")
+def api_individual_achievement_trash():
+    if not is_admin():
+        return jsonify({"ok": False, "error": "Admin only"}), 403
+
+    conn = db()
+    rows = fetch_deleted_achievement_rows(conn)
+    conn.close()
+    return jsonify({"ok": True, "data": rows})
+
+
+@individual_achievement_bp.route("/api/individual-achievement/trash/<int:achievement_id>/recover", methods=["POST"])
+@login_required
+@require_module("INDIVIDUAL_ACHIEVEMENT", need_edit=True)
+def api_individual_achievement_trash_recover(achievement_id):
+    if not is_admin():
+        return jsonify({"ok": False, "error": "Admin only"}), 403
+
+    restored_at = now_iso()
+    conn = db()
+    row = conn.execute("""
+        UPDATE individual_achievements
+        SET is_deleted=0,
+            deleted_at=NULL,
+            deleted_by=NULL,
+            deleted_by_user_id=NULL,
+            updated_at=%s,
+            updated_by=%s,
+            updated_by_user_id=%s
+        WHERE id=%s
+          AND COALESCE(is_deleted, 0)=1
+        RETURNING id
+    """, (
+        restored_at,
+        session.get("user"),
+        current_user_id(),
+        achievement_id,
+    )).fetchone()
+
+    conn.commit()
+    conn.close()
+
+    if not row:
+        return jsonify({"ok": False, "error": "Trash achievement not found"}), 404
+    return jsonify({"ok": True, "message": "Achievement restored successfully"})
+
+
+@individual_achievement_bp.route("/api/individual-achievement/trash/<int:achievement_id>/permanent", methods=["DELETE"])
+@login_required
+@require_module("INDIVIDUAL_ACHIEVEMENT", need_edit=True)
+def api_individual_achievement_trash_permanent(achievement_id):
+    if not is_admin():
+        return jsonify({"ok": False, "error": "Admin only"}), 403
+
+    conn = db()
+    row = conn.execute("""
+        DELETE FROM individual_achievements
+        WHERE id=%s
+          AND COALESCE(is_deleted, 0)=1
+        RETURNING id
+    """, (achievement_id,)).fetchone()
+    conn.commit()
+    conn.close()
+
+    if not row:
+        return jsonify({"ok": False, "error": "Trash achievement not found"}), 404
+    return jsonify({"ok": True, "message": "Achievement permanently deleted"})

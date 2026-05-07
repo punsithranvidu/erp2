@@ -41,8 +41,9 @@
     .ia-page.form-collapsed .ia-form-card{
       opacity:1;
       transform:none;
-      padding-left:0;
-      padding-right:0;
+      min-height:0;
+      height:0;
+      padding:0;
       border-color:transparent;
       background:transparent;
       box-shadow:none;
@@ -65,6 +66,16 @@
       pointer-events:auto;
       width:24px;
       height:86px;
+    }
+
+    .ia-page.form-collapsed .ia-collapse-rail{
+      position:fixed;
+      top:96px;
+      left:22px;
+      right:auto;
+      transform:none;
+      height:40px;
+      z-index:8;
     }
 
     .ia-collapse-rail::before{
@@ -224,6 +235,39 @@
       flex-wrap:wrap;
     }
 
+    .ia-tabs{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin:0 0 14px;
+      border-bottom:1px solid var(--line);
+      padding-bottom:10px;
+    }
+
+    .ia-tab{
+      border:1px solid var(--line);
+      background:#fff;
+      color:var(--text);
+      border-radius:10px;
+      padding:8px 12px;
+      cursor:pointer;
+      font-weight:700;
+    }
+
+    .ia-tab.active{
+      border-color:rgba(37,99,235,.35);
+      background:rgba(37,99,235,.10);
+      color:var(--accent);
+    }
+
+    .ia-section{
+      display:none;
+    }
+
+    .ia-section.active{
+      display:block;
+    }
+
     .ia-scope h3,
     .ia-scope p{
       margin:0;
@@ -380,6 +424,10 @@
       font-size:13px;
     }
 
+    .ia-trash-msg{
+      margin-top:12px;
+    }
+
     .ia-modal{
       display:none;
       position:fixed;
@@ -459,6 +507,7 @@
 
       .ia-page.form-collapsed .ia-form-card{
         padding:16px;
+        height:auto;
         border-color:var(--line);
         background:#fff;
         box-shadow:var(--shadow);
@@ -543,45 +592,82 @@
         <button class="btn ghost mini" id="iaRefreshBtn" type="button">Refresh</button>
       </div>
 
-      <div class="ia-filter-grid">
-        <div>
-          <label for="iaSearch">Search</label>
-          <input id="iaSearch" type="search" placeholder="Search work, results, time period, owners, or contributors" />
-        </div>
-        <div id="iaUserFilterWrap">
-          <label for="iaUserFilter">View As User</label>
-          <select id="iaUserFilter">
-            <option value="">All records</option>
-          </select>
-        </div>
-        <button class="btn" id="iaApplyFiltersBtn" type="button">Apply</button>
-        <button class="btn ghost" id="iaResetFiltersBtn" type="button">Reset</button>
+      <div class="ia-tabs">
+        <button class="ia-tab active" data-tab="records" type="button">Achievements</button>
+        {% if role == "ADMIN" %}
+        <button class="ia-tab" data-tab="trash" type="button">Trash</button>
+        {% endif %}
       </div>
 
-      <div class="ia-scope">
-        <p class="ia-note" style="margin:0;">One clean table is used for personal, shared, and contributor-linked achievements.</p>
-        <p class="ia-count" id="iaTableCount">0 records</p>
-      </div>
+      <section class="ia-section active" id="iaTabRecords">
+        <div class="ia-filter-grid">
+          <div>
+            <label for="iaSearch">Search</label>
+            <input id="iaSearch" type="search" placeholder="Search work, results, time period, owners, or contributors" />
+          </div>
+          <div id="iaUserFilterWrap">
+            <label for="iaUserFilter">View As User</label>
+            <select id="iaUserFilter">
+              <option value="">All records</option>
+            </select>
+          </div>
+          <button class="btn" id="iaApplyFiltersBtn" type="button">Apply</button>
+          <button class="btn ghost" id="iaResetFiltersBtn" type="button">Reset</button>
+        </div>
 
-      <div class="ia-table-wrap">
-        <table class="ia-table">
-          <thead>
-            <tr>
-              <th style="width:180px;">Owner</th>
-              <th style="width:170px;">Time Period</th>
-              <th>Achieved Work</th>
-              <th style="width:140px;">Time Spent</th>
-              <th>Results Achieved</th>
-              <th style="width:220px;">Contributors</th>
-              <th style="width:150px;">Visibility</th>
-              <th style="width:190px;">Last Edited</th>
-              <th style="width:130px;">Access</th>
-              <th style="width:180px;">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="iaTableBody"></tbody>
-        </table>
-      </div>
+        <div class="ia-scope">
+          <p class="ia-note" style="margin:0;">One clean table is used for personal, shared, and contributor-linked achievements.</p>
+          <p class="ia-count" id="iaTableCount">0 records</p>
+        </div>
+
+        <div class="ia-table-wrap">
+          <table class="ia-table">
+            <thead>
+              <tr>
+                <th>Achieved Work</th>
+                <th>Results Achieved</th>
+                <th style="width:220px;">Contributors</th>
+                <th style="width:170px;">Time Period</th>
+                <th style="width:140px;">Time Spent</th>
+                <th style="width:150px;">Visibility</th>
+                <th style="width:190px;">Last Edited</th>
+                <th style="width:180px;">Owner</th>
+                <th style="width:130px;">Access</th>
+                <th style="width:180px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="iaTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      {% if role == "ADMIN" %}
+      <section class="ia-section" id="iaTabTrash">
+        <div class="ia-scope">
+          <p class="ia-note" style="margin:0;">Deleted achievements are kept here until an admin restores or permanently removes them.</p>
+          <p class="ia-count" id="iaTrashCount">0 records</p>
+        </div>
+
+        <div class="ia-table-wrap">
+          <table class="ia-table">
+            <thead>
+              <tr>
+                <th>Achieved Work</th>
+                <th>Results Achieved</th>
+                <th style="width:220px;">Contributors</th>
+                <th style="width:170px;">Time Period</th>
+                <th style="width:160px;">Owner</th>
+                <th style="width:170px;">Deleted By</th>
+                <th style="width:170px;">Deleted At</th>
+                <th style="width:200px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="iaTrashBody"></tbody>
+          </table>
+        </div>
+        <p class="msg ia-trash-msg" id="iaTrashMsg"></p>
+      </section>
+      {% endif %}
     </div>
   </div>
 

@@ -2,7 +2,10 @@ let IA_ME = null;
 let IA_EDIT_ID = null;
 let IA_FORM_OWNER_ID = null;
 let IA_ROWS = [];
+let IA_TRASH_ROWS = [];
 let IA_USERS = [];
+let IA_TAB = "records";
+let IA_FILTER_INITIALIZED = false;
 
 function qs(id) {
   return document.getElementById(id);
@@ -22,6 +25,13 @@ function showMsg(text, ok = true) {
   if (!el) return;
   el.textContent = text || "";
   el.className = "msg " + (ok ? "ok" : "bad");
+}
+
+function showTrashMsg(text, ok = true) {
+  const el = qs("iaTrashMsg");
+  if (!el) return;
+  el.textContent = text || "";
+  el.className = "msg ia-trash-msg " + (ok ? "ok" : "bad");
 }
 
 async function safeJson(res) {
@@ -53,6 +63,10 @@ function currentUserId() {
   const username = IA_ME?.user || document.body.dataset.user || "";
   const row = IA_USERS.find((item) => item.username === username);
   return Number(row?.id || 0);
+}
+
+function isRecordsTab() {
+  return IA_TAB === "records";
 }
 
 function fmtDateTime(value) {
@@ -201,6 +215,12 @@ function renderUserFilter() {
     options.push(`<option value="${row.id}">${esc(userLabel(row))}</option>`);
   });
   select.innerHTML = options.join("");
+  const myId = String(currentUserId() || "");
+  if (!IA_FILTER_INITIALIZED && myId && IA_USERS.some((row) => String(row.id) === myId)) {
+    select.value = myId;
+    IA_FILTER_INITIALIZED = true;
+    return;
+  }
   select.value = IA_USERS.some((row) => String(row.id) === String(current)) ? current : "";
 }
 
@@ -266,17 +286,11 @@ function renderTable(rows, meta = {}) {
 
   body.innerHTML = rows.map((row) => `
     <tr>
-      <td>
-        <div class="ia-cell-stack ia-owner">
-          <strong>${esc(row.owner_name || "-")}</strong>
-          <span class="ia-meta">${esc(row.owner_username || "")}</span>
-        </div>
-      </td>
-      <td><strong>${esc(row.time_period || "-")}</strong></td>
       <td class="ia-copy">${multiline(row.achieved_work)}</td>
-      <td>${esc(row.time_spent || "-")}</td>
       <td class="ia-copy">${multiline(row.results_got)}</td>
       <td>${renderMemberList(row.contributors || [])}</td>
+      <td><strong>${esc(row.time_period || "-")}</strong></td>
+      <td>${esc(row.time_spent || "-")}</td>
       <td><span class="ia-visibility ${visibilityClass(row.visibility)}">${esc(row.visibility_label)}</span></td>
       <td>
         <div class="ia-cell-stack">
@@ -284,8 +298,52 @@ function renderTable(rows, meta = {}) {
           <span class="ia-meta">${esc(fmtDateTime(row.edited_at))}</span>
         </div>
       </td>
+      <td>
+        <div class="ia-cell-stack ia-owner">
+          <strong>${esc(row.owner_name || "-")}</strong>
+          <span class="ia-meta">${esc(row.owner_username || "")}</span>
+        </div>
+      </td>
       <td>${accessPill(row)}</td>
       <td>${actionButtons(row)}</td>
+    </tr>
+  `).join("");
+}
+
+function renderTrashTable(rows) {
+  const body = qs("iaTrashBody");
+  const count = qs("iaTrashCount");
+  if (!body) return;
+
+  if (count) {
+    count.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
+  }
+
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="8" class="ia-empty">No deleted achievements.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = rows.map((row) => `
+    <tr>
+      <td class="ia-copy">${multiline(row.achieved_work)}</td>
+      <td class="ia-copy">${multiline(row.results_got)}</td>
+      <td>${renderMemberList(row.contributors || [])}</td>
+      <td><strong>${esc(row.time_period || "-")}</strong></td>
+      <td>
+        <div class="ia-cell-stack ia-owner">
+          <strong>${esc(row.owner_name || "-")}</strong>
+          <span class="ia-meta">${esc(row.owner_username || "")}</span>
+        </div>
+      </td>
+      <td>${esc(row.deleted_by || "-")}</td>
+      <td>${esc(fmtDateTime(row.deleted_at))}</td>
+      <td>
+        <div class="ia-actions">
+          <button class="btn ghost mini" type="button" data-trash-act="restore" data-id="${row.id}">Restore</button>
+          <button class="btn ghost mini" type="button" data-trash-act="permanent" data-id="${row.id}">Permanent Delete</button>
+        </div>
+      </td>
     </tr>
   `).join("");
 }
@@ -359,6 +417,13 @@ async function loadAchievements() {
   renderTable(IA_ROWS, out.meta || {});
 }
 
+async function loadTrash() {
+  if (!isAdmin()) return;
+  const out = await api("/api/individual-achievement/trash");
+  IA_TRASH_ROWS = out.data || [];
+  renderTrashTable(IA_TRASH_ROWS);
+}
+
 async function saveAchievement() {
   try {
     const payload = {
@@ -394,7 +459,7 @@ async function saveAchievement() {
 async function deleteAchievement(id) {
   const row = IA_ROWS.find((item) => Number(item.id) === Number(id));
   const label = row ? (row.time_period || `#${id}`) : `#${id}`;
-  if (!window.confirm(`Delete achievement ${label}?`)) return;
+  if (!window.confirm(`Move achievement ${label} to trash?`)) return;
 
   try {
     const out = await api(`/api/individual-achievement/${id}`, {
@@ -403,10 +468,39 @@ async function deleteAchievement(id) {
     if (Number(IA_EDIT_ID) === Number(id)) {
       clearForm();
     }
-    showMsg(out.message || "Achievement deleted successfully", true);
+    showMsg(out.message || "Achievement moved to trash successfully", true);
     await loadAchievements();
+    if (isAdmin()) {
+      await loadTrash();
+    }
   } catch (err) {
     showMsg(err.message, false);
+  }
+}
+
+async function restoreAchievement(id) {
+  try {
+    const out = await api(`/api/individual-achievement/trash/${id}/recover`, {
+      method: "POST"
+    });
+    showTrashMsg(out.message || "Achievement restored successfully", true);
+    await loadTrash();
+    await loadAchievements();
+  } catch (err) {
+    showTrashMsg(err.message, false);
+  }
+}
+
+async function permanentlyDeleteAchievement(id) {
+  if (!window.confirm("Permanently delete this achievement? This cannot be undone.")) return;
+  try {
+    const out = await api(`/api/individual-achievement/trash/${id}/permanent`, {
+      method: "DELETE"
+    });
+    showTrashMsg(out.message || "Achievement permanently deleted", true);
+    await loadTrash();
+  } catch (err) {
+    showTrashMsg(err.message, false);
   }
 }
 
@@ -450,6 +544,38 @@ function setupTableActions() {
   });
 }
 
+function setupTrashActions() {
+  const body = qs("iaTrashBody");
+  if (!body) return;
+
+  body.addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-trash-act]");
+    if (!btn) return;
+
+    const id = Number(btn.getAttribute("data-id") || 0);
+    if (!id) return;
+
+    const action = btn.getAttribute("data-trash-act");
+    if (action === "restore") {
+      await restoreAchievement(id);
+      return;
+    }
+    if (action === "permanent") {
+      await permanentlyDeleteAchievement(id);
+    }
+  });
+}
+
+function switchTab(tabName) {
+  IA_TAB = tabName;
+  document.querySelectorAll(".ia-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll(".ia-section").forEach((section) => {
+    section.classList.toggle("active", section.id === `iaTab${tabName.charAt(0).toUpperCase()}${tabName.slice(1)}`);
+  });
+}
+
 function setupDetailModal() {
   qs("iaDetailCloseBtn")?.addEventListener("click", closeDetails);
   qs("iaDetailModal")?.addEventListener("click", (event) => {
@@ -463,21 +589,32 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     setupFormToggle();
     setupTableActions();
+    setupTrashActions();
     setupDetailModal();
 
     await loadMe();
     await loadUsers();
     clearForm();
     await loadAchievements();
+    if (isAdmin()) {
+      await loadTrash();
+    }
 
     qs("iaSaveBtn").addEventListener("click", saveAchievement);
     qs("iaClearBtn").addEventListener("click", clearForm);
-    qs("iaRefreshBtn").addEventListener("click", loadAchievements);
+    qs("iaRefreshBtn").addEventListener("click", async () => {
+      if (isRecordsTab()) {
+        await loadAchievements();
+      } else {
+        await loadTrash();
+      }
+    });
     qs("iaApplyFiltersBtn").addEventListener("click", loadAchievements);
     qs("iaResetFiltersBtn").addEventListener("click", () => {
       qs("iaSearch").value = "";
       if (qs("iaUserFilter")) {
-        qs("iaUserFilter").value = "";
+        const myId = String(currentUserId() || "");
+        qs("iaUserFilter").value = isAdmin() && myId ? myId : "";
       }
       loadAchievements();
     });
@@ -491,6 +628,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (isAdmin()) {
         loadAchievements();
       }
+    });
+    document.querySelectorAll(".ia-tab").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const tabName = btn.dataset.tab || "records";
+        switchTab(tabName);
+        if (tabName === "trash") {
+          await loadTrash();
+        } else {
+          await loadAchievements();
+        }
+      });
     });
   } catch (err) {
     showMsg(err.message || "Failed to load achievements.", false);
