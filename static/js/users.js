@@ -18,7 +18,7 @@ const MODULES = [
   { key: "ATTENDANCE", label: "Attendance" },
   { key: "MARKETING_EMAILS", label: "Marketing Emails" },
   { key: "NOTES", label: "Notes" },
-  { key: "INDIVIDUAL_ACHIEVEMENT", label: "Individual Achievement" }
+  { key: "INDIVIDUAL_ACHIEVEMENT", label: "Achievements" }
 ];
 
 function showMsg(id, text, ok){

@@ -3,15 +3,118 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Individual Achievement</title>
+  <title>Achievements</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   <link rel="icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg" type="image/jpeg">
   <link rel="shortcut icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg">
   <style>
     .ia-page{
-      grid-template-columns:360px 1fr;
+      grid-template-columns:380px minmax(0, 1fr);
       align-items:start;
     }
+
+    .ia-page > *,
+    .ia-work-card,
+    .ia-table-wrap{
+      min-width:0;
+    }
+
+    .ia-page.form-collapsed{
+      grid-template-columns:0 minmax(0, 1fr);
+    }
+
+    .ia-form-card,
+    .ia-work-card{
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:16px;
+      box-shadow:var(--shadow);
+    }
+
+    .ia-form-card{
+      position:relative;
+      overflow:visible;
+      transition:opacity .18s ease, transform .18s ease, padding .18s ease, border-color .18s ease;
+    }
+
+    .ia-page.form-collapsed .ia-form-card{
+      opacity:1;
+      transform:none;
+      padding-left:0;
+      padding-right:0;
+      border-color:transparent;
+      background:transparent;
+      box-shadow:none;
+      pointer-events:none;
+    }
+
+    .ia-page.form-collapsed .ia-form-card > :not(.ia-collapse-rail){
+      visibility:hidden;
+    }
+
+    .ia-collapse-rail{
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      position:absolute;
+      right:-12px;
+      top:50%;
+      transform:translateY(-50%);
+      z-index:4;
+      pointer-events:auto;
+      width:24px;
+      height:86px;
+    }
+
+    .ia-collapse-rail::before{
+      content:"";
+      position:absolute;
+      top:0;
+      bottom:0;
+      left:50%;
+      width:1px;
+      background:var(--line);
+      transform:translateX(-50%);
+    }
+
+    .ia-collapse-toggle{
+      position:relative;
+      width:24px;
+      height:34px;
+      padding:0;
+      border-radius:8px;
+      border:1px solid var(--line);
+      background:#fff;
+      color:#64748b;
+      font-size:14px;
+      font-weight:800;
+      line-height:1;
+      box-shadow:0 3px 10px rgba(15,23,42,.08);
+    }
+
+    .ia-collapse-toggle::before{
+      content:"";
+      position:absolute;
+      top:50%;
+      left:50%;
+      width:7px;
+      height:7px;
+      border-top:2px solid currentColor;
+      border-right:2px solid currentColor;
+      transform:translate(-35%, -50%) rotate(-135deg);
+    }
+
+    .ia-collapse-toggle.is-collapsed::before{
+      transform:translate(-65%, -50%) rotate(45deg);
+    }
+
+    .ia-collapse-toggle:hover{
+      color:var(--accent);
+      border-color:rgba(37,99,235,.28);
+      background:#f8fafc;
+    }
+
     .ia-head{
       display:flex;
       justify-content:space-between;
@@ -20,83 +123,196 @@
       margin-bottom:14px;
       flex-wrap:wrap;
     }
-    .ia-head h3,
-    .ia-section-head h3{
+
+    .ia-head h3{
       margin:0;
     }
-    .ia-filters{
+
+    .ia-note{
+      margin:0 0 14px;
+      color:#64748b;
+      font-size:13px;
+      line-height:1.55;
+    }
+
+    .ia-form-section{
+      margin-top:14px;
+    }
+
+    .ia-form-section label{
+      display:block;
+      margin:10px 0 6px;
+      color:var(--muted);
+      font-size:13px;
+      font-weight:700;
+    }
+
+    .ia-form-section textarea{
+      min-height:88px;
+      resize:vertical;
+    }
+
+    .ia-member-picker{
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#fff;
+      max-height:180px;
+      overflow:auto;
+      padding:8px 10px;
+    }
+
+    .ia-member-picker label{
+      display:flex;
+      align-items:flex-start;
+      gap:8px;
+      margin:0;
+      padding:8px 0;
+      border-bottom:1px solid #f1f5f9;
+      font-size:13px;
+      font-weight:400;
+      color:var(--text);
+    }
+
+    .ia-member-picker label:last-child{
+      border-bottom:none;
+    }
+
+    .ia-member-picker label.is-disabled{
+      opacity:.55;
+    }
+
+    .ia-member-picker input[type="checkbox"]{
+      width:16px;
+      height:16px;
+      min-width:16px;
+      margin-top:2px;
+    }
+
+    .ia-picker-empty{
+      color:var(--muted);
+      font-size:13px;
+      padding:8px 2px;
+    }
+
+    .ia-filter-grid{
       display:grid;
-      grid-template-columns:minmax(220px, 1.6fr) minmax(180px, 1fr) auto auto;
+      grid-template-columns:minmax(230px, 1.5fr) minmax(220px, 1fr) auto auto;
       gap:10px;
       align-items:end;
-      margin-bottom:16px;
+      margin-bottom:14px;
     }
-    .ia-filters label{
+
+    .ia-filter-grid label{
       display:block;
+      margin:0 0 6px;
+      color:var(--muted);
       font-size:12px;
       font-weight:700;
-      color:#64748b;
-      margin:0 0 5px;
     }
-    .ia-filters input,
-    .ia-filters select{
+
+    .ia-filter-grid input,
+    .ia-filter-grid select{
       width:100%;
-      box-sizing:border-box;
     }
-    .ia-section{
-      margin-top:18px;
-    }
-    .ia-section:first-of-type{
-      margin-top:0;
-    }
-    .ia-section-head{
+
+    .ia-scope{
       display:flex;
       justify-content:space-between;
-      align-items:flex-end;
-      gap:10px;
-      margin-bottom:10px;
+      align-items:flex-start;
+      gap:14px;
+      margin-bottom:12px;
       flex-wrap:wrap;
     }
+
+    .ia-scope h3,
+    .ia-scope p{
+      margin:0;
+    }
+
+    .ia-count{
+      color:#334155;
+      font-size:13px;
+      font-weight:700;
+      white-space:nowrap;
+    }
+
     .ia-table-wrap{
+      width:100%;
       overflow:auto;
       border:1px solid var(--line);
       border-radius:14px;
       background:#fff;
+      max-height:64vh;
+      scrollbar-gutter:stable both-edges;
     }
+
     .ia-table{
       width:100%;
-      border-collapse:collapse;
-      min-width:980px;
+      min-width:1380px;
+      border-collapse:separate;
+      border-spacing:0;
     }
+
     .ia-table th,
     .ia-table td{
-      border-bottom:1px solid #eef2f7;
-      padding:10px;
+      padding:12px 14px;
+      border-bottom:1px solid #e8edf5;
+      border-right:1px solid #eef2f7;
       text-align:left;
       vertical-align:top;
       font-size:13px;
     }
+
     .ia-table th{
+      position:sticky;
+      top:0;
+      z-index:1;
       background:#f8fafc;
-      color:#334155;
-      font-weight:700;
+      color:#475569;
+      font-size:12px;
+      font-weight:800;
+      letter-spacing:.04em;
+      text-transform:uppercase;
       white-space:nowrap;
     }
+
+    .ia-table td:last-child,
+    .ia-table th:last-child{
+      border-right:none;
+    }
+
+    .ia-table tbody tr:hover{
+      background:#fbfdff;
+    }
+
     .ia-copy{
       white-space:pre-wrap;
-      min-width:220px;
-      line-height:1.5;
+      line-height:1.55;
+      min-width:250px;
     }
+
+    .ia-cell-stack{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      min-width:0;
+    }
+
+    .ia-owner{
+      min-width:160px;
+    }
+
     .ia-meta{
       font-size:12px;
       color:#64748b;
-      white-space:nowrap;
+      line-height:1.45;
     }
+
     .ia-visibility{
       display:inline-flex;
       align-items:center;
       border-radius:999px;
-      padding:4px 9px;
+      padding:5px 10px;
       border:1px solid #dbeafe;
       background:#eff6ff;
       color:#1d4ed8;
@@ -104,40 +320,162 @@
       font-weight:700;
       white-space:nowrap;
     }
+
     .ia-visibility.admins{
       border-color:#fde68a;
       background:#fffbeb;
       color:#92400e;
     }
+
     .ia-visibility.only-me{
       border-color:#e5e7eb;
       background:#f8fafc;
       color:#475569;
     }
+
+    .ia-member-list{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      min-width:180px;
+    }
+
+    .ia-member-pill,
+    .ia-access-pill{
+      display:inline-flex;
+      align-items:center;
+      border-radius:999px;
+      padding:4px 9px;
+      border:1px solid #dbe5f1;
+      background:#f8fafc;
+      color:#334155;
+      font-size:12px;
+      font-weight:700;
+      white-space:nowrap;
+    }
+
+    .ia-access-pill.edit{
+      border-color:#bfdbfe;
+      background:#eff6ff;
+      color:#1d4ed8;
+    }
+
+    .ia-access-pill.locked{
+      border-color:#e5e7eb;
+      background:#f8fafc;
+      color:#475569;
+    }
+
     .ia-actions{
       display:flex;
       gap:6px;
       flex-wrap:wrap;
+      min-width:170px;
     }
+
     .ia-empty{
-      padding:26px 20px;
+      padding:32px 20px;
       text-align:center;
       color:#64748b;
       font-size:13px;
     }
-    .ia-note{
-      margin:0 0 14px;
-      color:#64748b;
-      font-size:13px;
-      line-height:1.55;
+
+    .ia-modal{
+      display:none;
+      position:fixed;
+      inset:0;
+      background:rgba(15,23,42,.52);
+      z-index:1200;
+      align-items:flex-start;
+      justify-content:center;
+      padding:34px 16px;
     }
+
+    .ia-modal.show{
+      display:flex;
+    }
+
+    .ia-modal-card{
+      width:min(900px, 100%);
+      max-height:calc(100vh - 68px);
+      overflow:auto;
+      background:#fff;
+      border-radius:18px;
+      box-shadow:0 24px 60px rgba(15,23,42,.22);
+      padding:20px;
+    }
+
+    .ia-modal-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:12px;
+      margin-bottom:14px;
+    }
+
+    .ia-modal-head h3{
+      margin:0;
+    }
+
+    .ia-detail-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:12px;
+      margin-bottom:16px;
+    }
+
+    .ia-detail-card{
+      border:1px solid #e5e7eb;
+      border-radius:14px;
+      background:#f8fafc;
+      padding:12px 14px;
+    }
+
+    .ia-detail-card h4{
+      margin:0 0 8px;
+      font-size:12px;
+      letter-spacing:.05em;
+      text-transform:uppercase;
+      color:#475569;
+    }
+
+    .ia-detail-card p{
+      margin:0;
+      white-space:pre-wrap;
+      line-height:1.55;
+      font-size:13px;
+      color:#0f172a;
+    }
+
     @media (max-width: 1100px){
-      .ia-page{
+      .ia-page,
+      .ia-page.form-collapsed{
         grid-template-columns:1fr;
       }
+
+      .ia-collapse-rail{
+        display:none;
+      }
+
+      .ia-page.form-collapsed .ia-form-card{
+        padding:16px;
+        border-color:var(--line);
+        background:#fff;
+        box-shadow:var(--shadow);
+        pointer-events:auto;
+      }
+
+      .ia-page.form-collapsed .ia-form-card > :not(.ia-collapse-rail){
+        visibility:visible;
+      }
     }
-    @media (max-width: 760px){
-      .ia-filters{
+
+    @media (max-width: 860px){
+      .ia-filter-grid{
+        grid-template-columns:1fr;
+      }
+
+      .ia-detail-grid{
         grid-template-columns:1fr;
       }
     }
@@ -146,7 +484,7 @@
 <body data-user="{{ user }}" data-role="{{ role }}">
   <div class="topbar">
     <div>
-      <h2>Individual Achievement</h2>
+      <h2>Achievements</h2>
       <p class="sub">Logged in as <b>{{ user }}</b> ({{ 'Employee' if role == 'EMP' else 'Admin' if role == 'ADMIN' else role }})</p>
     </div>
     <div class="row">
@@ -156,11 +494,15 @@
   </div>
 
   <div class="page ia-page">
-    <div class="panel">
-      <h3 id="iaFormTitle">Add Achievement</h3>
-      <p class="ia-note">Record important work achievements with the time period, work done, time spent, results, and sharing visibility.</p>
+    <div class="ia-form-card">
+      <div class="ia-collapse-rail">
+        <button class="ia-collapse-toggle" id="iaFormToggle" type="button" aria-label="Collapse achievement form"></button>
+      </div>
 
-      <div class="form">
+      <h3 id="iaFormTitle">Add Achievement</h3>
+      <p class="ia-note">Capture individual or team achievements with visibility, contributors, and audit details. Contributors can view linked achievements, but editing stays with the owner or admins.</p>
+
+      <div class="form ia-form-section">
         <label for="iaTimePeriod">Time Period</label>
         <input id="iaTimePeriod" type="text" placeholder="Example: February 2024 to April 2024" />
 
@@ -180,6 +522,10 @@
           <option value="ONLY_ME">Only Me</option>
         </select>
 
+        <label for="iaContributorBox">Contributors / Members</label>
+        <div id="iaContributorBox" class="ia-member-picker"></div>
+        <p class="ia-note" style="margin-top:8px;">Add users who contributed to this achievement so it appears in their achievement view too.</p>
+
         <div class="row" style="margin-top:14px;">
           <button class="btn" id="iaSaveBtn" type="button">Save</button>
           <button class="btn ghost" id="iaClearBtn" type="button">Clear</button>
@@ -188,80 +534,69 @@
       </div>
     </div>
 
-    <div class="panel wide">
+    <div class="ia-work-card">
       <div class="ia-head">
         <div>
-          <h3>Achievements</h3>
-          <p class="sub">View your own achievements and other visible/shared entries.</p>
+          <h3 id="iaTableTitle">Achievements</h3>
+          <p class="sub" id="iaScopeText">Loading achievements...</p>
         </div>
         <button class="btn ghost mini" id="iaRefreshBtn" type="button">Refresh</button>
       </div>
 
-      <div class="ia-filters">
+      <div class="ia-filter-grid">
         <div>
           <label for="iaSearch">Search</label>
-          <input id="iaSearch" type="search" placeholder="Search work, results, time period, or time spent" />
+          <input id="iaSearch" type="search" placeholder="Search work, results, time period, owners, or contributors" />
         </div>
-        <div>
-          <label for="iaUserFilter">Filter by User</label>
+        <div id="iaUserFilterWrap">
+          <label for="iaUserFilter">View As User</label>
           <select id="iaUserFilter">
-            <option value="">All visible users</option>
+            <option value="">All records</option>
           </select>
         </div>
         <button class="btn" id="iaApplyFiltersBtn" type="button">Apply</button>
         <button class="btn ghost" id="iaResetFiltersBtn" type="button">Reset</button>
       </div>
 
-      <div class="ia-section">
-        <div class="ia-section-head">
-          <div>
-            <h3>My Achievements</h3>
-            <p class="sub" id="iaMyCount">0 records</p>
-          </div>
-        </div>
-        <div class="ia-table-wrap">
-          <table class="ia-table">
-            <thead>
-              <tr>
-                <th style="width:160px;">Time Period</th>
-                <th>Achieved Work</th>
-                <th style="width:140px;">Time Spent</th>
-                <th>Results Achieved</th>
-                <th style="width:150px;">Visibility</th>
-                <th style="width:170px;">Updated</th>
-                <th style="width:150px;">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="iaMyBody"></tbody>
-          </table>
-        </div>
+      <div class="ia-scope">
+        <p class="ia-note" style="margin:0;">One clean table is used for personal, shared, and contributor-linked achievements.</p>
+        <p class="ia-count" id="iaTableCount">0 records</p>
       </div>
 
-      <div class="ia-section">
-        <div class="ia-section-head">
-          <div>
-            <h3 id="iaVisibleTitle">Visible Achievements</h3>
-            <p class="sub" id="iaVisibleCount">0 records</p>
-          </div>
-        </div>
-        <div class="ia-table-wrap">
-          <table class="ia-table">
-            <thead>
-              <tr>
-                <th style="width:170px;">Employee</th>
-                <th style="width:160px;">Time Period</th>
-                <th>Achieved Work</th>
-                <th style="width:140px;">Time Spent</th>
-                <th>Results Achieved</th>
-                <th style="width:150px;">Visibility</th>
-                <th style="width:170px;">Updated</th>
-                <th style="width:150px;">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="iaVisibleBody"></tbody>
-          </table>
-        </div>
+      <div class="ia-table-wrap">
+        <table class="ia-table">
+          <thead>
+            <tr>
+              <th style="width:180px;">Owner</th>
+              <th style="width:170px;">Time Period</th>
+              <th>Achieved Work</th>
+              <th style="width:140px;">Time Spent</th>
+              <th>Results Achieved</th>
+              <th style="width:220px;">Contributors</th>
+              <th style="width:150px;">Visibility</th>
+              <th style="width:190px;">Last Edited</th>
+              <th style="width:130px;">Access</th>
+              <th style="width:180px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="iaTableBody"></tbody>
+        </table>
       </div>
+    </div>
+  </div>
+
+  <div id="iaDetailModal" class="ia-modal">
+    <div class="ia-modal-card">
+      <div class="ia-modal-head">
+        <div>
+          <h3 id="iaDetailTitle">Achievement Details</h3>
+          <p class="sub" id="iaDetailSub"></p>
+        </div>
+        <button class="btn ghost mini" id="iaDetailCloseBtn" type="button">Close</button>
+      </div>
+
+      <div class="ia-detail-grid" id="iaDetailGrid"></div>
+      <div class="ia-detail-grid" id="iaDetailContentGrid"></div>
     </div>
   </div>
 
