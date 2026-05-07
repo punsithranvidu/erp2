@@ -572,11 +572,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     $("wsAdminNoticeClose")?.addEventListener("click", closeAdminNotice);
-    $("wsAdminNotice")?.addEventListener("click", (e) => {
-      if (e.target === $("wsAdminNotice")) {
-        closeAdminNotice();
-      }
-    });
   } catch (err) {
     showMsg(err.message || "Failed to load worksheet.", false);
   }
