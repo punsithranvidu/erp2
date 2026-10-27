@@ -11,6 +11,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from routes.db import connect, get_table_columns
 
 # Blueprints
+from routes.login_security import (LoginProtection, PostgresLoginStore,
+                                   init_login_security, set_device_cookie, audit_signals)
 from routes.auth import auth_bp
 from routes.pages import pages_bp
 from routes.document_storage import document_storage_bp
@@ -48,16 +50,10 @@ if not security_logger.handlers:
     security_logger.propagate = True
 
 RATE_BUCKETS = defaultdict(deque)
-LOGIN_FAILURES = defaultdict(deque)
-LOGIN_BLOCKED_UNTIL = {}
 
 GLOBAL_ROUTE_LIMIT = 60
 API_ROUTE_LIMIT = 60
 SENSITIVE_API_LIMIT = 30
-LOGIN_FAILED_LIMIT = 5
-LOGIN_WINDOW_SECONDS = 60
-LOGIN_BLOCK_SECONDS = 10 * 60
-FAILED_LOGIN_DELAY_SECONDS = 0.7
 
 DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or "").strip()
 if DATABASE_URL.startswith("postgres://"):
@@ -158,44 +154,12 @@ def check_rate_limit(scope, limit, window_seconds=60):
     return True
 
 
-def is_login_ip_blocked(ip=None):
-    ip = ip or client_ip()
-    until = float(LOGIN_BLOCKED_UNTIL.get(ip) or 0)
-    if until <= time.time():
-        LOGIN_BLOCKED_UNTIL.pop(ip, None)
-        return False
-    return True
-
-
-def register_failed_login(username):
-    ip = client_ip()
-    now_ts = time.time()
-    bucket = LOGIN_FAILURES[ip]
-    prune_bucket(bucket, now_ts, LOGIN_WINDOW_SECONDS)
-    bucket.append(now_ts)
-    security_log("failed_login", ip=ip, username=(username or "").strip()[:80], attempts=len(bucket))
-    if len(bucket) >= LOGIN_FAILED_LIMIT:
-        LOGIN_BLOCKED_UNTIL[ip] = now_ts + LOGIN_BLOCK_SECONDS
-        bucket.clear()
-        security_log("login_ip_temporarily_blocked", ip=ip, minutes=LOGIN_BLOCK_SECONDS // 60)
-
-
-def clear_failed_logins():
-    ip = client_ip()
-    LOGIN_FAILURES.pop(ip, None)
-    LOGIN_BLOCKED_UNTIL.pop(ip, None)
-
-
-def reset_login_failure_delay():
-    time.sleep(FAILED_LOGIN_DELAY_SECONDS)
-
-
 def current_rate_scope():
     path = request.path or ""
     if path.startswith("/static/"):
         return None, None
     if path == "/login":
-        return "login-route", 20
+        return None, None  # LoginProtection limits this browser, independently of IP.
     if path.startswith("/api/notes") or path.startswith("/api/weekly-tasks"):
         return "sensitive-api", SENSITIVE_API_LIMIT
     if path.startswith("/api/"):
@@ -205,11 +169,6 @@ def current_rate_scope():
 
 @app.before_request
 def apply_basic_security_limits():
-    if request.path == "/login" and request.method == "POST" and is_login_ip_blocked():
-        ip = client_ip()
-        security_log("blocked_login_request", ip=ip, path=request.path)
-        return jsonify({"ok": False, "error": "Too many failed login attempts. Please try again later."}), 429
-
     scope, limit = current_rate_scope()
     if scope and not check_rate_limit(scope, limit):
         return jsonify({"ok": False, "error": "Too many requests. Please slow down."}), 429
@@ -217,6 +176,9 @@ def apply_basic_security_limits():
 
 @app.after_request
 def add_security_headers(response):
+    response = set_device_cookie(response)
+    if request.path == "/login":
+        response.headers["Cache-Control"] = "no-store"
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-XSS-Protection", "1; mode=block")
@@ -405,6 +367,7 @@ def would_remove_last_admin(conn, target_user_id: int) -> bool:
 def init_db():
     conn = db()
     cur = conn.cursor()
+    init_login_security(conn)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -954,9 +917,13 @@ app.config["GET_DEFAULT_BANK_ID_FUNC"] = get_default_bank_id
 app.config["GET_BANK_ID_FROM_REQUEST_FUNC"] = get_bank_id_from_request
 app.config["IS_ALL_BANKS_FUNC"] = is_all_banks
 app.config["PURGE_DELETED_OLDER_THAN_30_DAYS_FUNC"] = purge_deleted_older_than_30_days
-app.config["REGISTER_FAILED_LOGIN_FUNC"] = register_failed_login
-app.config["CLEAR_FAILED_LOGINS_FUNC"] = clear_failed_logins
-app.config["FAILED_LOGIN_DELAY_FUNC"] = reset_login_failure_delay
+
+
+def audit_login(message, **details):
+    security_log(message, ip=client_ip(), browser_signals=audit_signals(), **details)
+
+
+app.config["LOGIN_PROTECTION"] = LoginProtection(PostgresLoginStore(db), audit_login)
 app.config["MODULES"] = MODULES
 
 init_db()

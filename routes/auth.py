@@ -9,32 +9,39 @@ def home():
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
-    from flask import current_app
-    auth_user = current_app.config["AUTH_USER_FUNC"]
-    register_failed_login = current_app.config.get("REGISTER_FAILED_LOGIN_FUNC")
-    clear_failed_logins = current_app.config.get("CLEAR_FAILED_LOGINS_FUNC")
-    failed_login_delay = current_app.config.get("FAILED_LOGIN_DELAY_FUNC")
+    from flask import current_app, g, make_response
+    from routes.login_security import browser_key
 
-    if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        user, err = auth_user(username, password)
+    key = browser_key()
+    protection = current_app.config["LOGIN_PROTECTION"]
+    try:
+        if request.method == "POST" and getattr(g, "login_device_missing", False):
+            # No password verification without a valid signed browser cookie.
+            # Ordinary browsers receive it on GET; cookie-less scripts must too.
+            return render_template("login.html", error="Please enable cookies and try signing in again."), 400
+        result = protection.check(
+            key,
+            authenticate=current_app.config["AUTH_USER_FUNC"] if request.method == "POST" else None,
+            username=request.form.get("username"),
+            password=request.form.get("password"),
+        )
+    except Exception:
+        current_app.logger.exception("Login protection or authentication unavailable")
+        return render_template("login.html", error="Sign-in is temporarily unavailable. Please try again shortly."), 503
 
-        if err:
-            if callable(register_failed_login):
-                register_failed_login(username)
-            if callable(failed_login_delay):
-                failed_login_delay()
-            return render_template("login.html", error=err)
-
-        if callable(clear_failed_logins):
-            clear_failed_logins()
-        session["user"] = user["username"]
-        session["role"] = user["role"]
-        session["uid"] = user["id"]
+    if result.user is not None:
+        session["user"] = result.user["username"]
+        session["role"] = result.user["role"]
+        session["uid"] = result.user["id"]
         return redirect(url_for("pages.dashboard"))
 
-    return render_template("login.html", error=None)
+    response = make_response(render_template(
+        "login.html", error=result.error, retry_after=result.retry_after,
+    ), 429 if result.retry_after else 200)
+    response.headers["Cache-Control"] = "no-store"
+    if result.retry_after:
+        response.headers["Retry-After"] = str(result.retry_after)
+    return response
 
 @auth_bp.route("/logout")
 def logout():
