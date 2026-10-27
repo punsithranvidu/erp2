@@ -1,12 +1,12 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Finance Trash</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-  <link rel="icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg" type="image/jpeg">
-  <link rel="shortcut icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg">
+
+
   <style>
     .finance-trash-page{
       grid-template-columns: 1fr;
@@ -52,19 +52,23 @@
       }
     }
   </style>
+  <link rel="icon" href="{{ url_for('static', filename='img/ceylon-spice-haven-logo.webp') }}" type="image/webp" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace.css') }}" />
+  <script src="{{ url_for('static', filename='js/workspace.js') }}" defer></script>
 </head>
-<body>
+<body class="app-body" data-app-role="{{ role }}">
+  {% include "partials/app_navigation.html" %}
   <div class="topbar">
     <div>
       <h2>Finance Trash</h2>
     </div>
     <div class="row">
-      <a class="btn ghost" href="/dashboard">Back</a>
-      <a class="btn ghost" href="/logout">Logout</a>
+      <a class="btn ghost" href="/dashboard">Overview</a>
+      <span class="app-header-date" data-workspace-date></span>
     </div>
   </div>
 
-  <div class="page finance-trash-page">
+  <div id="app-content" tabindex="-1" class="page finance-trash-page">
     <div class="panel wide finance-trash-panel">
       <div class="finance-trash-toolbar">
         <button class="btn ghost" id="refreshTrashBtn">Refresh</button>

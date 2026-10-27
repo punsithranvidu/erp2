@@ -324,7 +324,7 @@
            EDITING_ID=r.id;
            fillFormFromRow(r);
            showMsg("msg",`Editing Record ID ${r.id}. Make changes and click Save Record.`,true);
-           window.scrollTo({top:0, behavior:"smooth"});
+           window.scrollTo({top:0, behavior:"auto"});
          });
        }
    

@@ -1,12 +1,12 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Weekly Tasks</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-  <link rel="icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg" type="image/jpeg">
-  <link rel="shortcut icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg">
+
+
   <style>
     .wt-page{grid-template-columns:1fr;}
     .wt-shell{
@@ -330,20 +330,23 @@
       .wt-floating-tip{width:min(280px, calc(100vw - 48px));}
     }
   </style>
+  <link rel="icon" href="{{ url_for('static', filename='img/ceylon-spice-haven-logo.webp') }}" type="image/webp" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace.css') }}" />
+  <script src="{{ url_for('static', filename='js/workspace.js') }}" defer></script>
 </head>
-<body data-role="{{ role }}" data-user="{{ user }}" data-year="{{ year }}" data-month="{{ '%02d'|format(month) }}">
+<body class="app-body" data-role="{{ role }}" data-user="{{ user }}" data-year="{{ year }}" data-month="{{ '%02d'|format(month) }}" data-app-role="{{ role }}">
+  {% include "partials/app_navigation.html" %}
   <div class="topbar">
     <div>
       <h2>Weekly Tasks</h2>
-      <p class="sub">Logged in as <b>{{ user }}</b> ({{ 'Employee' if role == 'EMP' else 'Admin' if role == 'ADMIN' else role }})</p>
     </div>
     <div class="row">
-      <a class="btn ghost" href="/dashboard">Back</a>
-      <a class="btn ghost" href="/logout">Logout</a>
+      <a class="btn ghost" href="/dashboard">Overview</a>
+      <span class="app-header-date" data-workspace-date></span>
     </div>
   </div>
 
-  <div class="page wt-page">
+  <div id="app-content" tabindex="-1" class="page wt-page">
     <div class="wt-shell">
       <div class="wt-head">
         <div>

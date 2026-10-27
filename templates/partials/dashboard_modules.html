@@ -1,0 +1,47 @@
+{% from 'partials/ui_icons.html' import icon %}
+{% set module_groups = [
+  ('Business operations', 'Manage company records, documents, and commercial activity.', [
+    ('finance', 'Finance', 'Records, balances, and exports', 'FINANCE', ''),
+    ('cash-advances', 'Petty Cash', 'Petty cash records and balances', 'CASH_ADVANCES', ''),
+    ('invoices', 'Invoices', 'INV, QT and PO numbers', 'INVOICES', ''),
+    ('document-storage', 'Document Storage', 'Folders and company files', 'DOCUMENT_STORAGE', ''),
+    ('marketing-emails', 'Marketing Emails', 'Leads and export files', 'MARKETING_EMAILS', ''),
+    ('hs-codes', 'HS Codes', 'Product code library', 'HS_CODES', '')
+  ]),
+  ('Team & productivity', 'Coordinate people, schedules, and everyday work.', [
+    ('weekly-tasks', 'Weekly Tasks', 'Boards and task reviews', 'WEEKLY_TASKS', 'weeklyTasksBadge'),
+    ('worksheet', 'Worksheet', 'Daily work entries', 'WORKSHEET', ''),
+    ('calendar', 'Calendar', 'Schedules and reminders', 'CALENDAR', 'calendarBadge'),
+    ('attendance', 'Attendance', 'Presence and availability', 'ATTENDANCE', ''),
+    ('messages', 'Messages', 'Chats and groups', 'MESSAGES', 'msgBadge'),
+    ('notes', 'Notes', 'Shared task notes', 'NOTES', 'notesBadge'),
+    ('individual-achievement', 'Achievements', 'Personal and shared work achievements', 'INDIVIDUAL_ACHIEVEMENT', '')
+  ]),
+  ('Administration', 'Manage access and recover deleted records.', [
+    ('users', 'Employee Access', 'Users and permissions', 'USERS', ''),
+    ('finance-trash', 'Finance Trash', 'Deleted finance records', 'FINANCE_TRASH', '')
+  ])
+] %}
+<div id="moduleCards"{% if role != 'ADMIN' %} style="display:none;"{% endif %}>
+  {% for heading, description, modules in module_groups %}
+  <section class="module-section">
+    <div class="module-section-head">
+      <h3>{{ heading }}</h3>
+      <p>{{ description }}</p>
+    </div>
+    <div class="module-grid">
+      {% for path, title, summary, permission, badge in modules %}
+      <a class="dash-card" href="/{{ path }}" data-mod="{{ permission }}">
+        <span class="dash-icon">{{ icon(path) }}</span>
+        <span class="dash-card-copy">
+          <strong>{{ title }}</strong>
+          <small>{{ summary }}</small>
+        </span>
+        {% if badge %}<span id="{{ badge }}" class="module-notification" style="display:none;">0</span>{% endif %}
+        <span class="module-arrow">{{ icon('arrow') }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>

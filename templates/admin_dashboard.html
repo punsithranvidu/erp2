@@ -1,333 +1,41 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Admin Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-  <link rel="icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg" type="image/jpeg">
-  <link rel="shortcut icon" href="https://theceylonspicehaven.com/img/Transparent%20logo.jpg">
-  <style>
-    body.dash-body{
-      background:#f4f7fb;
-    }
-    .dash-topbar{
-      width:min(1240px, calc(100% - 36px));
-      margin:18px auto 0;
-      border:1px solid rgba(226,232,240,.95);
-      border-radius:18px;
-      box-shadow:0 18px 45px rgba(15,23,42,.06);
-      background:rgba(255,255,255,.94);
-      position:sticky;
-      top:12px;
-      z-index:5;
-    }
-    .dash-topbar h2{
-      font-size:22px;
-      letter-spacing:0;
-    }
-    .dash-page{
-      width:min(1240px, calc(100% - 36px));
-      margin:18px auto 32px;
-      padding:0;
-      display:block;
-    }
-    .dash-panel{
-      border-radius:20px;
-      padding:22px;
-      border:1px solid rgba(226,232,240,.95);
-      box-shadow:0 18px 45px rgba(15,23,42,.06);
-      background:#fff;
-    }
-    .dash-section-head{
-      display:flex;
-      justify-content:space-between;
-      align-items:flex-end;
-      gap:16px;
-      margin-bottom:18px;
-      padding-bottom:14px;
-      border-bottom:1px solid #eef2f7;
-    }
-    .dash-section-head h3{
-      margin:0;
-      font-size:18px;
-      letter-spacing:0;
-    }
-    .dash-section-head p{
-      margin:4px 0 0;
-      color:#64748b;
-      font-size:13px;
-    }
-    .dash-grid{
-      display:grid;
-      grid-template-columns:repeat(auto-fit, minmax(270px, 1fr));
-      gap:14px;
-    }
-    .dash-card{
-      position:relative;
-      min-height:84px;
-      display:grid;
-      grid-template-columns:auto 1fr;
-      align-items:center;
-      gap:14px;
-      padding:16px;
-      border:1px solid #e5eaf2;
-      border-radius:14px;
-      background:linear-gradient(180deg, #fff 0%, #fbfdff 100%);
-      text-decoration:none;
-      color:#0f172a;
-      box-shadow:0 8px 24px rgba(15,23,42,.045);
-      transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease;
-    }
-    .dash-card:hover{
-      transform:translateY(-2px);
-      border-color:rgba(37,99,235,.28);
-      box-shadow:0 16px 32px rgba(15,23,42,.08);
-      background:#fff;
-    }
-    .dash-icon{
-      width:42px;
-      height:42px;
-      display:grid;
-      place-items:center;
-      border-radius:12px;
-      border:1px solid rgba(37,99,235,.14);
-      background:#f1f5fb;
-      color:#1e3a8a;
-      font-size:12px;
-      font-weight:800;
-      letter-spacing:.04em;
-    }
-    .dash-card-copy{
-      min-width:0;
-      display:flex;
-      flex-direction:column;
-      gap:4px;
-    }
-    .dash-card-copy strong{
-      font-size:15px;
-      line-height:1.2;
-    }
-    .dash-card-copy small{
-      color:#64748b;
-      font-size:12px;
-      line-height:1.35;
-    }
-    .dash-card.disabled{
-      opacity:.62;
-      cursor:not-allowed;
-      transform:none;
-    }
-    .dash-card.disabled:hover{
-      border-color:#e5eaf2;
-      box-shadow:0 8px 24px rgba(15,23,42,.045);
-    }
-    #weeklyTasksBadge,
-    #msgBadge,
-    #calendarBadge,
-    #notesBadge{
-      top:12px !important;
-      right:12px !important;
-      z-index:2;
-      min-width:20px !important;
-      height:20px !important;
-      padding:0 6px !important;
-      border-radius:999px !important;
-      background:#b4232f !important;
-      color:#fff !important;
-      border:1px solid rgba(255,255,255,.85);
-      box-shadow:0 8px 18px rgba(180,35,47,.18), 0 0 0 2px rgba(255,255,255,.9);
-      font-size:11px !important;
-      font-weight:800 !important;
-      line-height:20px;
-      letter-spacing:0;
-      transform-origin:center;
-      animation:dashBadgeIn .18s ease-out;
-    }
-    @keyframes dashBadgeIn{
-      from{opacity:.7; transform:scale(.9);}
-      to{opacity:1; transform:scale(1);}
-    }
-    @media (max-width:720px){
-      .dash-topbar,
-      .dash-page{
-        width:min(100% - 20px, 1240px);
-      }
-      .dash-topbar{
-        margin-top:10px;
-        align-items:flex-start;
-        gap:12px;
-        flex-direction:column;
-      }
-      .dash-panel{
-        padding:16px;
-      }
-      .dash-section-head{
-        align-items:flex-start;
-        flex-direction:column;
-      }
-      .dash-grid{
-        grid-template-columns:1fr;
-      }
-      .dash-card{
-        min-height:78px;
-      }
-    }
-  </style>
+
+
+  <link rel="icon" href="{{ url_for('static', filename='img/ceylon-spice-haven-logo.webp') }}" type="image/webp" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace.css') }}" />
+  <script src="{{ url_for('static', filename='js/workspace.js') }}" defer></script>
 </head>
-<body class="dash-body">
+<body class="app-body dash-body" data-app-role="{{ role }}">
+  {% include "partials/app_navigation.html" %}
   <div class="topbar dash-topbar">
     <div>
-      <h2>Admin Dashboard</h2>
-      <p class="sub">Welcome, <b>{{ user }}</b> • Role: <b>{{ 'Employee' if role == 'EMP' else 'Admin' if role == 'ADMIN' else role }}</b></p>
+      <h2>Workspace overview</h2>
+      <p class="sub">Company tools and daily operations</p>
     </div>
-    <a class="btn ghost" href="/logout">Logout</a>
+    <span class="app-header-date" data-workspace-date></span>
   </div>
 
-  <div class="dash-page">
-    <div class="dash-panel">
-      <div class="dash-section-head">
-        <div>
-          <h3>Modules</h3>
-          <p>Administrative tools and company workspaces</p>
-        </div>
-      </div>
-
-      <div class="dash-grid">
-        <a class="dash-card" href="/finance">
-          <span class="dash-icon">FN</span>
-          <span class="dash-card-copy">
-            <strong>Finance</strong>
-            <small>Records, balances, and exports</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/document-storage">
-          <span class="dash-icon">DS</span>
-          <span class="dash-card-copy">
-            <strong>Document Storage</strong>
-            <small>Folders and company files</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/users">
-          <span class="dash-icon">EA</span>
-          <span class="dash-card-copy">
-            <strong>Employee Access</strong>
-            <small>Users and permissions</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/weekly-tasks">
-          <span class="dash-icon">WT</span>
-          <span class="dash-card-copy">
-            <strong>Weekly Tasks</strong>
-            <small>Boards and task reviews</small>
-          </span>
-          <span id="weeklyTasksBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
-        </a>
-
-        <a class="dash-card" href="/invoices">
-          <span class="dash-icon">IN</span>
-          <span class="dash-card-copy">
-            <strong>Invoices</strong>
-            <small>INV, QT and PO numbers</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/cash-advances">
-          <span class="dash-icon">CA</span>
-          <span class="dash-card-copy">
-            <strong>Petty Cash</strong>
-            <small>Petty cash records and balances</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/messages">
-          <span class="dash-icon">MS</span>
-          <span class="dash-card-copy">
-            <strong>Messages</strong>
-            <small>Chats and groups</small>
-          </span>
-          <span id="msgBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
-        </a>
-
-        <a class="dash-card" href="/calendar">
-          <span class="dash-icon">CL</span>
-          <span class="dash-card-copy">
-            <strong>Calendar</strong>
-            <small>Schedules and reminders</small>
-          </span>
-          <span id="calendarBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
-        </a>
-
-        <a class="dash-card" href="/hs-codes">
-          <span class="dash-icon">HS</span>
-          <span class="dash-card-copy">
-            <strong>HS Codes</strong>
-            <small>Product code library</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/worksheet">
-          <span class="dash-icon">WS</span>
-          <span class="dash-card-copy">
-            <strong>Worksheet</strong>
-            <small>Daily work entries</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/attendance">
-          <span class="dash-icon">AT</span>
-          <span class="dash-card-copy">
-            <strong>Attendance</strong>
-            <small>Presence and availability</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/marketing-emails">
-          <span class="dash-icon">ME</span>
-          <span class="dash-card-copy">
-            <strong>Marketing Emails</strong>
-            <small>Leads and export files</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/notes">
-          <span class="dash-icon">NT</span>
-          <span class="dash-card-copy">
-            <strong>Notes</strong>
-            <small>Shared task notes</small>
-          </span>
-          <span id="notesBadge" style="display:none; position:absolute; top:10px; right:10px; min-width:22px; height:22px; border-radius:999px; background:#dc2626; color:#fff; font-size:12px; font-weight:700; align-items:center; justify-content:center; padding:0 6px;">0</span>
-        </a>
-
-        <a class="dash-card" href="/individual-achievement">
-          <span class="dash-icon">IA</span>
-          <span class="dash-card-copy">
-            <strong>Achievements</strong>
-            <small>Employee and admin achievement records</small>
-          </span>
-        </a>
-
-        <a class="dash-card" href="/finance-trash">
-          <span class="dash-icon">TR</span>
-          <span class="dash-card-copy">
-            <strong>Finance Trash</strong>
-            <small>Deleted finance records</small>
-          </span>
-        </a>
-
-        <div class="dash-card disabled">
-          <span class="dash-icon">RP</span>
-          <span class="dash-card-copy">
-            <strong>Reports</strong>
-            <small>Unavailable</small>
-          </span>
-        </div>
-      </div>
-    </div>
-  </div>
+  {% from 'partials/ui_icons.html' import icon %}
+  <main class="dash-page" id="app-content" tabindex="-1">
+    <section class="workspace-welcome">
+      <div><p class="workspace-eyebrow">YOUR WORKSPACE</p><h1>Welcome back, {{ user }}.</h1><p>Everything you need to manage your working day.</p></div>
+      <div class="workspace-identity">{{ icon('overview') }}<span>The Ceylon Spice Haven<small>{{ 'Administration' if role == 'ADMIN' else 'Employee workspace' }}</small></span></div>
+    </section>
+    <section class="workspace-toolbar" aria-label="Find a module">
+      <div><h2>Workspaces <span id="workspaceModuleCount" class="workspace-count">—</span></h2><p>Choose a module to get started.</p></div>
+      <label class="workspace-search">{{ icon('search') }}<span class="sr-only">Search modules</span><input id="workspaceSearch" type="search" placeholder="Find a module…" autocomplete="off" /></label>
+    </section>
+    {% include "partials/dashboard_modules.html" %}
+    <p id="workspaceNoResults" class="workspace-empty" hidden>No modules match your search. Try another name.</p>
+    <div class="alert" id="noAccessMsg" style="display:none;">No active modules are available for your account. Please contact your administrator.</div>
+    <footer class="workspace-footer"><span>The Ceylon Spice Haven (Pvt) Ltd</span><span>Enterprise Resource Planning</span></footer>
+  </main>
 
   <script>
     async function safeJson(res){

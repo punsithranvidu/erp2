@@ -1,0 +1,38 @@
+{% from 'partials/ui_icons.html' import icon %}
+{% set current_path = '/calendar' if request.path == '/admin-calendar' else '/finance-trash' if request.path == '/admin-finance-trash' else request.path %}
+<a class="app-skip" href="#app-content">Skip to content</a>
+<div class="app-mobile-bar">
+  <button type="button" id="appNavToggle" class="app-menu-button" aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false">{{ icon('menu') }}</button>
+  <span>The Ceylon Spice Haven</span>
+  <span class="app-mobile-mark">ERP</span>
+</div>
+<button class="app-nav-scrim" id="appNavScrim" type="button" aria-label="Close navigation" hidden></button>
+<aside class="app-sidebar" id="appSidebar" aria-label="Application navigation">
+  <a class="app-brand" href="/dashboard">
+    <img src="{{ url_for('static', filename='img/ceylon-spice-haven-logo.webp') }}" alt="" width="38" height="38" />
+    <span>The Ceylon<br />Spice Haven<small>BUSINESS WORKSPACE</small></span>
+  </a>
+  <button type="button" id="appNavClose" class="app-nav-close" aria-label="Close navigation">{{ icon('close') }}</button>
+  <nav class="app-nav" aria-label="Main">
+    <a class="app-nav-link{% if current_path == '/dashboard' %} is-current{% endif %}" href="/dashboard" {% if current_path == '/dashboard' %}aria-current="page"{% endif %}>{{ icon('overview') }}<span>Overview</span></a>
+    {% set groups = [
+      ('Business', [('finance', 'Finance', 'FINANCE'), ('cash-advances', 'Petty Cash', 'CASH_ADVANCES'), ('invoices', 'Invoices', 'INVOICES'), ('document-storage', 'Documents', 'DOCUMENT_STORAGE'), ('marketing-emails', 'Marketing Emails', 'MARKETING_EMAILS'), ('hs-codes', 'HS Codes', 'HS_CODES')]),
+      ('Team & work', [('weekly-tasks', 'Weekly Tasks', 'WEEKLY_TASKS'), ('worksheet', 'Worksheet', 'WORKSHEET'), ('calendar', 'Calendar', 'CALENDAR'), ('attendance', 'Attendance', 'ATTENDANCE'), ('messages', 'Messages', 'MESSAGES'), ('notes', 'Notes', 'NOTES'), ('individual-achievement', 'Achievements', 'INDIVIDUAL_ACHIEVEMENT')]),
+      ('Administration', [('users', 'Employee Access', 'USERS'), ('finance-trash', 'Finance Trash', 'FINANCE_TRASH')])
+    ] %}
+    {% for heading, links in groups %}
+    <div class="app-nav-group" {% if role != 'ADMIN' %}hidden{% endif %}>
+      <p class="app-nav-label">{{ heading }}</p>
+      {% for path, label, permission in links %}
+      <a class="app-nav-link{% if current_path == '/' ~ path %} is-current{% endif %}" data-nav-module="{{ permission }}" href="/{{ path }}" {% if role != 'ADMIN' %}hidden{% endif %} {% if current_path == '/' ~ path %}aria-current="page"{% endif %}>{{ icon(path) }}<span>{{ label }}</span></a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    <p id="appNavError" class="app-nav-error" hidden>Module navigation is unavailable. Use Overview to try again.</p>
+  </nav>
+  <div class="app-account">
+    <span class="app-avatar" aria-hidden="true">{{ (user|default('U', true))[:1]|upper }}</span>
+    <span class="app-account-copy"><strong>{{ user }}</strong><small>{{ 'Administrator' if role == 'ADMIN' else 'Employee' }}</small></span>
+    <a href="/logout" aria-label="Log out" title="Log out">{{ icon('logout') }}</a>
+  </div>
+</aside>

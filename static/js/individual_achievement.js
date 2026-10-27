@@ -171,7 +171,7 @@ function fillForm(row) {
   setFormOwner(Number(row.user_id || 0));
   setSelectedContributors(row.contributor_ids || []);
   ensureFormVisible();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function userLabel(row) {

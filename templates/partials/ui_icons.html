@@ -1,0 +1,26 @@
+{% macro icon(name) -%}
+{% set paths = {
+'overview': '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+'finance': '<path d="M3 10h18M5 10v9m5-9v9m4-9v9m5-9v9M3 21h18M2 7l10-5 10 5H2Z"/>',
+'document-storage': '<path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>',
+'users': '<circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3m1-17a3 3 0 0 1 0 6m3 5a5 5 0 0 1 2 4v2"/>',
+'weekly-tasks': '<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M9 4V2h6v2M8 10l1 1 2-2m2 1h3m-8 6 1 1 2-2m2 1h3"/>',
+'invoices': '<path d="M6 3h9l4 4v14H6V3Zm9 0v5h4M9 12h7m-7 4h7"/>',
+'cash-advances': '<rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18m-6 4h6v4h-6v-4Z"/>',
+'messages': '<path d="M4 4h16v13H9l-5 4V4Z"/><path d="M8 8h8m-8 4h5"/>',
+'calendar': '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 2v6m10-6v6M3 11h18m-13 4h1m3 0h1m3 0h1"/>',
+'hs-codes': '<path d="M3 4v16m4-16v16m3-16v16m4-16v16m3-16v16m4-16v16"/>',
+'worksheet': '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/>',
+'attendance': '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
+'marketing-emails': '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/>',
+'notes': '<path d="M4 3h16v13l-5 5H4V3Zm11 18v-5h5M8 8h8m-8 4h6"/>',
+'individual-achievement': '<circle cx="12" cy="8" r="5"/><path d="m8 12-2 9 6-3 6 3-2-9"/>',
+'finance-trash': '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
+'arrow': '<path d="M5 12h14m-5-5 5 5-5 5"/>',
+'search': '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+'logout': '<path d="M9 3H4v18h5m5-14 5 5-5 5M8 12h13"/>',
+'menu': '<path d="M4 6h16M4 12h16M4 18h16"/>',
+'close': '<path d="m6 6 12 12M6 18 18 6"/>'
+} %}
+<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ paths.get(name, paths['overview'])|safe }}</svg>
+{%- endmacro %}

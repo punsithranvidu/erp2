@@ -115,7 +115,7 @@ function fillForm(row){
   if(qs("noteAudience")) qs("noteAudience").value = row.audience || "EVERYONE";
   qs("noteStatus").disabled = false;
   qs("saveNoteBtn").textContent = "Update";
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 async function saveNote(){
