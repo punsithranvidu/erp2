@@ -526,7 +526,7 @@ def api_finance_soft_delete(rid):
 def api_finance_summary():
     purge_deleted_older_than_30_days()
 
-    ftype = (request.args.get("type") or "INCOME").upper().strip()
+    ftype = (request.args.get("type") or "ALL").upper().strip()
     group = (request.args.get("group") or "month").lower().strip()
     month = (request.args.get("month") or "").strip()
     user_filter = (request.args.get("user") or "").strip()
@@ -547,8 +547,11 @@ def api_finance_summary():
     }
     key_expr = group_map.get(group, group_map["month"])
 
-    where = ["deleted_at IS NULL", "type = %s"]
-    params = [ftype]
+    where = ["deleted_at IS NULL"]
+    params = []
+    if ftype in ('INCOME', 'OUTCOME'):
+        where.append('type=%s')
+        params.append(ftype)
 
     if not is_all_banks(bank_id):
         where.append("bank_id = %s")
@@ -567,11 +570,12 @@ def api_finance_summary():
         SELECT
           {key_expr} AS key,
           currency AS currency,
+          type AS direction,
           SUM(amount) AS total,
           COUNT(*) AS count
         FROM finance_records
         WHERE {" AND ".join(where)}
-        GROUP BY key, currency
+        GROUP BY key, currency, type
         ORDER BY key DESC, currency ASC
         LIMIT 1000
     """, params).fetchall()
@@ -581,6 +585,7 @@ def api_finance_summary():
     for r in rows:
         out.append({
             "key": r["key"],
+            "direction": r["direction"],
             "currency": r["currency"],
             "total": round(float(r["total"] or 0), 2),
             "count": int(r["count"] or 0),
@@ -923,3 +928,46 @@ def api_balance_upsert():
     conn.close()
 
     return jsonify({"ok": True})
+
+
+@finance_bp.route('/api/finance/categories', methods=['GET'])
+@login_required
+@require_module('FINANCE')
+def api_finance_categories():
+    from .finance_insights import INCOME_CATEGORIES, EXPENSE_CATEGORIES, category_path
+    with db() as conn:
+        existing = conn.execute("SELECT DISTINCT type, category FROM finance_records WHERE deleted_at IS NULL ORDER BY category").fetchall()
+        currencies = conn.execute("SELECT DISTINCT currency FROM finance_records WHERE deleted_at IS NULL ORDER BY currency").fetchall()
+    return jsonify(income=INCOME_CATEGORIES, expense=EXPENSE_CATEGORIES,
+                   existing=[dict(row) for row in existing], structured=[dict(row) for row in existing if category_path(row)[2] == 'structured'], currencies=[row['currency'] for row in currencies])
+
+
+@finance_bp.route('/api/finance/analysis', methods=['GET'])
+@login_required
+@require_module('FINANCE')
+def api_finance_analysis():
+    from datetime import date
+    from .finance_insights import build_analysis
+    currency = (request.args.get('currency') or 'LKR').strip().upper()
+    basis = request.args.get('basis', 'all')
+    if basis not in ('all', 'settled') or not currency or len(currency) > 12:
+        return jsonify(ok=False, error='Invalid analysis filters.'), 400
+    try:
+        start = date.fromisoformat(request.args['start']) if request.args.get('start') else None
+        end = date.fromisoformat(request.args['end']) if request.args.get('end') else None
+        if start and end and start > end:
+            raise ValueError()
+        raw_bank = request.args.get('bank_id', 'ALL')
+        bank = None if raw_bank == 'ALL' else int(raw_bank)
+        if bank is not None and bank <= 0:
+            raise ValueError()
+    except (ValueError, TypeError):
+        return jsonify(ok=False, error='Choose a valid bank and date range.'), 400
+    where = 'deleted_at IS NULL AND currency=%s'
+    params = [currency]
+    if bank is not None:
+        where += ' AND bank_id=%s'
+        params.append(bank)
+    with db() as conn:
+        rows = conn.execute(f"SELECT type,category,description,currency,amount,status,paid_date,created_at FROM finance_records WHERE {where}", params).fetchall()
+    return jsonify(ok=True, data=build_analysis(rows, currency, start, end, basis))

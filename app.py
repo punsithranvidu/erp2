@@ -13,6 +13,7 @@ from routes.db import connect, get_table_columns
 # Blueprints
 from routes.login_security import (LoginProtection, PostgresLoginStore,
                                    init_login_security, set_device_cookie, audit_signals)
+from routes.session_security import configure_sessions, init_session_table
 from routes.auth import auth_bp
 from routes.pages import pages_bp
 from routes.document_storage import document_storage_bp
@@ -120,6 +121,9 @@ MODULES = [
 # ======================
 def db():
     return connect(DATABASE_URL)
+
+
+configure_sessions(app, db)
 
 
 def now_iso():
@@ -368,6 +372,7 @@ def init_db():
     conn = db()
     cur = conn.cursor()
     init_login_security(conn)
+    init_session_table(conn)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (

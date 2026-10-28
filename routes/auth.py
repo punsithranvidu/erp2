@@ -30,9 +30,21 @@ def login():
         return render_template("login.html", error="Sign-in is temporarily unavailable. Please try again shortly."), 503
 
     if result.user is not None:
+        old_sid = session.get('login_session_id')
+        session.clear()
+        if old_sid:
+            session['login_session_id'] = old_sid
         session["user"] = result.user["username"]
         session["role"] = result.user["role"]
         session["uid"] = result.user["id"]
+        start_session = current_app.config.get('SESSION_START_FUNC')
+        if callable(start_session):
+            try:
+                start_session()
+            except Exception:
+                session.clear()
+                current_app.logger.exception('Unable to create sign-in session')
+                return render_template('login.html', error='Sign-in is temporarily unavailable. Please try again shortly.'), 503
         return redirect(url_for("pages.dashboard"))
 
     response = make_response(render_template(
@@ -45,5 +57,10 @@ def login():
 
 @auth_bp.route("/logout")
 def logout():
-    session.clear()
+    from flask import current_app
+    end_session = current_app.config.get('SESSION_END_FUNC')
+    if callable(end_session):
+        end_session()
+    else:
+        session.clear()
     return redirect(url_for("auth.login"))
