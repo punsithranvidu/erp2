@@ -13,8 +13,11 @@
     <span>The Ceylon<br />Spice Haven<small>BUSINESS WORKSPACE</small></span>
   </a>
   <button type="button" id="appNavClose" class="app-nav-close" aria-label="Close navigation">{{ icon('close') }}</button>
+  <button type="button" id="appSidebarCollapse" class="app-sidebar-collapse" aria-label="Collapse sidebar" aria-controls="appSidebar" aria-expanded="true" title="Collapse sidebar">
+    {{ icon('menu') }}<span>Collapse sidebar</span>
+  </button>
   <nav class="app-nav" aria-label="Main">
-    <a class="app-nav-link{% if current_path == '/dashboard' %} is-current{% endif %}" href="/dashboard" {% if current_path == '/dashboard' %}aria-current="page"{% endif %}>{{ icon('overview') }}<span>Overview</span></a>
+    <a class="app-nav-link{% if current_path == '/dashboard' %} is-current{% endif %}" href="/dashboard" aria-label="Overview" data-nav-label="Overview" {% if current_path == '/dashboard' %}aria-current="page"{% endif %}>{{ icon('overview') }}<span>Overview</span></a>
     {% set groups = [
       ('Business', [('finance', 'Finance', 'FINANCE'), ('cash-advances', 'Petty Cash', 'CASH_ADVANCES'), ('invoices', 'Invoices', 'INVOICES'), ('document-storage', 'Documents', 'DOCUMENT_STORAGE'), ('marketing-emails', 'Marketing Emails', 'MARKETING_EMAILS'), ('hs-codes', 'HS Codes', 'HS_CODES')]),
       ('Team & work', [('weekly-tasks', 'Weekly Tasks', 'WEEKLY_TASKS'), ('worksheet', 'Worksheet', 'WORKSHEET'), ('calendar', 'Calendar', 'CALENDAR'), ('attendance', 'Attendance', 'ATTENDANCE'), ('messages', 'Messages', 'MESSAGES'), ('notes', 'Notes', 'NOTES'), ('individual-achievement', 'Achievements', 'INDIVIDUAL_ACHIEVEMENT')]),
@@ -24,7 +27,7 @@
     <div class="app-nav-group" {% if role != 'ADMIN' %}hidden{% endif %}>
       <p class="app-nav-label">{{ heading }}</p>
       {% for path, label, permission in links %}
-      <a class="app-nav-link{% if current_path == '/' ~ path %} is-current{% endif %}" data-nav-module="{{ permission }}" href="/{{ path }}" {% if role != 'ADMIN' %}hidden{% endif %} {% if current_path == '/' ~ path %}aria-current="page"{% endif %}>{{ icon(path) }}<span>{{ label }}</span></a>
+      <a class="app-nav-link{% if current_path == '/' ~ path %} is-current{% endif %}" aria-label="{{ label }}" data-nav-label="{{ label }}" data-nav-module="{{ permission }}" href="/{{ path }}" {% if role != 'ADMIN' %}hidden{% endif %} {% if current_path == '/' ~ path %}aria-current="page"{% endif %}>{{ icon(path) }}<span>{{ label }}</span></a>
       {% endfor %}
     </div>
     {% endfor %}

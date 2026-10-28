@@ -2,6 +2,11 @@ from flask import Blueprint, request, session, jsonify, current_app, Response
 from functools import wraps
 from io import StringIO
 import csv
+import hashlib
+import json
+from decimal import Decimal, InvalidOperation
+from datetime import date
+import re
 
 from .db import connect
 
@@ -80,6 +85,15 @@ def get_default_bank_id():
     return row["id"] if row else None
 
 
+def advance_edit_version(row):
+    """Detect stale record edits without changing the existing table schema."""
+    fields = ("id", "employee_username", "bank_id", "currency", "amount_given",
+              "purpose", "given_date", "proof_link", "closed")
+    values = [str(row.get(field) if row.get(field) is not None else "") for field in fields]
+    values[4] = str(Decimal(str(row.get("amount_given") or 0)).normalize())
+    return hashlib.sha256(json.dumps(values).encode()).hexdigest()
+
+
 def _format_advance_row(adv_row):
     topups = float(adv_row["topups_total"] or 0)
     spent_company = float(adv_row["spent_company"] or 0)
@@ -89,6 +103,7 @@ def _format_advance_row(adv_row):
     balance = total_given - spent_total
 
     out = dict(adv_row)
+    out["edit_version"] = advance_edit_version(adv_row)
     out["topups_total"] = round(topups, 2)
     out["spent_company"] = round(spent_company, 2)
     out["spent_personal"] = round(spent_personal, 2)
@@ -730,74 +745,78 @@ def api_advances_update(aid):
     if not is_admin():
         return jsonify({"ok": False, "error": "Admin only"}), 403
 
-    data = request.json or {}
-
-    employee_username = (data.get("employee_username") or "").strip()
-    bank_id = data.get("bank_id")
-    currency = (data.get("currency") or "").upper().strip()
-    amount_given = data.get("amount_given")
-    purpose = (data.get("purpose") or "").strip()
-    given_date = (data.get("given_date") or "").strip()
-    proof_link = normalize_url(data.get("proof_link") or "")
-
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(ok=False, error="A record is required."), 400
+    text_fields = ("employee_username", "currency", "purpose", "given_date", "proof_link")
+    if any(not isinstance(data.get(field, ""), str) for field in text_fields):
+        return jsonify(ok=False, error="Invalid record fields."), 400
+    employee_username = data.get("employee_username", "").strip()
+    currency = data.get("currency", "").strip().upper()
+    purpose = data.get("purpose", "").strip()
+    given_date = data.get("given_date", "").strip()
+    proof_link = normalize_url(data.get("proof_link", ""))
     if not employee_username:
-        return jsonify({"ok": False, "error": "employee_username is required"}), 400
-    if not currency:
-        return jsonify({"ok": False, "error": "currency is required"}), 400
-
+        return jsonify(ok=False, error="Select an employee."), 400
+    if not re.fullmatch(r"[A-Z]{3}", currency):
+        return jsonify(ok=False, error="Select a valid currency."), 400
     try:
-        amt = float(amount_given)
-        if amt <= 0:
+        amount = Decimal(str(data.get("amount_given")))
+        if not amount.is_finite() or not 0 < float(amount) < float("inf"):
             raise ValueError()
-    except Exception:
-        return jsonify({"ok": False, "error": "amount_given must be a number > 0"}), 400
+    except (InvalidOperation, ValueError, OverflowError):
+        return jsonify(ok=False, error="Amount given must be a finite number greater than zero."), 400
+    if given_date:
+        try:
+            date.fromisoformat(given_date)
+        except ValueError:
+            return jsonify(ok=False, error="Enter a valid given date."), 400
+    bank_id = data.get("bank_id")
+    if bank_id not in (None, ""):
+        try:
+            if isinstance(bank_id, bool) or not re.fullmatch(r"[0-9]+", str(bank_id)):
+                raise ValueError()
+            bank_id = int(bank_id)
+            if bank_id <= 0:
+                raise ValueError()
+        except (TypeError, ValueError):
+            return jsonify(ok=False, error="Select a valid bank account."), 400
 
-    conn = db()
-
-    adv = conn.execute("""
-        SELECT id
-        FROM cash_advances
-        WHERE id=%s
-        LIMIT 1
-    """, (aid,)).fetchone()
-
-    if not adv:
-        conn.close()
-        return jsonify({"ok": False, "error": "Advance not found"}), 404
-
-    emp = conn.execute("""
-        SELECT username
-        FROM users
-        WHERE username=%s AND active=1
-        LIMIT 1
-    """, (employee_username,)).fetchone()
-
-    if not emp:
-        conn.close()
-        return jsonify({"ok": False, "error": "Invalid username"}), 400
-
-    if bank_id is None or str(bank_id).strip() == "":
-        bank_id = get_default_bank_id()
-
-    conn.execute("""
-        UPDATE cash_advances
-        SET employee_username=%s, bank_id=%s, currency=%s, amount_given=%s,
-            purpose=%s, given_date=%s, proof_link=%s
-        WHERE id=%s
-    """, (
-        employee_username,
-        int(bank_id) if bank_id else None,
-        currency,
-        float(amt),
-        purpose,
-        given_date,
-        proof_link,
-        aid
-    ))
-    conn.commit()
-    conn.close()
-
-    return jsonify({"ok": True, "data": {"id": aid}})
+    with db() as conn:
+        adv = conn.execute("SELECT * FROM cash_advances WHERE id=%s FOR UPDATE", (aid,)).fetchone()
+        if not adv:
+            return jsonify(ok=False, error="Petty cash record not found."), 404
+        if int(adv["closed"] or 0):
+            return jsonify(ok=False, error="Reopen this petty cash record before editing it."), 409
+        if data.get("edit_version") and data["edit_version"] != advance_edit_version(adv):
+            return jsonify(ok=False, error="This record has changed. Refresh the records and open Edit again."), 409
+        employee = conn.execute("SELECT username, active FROM users WHERE username=%s", (employee_username,)).fetchone()
+        if not employee or (not int(employee["active"]) and employee_username != adv["employee_username"]):
+            return jsonify(ok=False, error="Select an active employee."), 400
+        if bank_id in (None, ""):
+            bank_id = adv["bank_id"]
+        if bank_id is not None:
+            bank = conn.execute("SELECT id, active FROM bank_accounts WHERE id=%s", (bank_id,)).fetchone()
+            if not bank or (not int(bank["active"]) and bank_id != adv["bank_id"]):
+                return jsonify(ok=False, error="Select an active bank account."), 400
+        expenses = conn.execute("""
+            SELECT COUNT(*) AS count,
+                   COALESCE(SUM(CASE WHEN COALESCE(paid_by,'COMPANY_ADVANCE')='COMPANY_ADVANCE'
+                                     THEN amount ELSE 0 END),0) AS company_spent
+            FROM cash_advance_expenses WHERE advance_id=%s
+        """, (aid,)).fetchone()
+        topups = conn.execute("SELECT COUNT(*) AS count, COALESCE(SUM(amount),0) AS total FROM cash_advance_topups WHERE advance_id=%s", (aid,)).fetchone()
+        if currency != adv["currency"] and (expenses["count"] or topups["count"]):
+            return jsonify(ok=False, error="Currency cannot change after expenses or top-ups have been recorded."), 409
+        if amount + Decimal(str(topups["total"])) < Decimal(str(expenses["company_spent"])):
+            return jsonify(ok=False, error="Amount given plus top-ups cannot be less than recorded company expenses."), 400
+        conn.execute("""
+            UPDATE cash_advances
+            SET employee_username=%s, bank_id=%s, currency=%s, amount_given=%s,
+                purpose=%s, given_date=%s, proof_link=%s
+            WHERE id=%s
+        """, (employee_username, bank_id, currency, float(amount), purpose, given_date, proof_link, aid))
+    return jsonify(ok=True, data={"id": aid})
 
 
 @cash_advances_bp.route("/api/advances/<int:aid>", methods=["DELETE"])

@@ -4,8 +4,125 @@
 
   let me = null;
   let selectedAdvanceId = null;
+  let records = new Map();
+  let editingRecord = null;
+  let editingExpenseId = null;
+  let savingRecord = false;
+  let savingExpense = false;
+  let savingTopup = false;
 
-  function safeText(v){ return (v===null||v===undefined) ? "" : String(v); }
+  const canEdit = () => me?.role === "ADMIN" || Number(me?.permissions?.CASH_ADVANCES?.can_edit) === 1;
+  const isClosed = record => Number(record?.closed || 0) === 1 || record?.status === "CLOSED";
+  const currentRecord = () => records.get(selectedAdvanceId);
+  const today = () => {
+    const parts = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(new Date());
+    const part = key => parts.find(item => item.type === key).value;
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  };
+
+  function openDialog(id) {
+    const dialog = $(id);
+    dialog.querySelectorAll('.cash-dialog-record').forEach(label => {
+      const record = currentRecord();
+      label.textContent = record ? `Record #${record.id} · ${record.employee_username} · ${record.currency}` : '';
+    });
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function setCashView(view) {
+    ['Records', 'Summary'].forEach(name => {
+      const active = name.toLowerCase() === view;
+      $(`cash${name}Tab`).classList.toggle('is-active', active);
+      $(`cash${name}Tab`).setAttribute('aria-selected', String(active));
+      $(`cash${name}Tab`).tabIndex = active ? 0 : -1;
+      $(`cash${name}Panel`).hidden = !active;
+    });
+    $('cashSelectedPanel').hidden = view !== 'records' || !currentRecord();
+  }
+
+  function updateSelectedRecord() {
+    const record = currentRecord();
+    $('cashSelectedPanel').hidden = !record || $('cashRecordsPanel').hidden;
+    document.querySelectorAll('[data-cash-row]').forEach(row => {
+      row.classList.toggle('is-selected', Number(row.dataset.cashRow) === selectedAdvanceId);
+    });
+    if (!record) return;
+    $('cashSelectedTitle').textContent = `Record #${record.id} · ${record.employee_username}`;
+    $('cashSelectedPurpose').textContent = `${record.purpose || 'No purpose specified'} · ${isClosed(record) ? 'Closed' : 'Open'}`;
+    const totals = $('cashSelectedTotals');
+    totals.replaceChildren();
+    [['Given', record.amount_given], ['Top-ups', record.topups_total], ['Spent', record.spent_total], ['Balance', record.balance]].forEach(([label, value]) => {
+      const item = document.createElement('div');
+      const caption = document.createElement('span'); caption.className = 'cash-total-label'; caption.textContent = label;
+      const amount = document.createElement('strong'); amount.className = 'cash-total-value';
+      const currency = document.createElement('small'); currency.textContent = record.currency;
+      amount.append(currency, new Intl.NumberFormat('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(Number(value || 0)));
+      item.append(caption, amount); totals.append(item);
+    });
+    $('openExpenseBtn').hidden = !canEdit() || isClosed(record);
+    if ($('openTopupBtn')) $('openTopupBtn').hidden = me?.role !== 'ADMIN' || isClosed(record);
+    if ($('closeAdvanceBtn')) { $('closeAdvanceBtn').hidden = isClosed(record); $('closeAdvanceBtn').disabled = !canEdit(); }
+    if ($('reopenAdvanceBtn')) { $('reopenAdvanceBtn').hidden = !isClosed(record); $('reopenAdvanceBtn').disabled = !canEdit(); }
+  }
+
+  function setSelectValue(id, value, label) {
+    const select = $(id);
+    select.querySelectorAll('[data-legacy-option]').forEach(option => option.remove());
+    if (![...select.options].some(option => option.value === String(value))) {
+      const option = new Option(label || String(value), value);
+      option.dataset.legacyOption = 'true'; select.add(option);
+    }
+    select.value = value;
+  }
+
+  function openRecordForm(record = null) {
+    if (me?.role !== 'ADMIN') return;
+    if (record && isClosed(record)) return showMsg('selMsg', 'Reopen this record before editing it.', false);
+    editingRecord = record ? {...record} : null;
+    $('cashRecordForm').reset();
+    $('advEmployee').value = me.user;
+    if (record) {
+      setSelectValue('advEmployee', record.employee_username, record.employee_username);
+      setSelectValue('advBank', record.bank_id ?? '', record.bank_name || 'No bank assigned');
+      setSelectValue('advCurrency', record.currency, record.currency);
+      $('advAmount').value = record.amount_given;
+      $('advPurpose').value = record.purpose || '';
+      $('advGivenDate').value = record.given_date || '';
+      $('advProofLink').value = record.proof_link || '';
+    } else {
+      ['advEmployee', 'advBank', 'advCurrency'].forEach(id => $(id).querySelectorAll('[data-legacy-option]').forEach(option => option.remove()));
+      if ([...$('advEmployee').options].some(option => option.value === me.user)) $('advEmployee').value = me.user;
+      if (!$('advBank').value && $('advBank').options.length) $('advBank').selectedIndex = 0;
+      $('advGivenDate').value = today();
+    }
+    const currencyLocked = !!record && (Number(record.topups_total) > 0 || Number(record.spent_total) > 0);
+    $('advCurrency').disabled = currencyLocked;
+    $('cashRecordTitle').textContent = record ? `Edit petty cash #${record.id}` : 'New petty cash';
+    $('cashRecordHint').textContent = currencyLocked ? 'Currency is fixed because this record already has expenses or top-ups.' : 'Enter the initial allocation details.';
+    $('createAdvanceBtn').textContent = record ? 'Save changes' : 'Create petty cash';
+    showMsg('advMsg', '');
+    openDialog('cashRecordDialog');
+  }
+
+  function openExpenseForm(expense = null) {
+    if (!currentRecord() || !canEdit() || isClosed(currentRecord())) return;
+    editingExpenseId = expense?.id || null;
+    $('cashExpenseForm').reset();
+    $('expCategory').value = expense?.category || '';
+    $('expDescription').value = expense?.description || '';
+    $('expPaidBy').value = expense?.paid_by || 'COMPANY_ADVANCE';
+    $('expAmount').value = expense?.amount || '';
+    $('expDate').value = expense?.spent_date || today();
+    $('expProof').value = expense?.proof_link || '';
+    $('cashExpenseTitle').textContent = expense ? `Edit expense #${expense.id}` : 'Add expense';
+    $('addExpenseBtn').textContent = expense ? 'Save changes' : 'Add expense';
+    showMsg('expMsg', '');
+    openDialog('cashExpenseDialog');
+  }
+
+  function safeText(v){
+    return String(v ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
+  }
 
   function normalizeUrl(u){
     const s = (u || "").trim();
@@ -68,7 +185,8 @@
   }
 
   async function loadMe(){
-    me = await apiGet("/api/me");
+    me = document.body.dataset.appRole !== 'ADMIN' && window.erpWorkspaceMe
+      ? await window.erpWorkspaceMe : await apiGet('/api/me');
 
     if($("closeAdvanceBtn")) $("closeAdvanceBtn").disabled = (me?.role !== "ADMIN");
     if($("reopenAdvanceBtn")) $("reopenAdvanceBtn").disabled = (me?.role !== "ADMIN");
@@ -92,8 +210,8 @@
       if(selA){
         selA.innerHTML = "";
         const all = document.createElement("option");
-        all.value = "ALL";
-        all.textContent = "ALL";
+        all.value = "";
+        all.textContent = "Select employee";
         selA.appendChild(all);
   
         rows.forEach(u=>{
@@ -173,16 +291,17 @@
     body.innerHTML = "";
 
     if(!rows || rows.length === 0){
-      showMsg("selMsg", "No advances found.", true);
+      body.innerHTML = '<tr><td colspan="13" class="cash-empty-row">No petty cash records found.</td></tr>';
       return;
     }
 
     rows.forEach(r=>{
       const tr = document.createElement("tr");
       tr.style.cursor = "pointer";
+      tr.dataset.cashRow = String(r.id);
 
       const proofBtn = r.proof_link
-        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${normalizeUrl(r.proof_link)}">Open</a>`
+        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${safeText(normalizeUrl(r.proof_link))}">Open</a>`
         : `<span class="muted">—</span>`;
 
       const bal = Number(r.balance || 0);
@@ -195,6 +314,7 @@
       const actionHtml = (me?.role === "ADMIN")
         ? `
           <button class="btn mini ghost" data-adv-sel="${r.id}">Select</button>
+          ${!isClosed(r) ? `<button class="btn mini" data-adv-edit="${r.id}">Edit</button>` : ``}
           <button class="btn mini danger" data-adv-del="${r.id}">Delete</button>
         `
         : `<button class="btn mini ghost" data-adv-sel="${r.id}">Select</button>`;
@@ -212,16 +332,21 @@
         <td>${safeText(r.purpose)}</td>
         <td class="mono">${safeText(r.given_date)}</td>
         <td>${proofBtn}</td>
-        <td>${actionHtml}</td>
+        <td><div class="cash-actions">${actionHtml}</div></td>
       `;
 
-      tr.addEventListener("click", () => selectAdvance(r.id));
+      tr.addEventListener("click", event => {
+        if (!event.target.closest('a, button')) selectAdvance(r.id).catch(err => showMsg('selMsg', err.message, false));
+      });
+      tr.querySelector(`[data-adv-edit="${r.id}"]`)?.addEventListener('click', event => {
+        event.stopPropagation(); openRecordForm(r);
+      });
 
       const selBtn = tr.querySelector(`[data-adv-sel="${r.id}"]`);
       if(selBtn){
         selBtn.addEventListener("click", (e)=>{
           e.stopPropagation();
-          selectAdvance(r.id);
+          selectAdvance(r.id).catch(err => showMsg('selMsg', err.message, false));
         });
       }
 
@@ -251,14 +376,20 @@
 
   async function loadAdvances(){
     const out = await apiGet("/api/advances");
+    records = new Map((out.data || []).map(record => [Number(record.id), record]));
+    if (selectedAdvanceId && !records.has(selectedAdvanceId)) selectedAdvanceId = null;
     renderAdvances(out.data || []);
+    updateSelectedRecord();
   }
 
   async function selectAdvance(id){
     selectedAdvanceId = Number(id);
-    showMsg("selMsg", `Selected Advance ID: ${selectedAdvanceId}`, true);
-    await loadTopupsForSelected();
-    await loadExpensesForSelected();
+    setCashView('records');
+    updateSelectedRecord();
+    showMsg("selMsg", `Selected petty cash #${selectedAdvanceId}`, true);
+    await Promise.all([loadTopupsForSelected(), loadExpensesForSelected()]);
+    $('cashSelectedPanel').scrollIntoView({block: 'start', behavior: 'auto'});
+    $('cashSelectedTitle').focus({preventScroll: true});
   }
 
   // -------------------------
@@ -270,7 +401,7 @@
     body.innerHTML = "";
 
     if(!rows || rows.length === 0){
-      showMsg("expMsg", "No expenses for this advance yet.", true);
+      body.innerHTML = '<tr><td colspan="10" class="cash-empty-row">No expenses added to this record yet.</td></tr>';
       return;
     }
 
@@ -278,7 +409,7 @@
       const tr = document.createElement("tr");
 
       const proofBtn = r.proof_link
-        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${normalizeUrl(r.proof_link)}">Open</a>`
+        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${safeText(normalizeUrl(r.proof_link))}">Open</a>`
         : `<span class="muted">—</span>`;
 
       const paidBy = (r.paid_by || "COMPANY_ADVANCE").toUpperCase();
@@ -286,10 +417,10 @@
         ? `<span class="pill neg">PERSONAL</span>`
         : `<span class="pill">COMPANY</span>`;
 
-      const actionHtml = `
+      const actionHtml = canEdit() && !isClosed(currentRecord()) ? `
         <button class="btn mini ghost" data-exp-edit="${r.id}">Edit</button>
         <button class="btn mini danger" data-exp-del="${r.id}">Delete</button>
-      `;
+      ` : '<span class="muted">—</span>';
 
       tr.innerHTML = `
         <td><b>${r.id}</b></td>
@@ -304,37 +435,11 @@
         <td>${actionHtml}</td>
       `;
 
-      tr.querySelector(`[data-exp-edit="${r.id}"]`).addEventListener("click", async (e)=>{
-        e.stopPropagation();
-        try{
-          const newCat = prompt("Category:", safeText(r.category)); if(newCat===null) return;
-          const newDesc = prompt("Description:", safeText(r.description)); if(newDesc===null) return;
-
-          const curPaid = (r.paid_by || "COMPANY_ADVANCE").toUpperCase();
-          const newPaidBy = prompt("Paid By (COMPANY_ADVANCE or EMPLOYEE_PERSONAL):", curPaid);
-          if(newPaidBy===null) return;
-
-          const newAmt = prompt("Amount:", String(r.amount||"")); if(newAmt===null) return;
-          const newDate = prompt("Spent Date (YYYY-MM-DD):", safeText(r.spent_date)); if(newDate===null) return;
-          const newProof = prompt("Proof link:", safeText(r.proof_link)); if(newProof===null) return;
-
-          await apiPut(`/api/expenses/${r.id}`, {
-            category: newCat.trim(),
-            description: newDesc.trim(),
-            paid_by: newPaidBy.trim().toUpperCase(),
-            amount: newAmt,
-            spent_date: newDate.trim(),
-            proof_link: newProof.trim()
-          });
-
-          showMsg("expMsg", `Expense ${r.id} updated`, true);
-          await refreshAll();
-        }catch(err){
-          showMsg("expMsg", err.message, false);
-        }
+      tr.querySelector(`[data-exp-edit="${r.id}"]`)?.addEventListener('click', event => {
+        event.stopPropagation(); openExpenseForm(r);
       });
 
-      tr.querySelector(`[data-exp-del="${r.id}"]`).addEventListener("click", async (e)=>{
+      tr.querySelector(`[data-exp-del="${r.id}"]`)?.addEventListener("click", async (e)=>{
         e.stopPropagation();
         if(!confirm(`Delete expense ${r.id}?`)) return;
         try{
@@ -360,40 +465,28 @@
       return;
     }
 
-    const out = await apiGet(`/api/advances/${selectedAdvanceId}/expenses`);
-    renderExpenses(out.data || []);
+    const id = selectedAdvanceId;
+    const out = await apiGet(`/api/advances/${id}/expenses`);
+    if (id === selectedAdvanceId) renderExpenses(out.data || []);
   }
 
   async function addExpense(){
-    try{
-      if(!selectedAdvanceId) throw new Error("Select an advance first.");
-
-      const category = ($("expCategory")?.value || "").trim();
-      const description = ($("expDescription")?.value || "").trim();
-      const paid_by = ($("expPaidBy")?.value || "COMPANY_ADVANCE").trim();
-      const amount = $("expAmount")?.value || "";
-      const spent_date = $("expDate")?.value || "";
-      const proof_link = normalizeUrl($("expProof")?.value || "");
-
-      if(!category) throw new Error("Category is required.");
-      const amt = Number(amount);
-      if(!isFinite(amt) || amt <= 0) throw new Error("Amount must be > 0.");
-
-      await apiPost(`/api/advances/${selectedAdvanceId}/expenses`, {
-        category, description, paid_by, amount, spent_date, proof_link
-      });
-
-      showMsg("expMsg", "Expense added ✅", true);
-
-      if($("expCategory")) $("expCategory").value = "";
-      if($("expDescription")) $("expDescription").value = "";
-      if($("expAmount")) $("expAmount").value = "";
-      if($("expProof")) $("expProof").value = "";
-
+    if (savingExpense) return;
+    savingExpense = true; $('addExpenseBtn').disabled = true;
+    try {
+      if (!selectedAdvanceId) throw new Error('Select a petty cash record first.');
+      const payload = {
+        category: $('expCategory').value.trim(), description: $('expDescription').value.trim(),
+        paid_by: $('expPaidBy').value, amount: $('expAmount').value,
+        spent_date: $('expDate').value, proof_link: normalizeUrl($('expProof').value)
+      };
+      if (editingExpenseId) await apiPut(`/api/expenses/${editingExpenseId}`, payload);
+      else await apiPost(`/api/advances/${selectedAdvanceId}/expenses`, payload);
+      $('cashExpenseDialog').close();
+      showMsg('selMsg', editingExpenseId ? 'Expense updated.' : 'Expense added.');
       await refreshAll();
-    }catch(err){
-      showMsg("expMsg", err.message, false);
-    }
+    } catch (err) { showMsg($('cashExpenseDialog').open ? 'expMsg' : 'selMsg', $('cashExpenseDialog').open ? err.message : `Expense saved, but the view could not refresh. ${err.message}`, false); }
+    finally { savingExpense = false; $('addExpenseBtn').disabled = false; }
   }
 
   // -------------------------
@@ -404,13 +497,16 @@
     if(!body) return;
     body.innerHTML = "";
 
-    if(!rows || rows.length === 0) return;
+    if(!rows || rows.length === 0) {
+      body.innerHTML = '<tr><td colspan="8" class="cash-empty-row">No top-ups added to this record yet.</td></tr>';
+      return;
+    }
 
     rows.forEach(t=>{
       const tr = document.createElement("tr");
 
       const proofBtn = t.proof_link
-        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${normalizeUrl(t.proof_link)}">Open</a>`
+        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${safeText(normalizeUrl(t.proof_link))}">Open</a>`
         : `<span class="muted">—</span>`;
 
       const ref = (t.ref_type && t.ref_id)
@@ -460,11 +556,14 @@
       return;
     }
 
-    const out = await apiGet(`/api/advances/${selectedAdvanceId}/topups`);
-    renderTopups(out.data || []);
+    const id = selectedAdvanceId;
+    const out = await apiGet(`/api/advances/${id}/topups`);
+    if (id === selectedAdvanceId) renderTopups(out.data || []);
   }
 
   async function addTopup(){
+    if (savingTopup) return;
+    savingTopup = true; $('addTopupBtn').disabled = true;
     try{
       if(me?.role !== "ADMIN") throw new Error("Admin only.");
       if(!selectedAdvanceId) throw new Error("Select an advance first.");
@@ -484,7 +583,8 @@
         amount, topup_date, proof_link, ref_type, ref_id, note
       });
 
-      showMsg("topupMsg", "Top-up added ✅", true);
+      $('cashTopupDialog').close();
+      showMsg("selMsg", "Top-up added.", true);
 
       if($("topupAmount")) $("topupAmount").value = "";
       if($("topupProof")) $("topupProof").value = "";
@@ -493,8 +593,8 @@
 
       await refreshAll();
     }catch(err){
-      showMsg("topupMsg", err.message, false);
-    }
+      showMsg($('cashTopupDialog').open ? 'topupMsg' : 'selMsg', $('cashTopupDialog').open ? err.message : `Top-up saved, but the view could not refresh. ${err.message}`, false);
+    } finally { savingTopup = false; $('addTopupBtn').disabled = false; }
   }
 
   // -------------------------
@@ -530,35 +630,33 @@
   // CREATE ADVANCE (ADMIN)
   // -------------------------
   async function createAdvance(){
-    try{
-      if(me?.role !== "ADMIN") return showMsg("advMsg", "Admin only.", false);
-
-      const employee_username = ($("advEmployee")?.value || "").trim();
-      const bank_id = $("advBank")?.value || "";
-      const currency = $("advCurrency")?.value || "LKR";
-      const amount_given = $("advAmount")?.value || "";
-      const purpose = ($("advPurpose")?.value || "").trim();
-      const given_date = $("advGivenDate")?.value || "";
-      const proof_link = normalizeUrl($("advProofLink")?.value || "");
-
-      if(!employee_username || employee_username === "ALL") throw new Error("Select employee.");
-      const amt = Number(amount_given);
-      if(!isFinite(amt) || amt <= 0) throw new Error("Amount must be > 0.");
-
-      const out = await apiPost("/api/advances", {
-        employee_username, bank_id, currency, amount_given, purpose, given_date, proof_link
-      });
-
-      showMsg("advMsg", `Advance created (ID ${out.data?.id || "OK"})`, true);
-
-      if($("advAmount")) $("advAmount").value = "";
-      if($("advPurpose")) $("advPurpose").value = "";
-      if($("advProofLink")) $("advProofLink").value = "";
-
+    if (savingRecord) return;
+    savingRecord = true; $('createAdvanceBtn').disabled = true;
+    try {
+      if (me?.role !== 'ADMIN') throw new Error('Admin only.');
+      const payload = {
+        employee_username: $('advEmployee').value, bank_id: $('advBank').value,
+        currency: $('advCurrency').value, amount_given: $('advAmount').value,
+        purpose: $('advPurpose').value.trim(), given_date: $('advGivenDate').value,
+        proof_link: normalizeUrl($('advProofLink').value)
+      };
+      if (!payload.employee_username || payload.employee_username === 'ALL') throw new Error('Select an employee.');
+      if (!Number.isFinite(Number(payload.amount_given)) || Number(payload.amount_given) <= 0) throw new Error('Amount must be greater than zero.');
+      let id;
+      if (editingRecord) {
+        payload.edit_version = editingRecord.edit_version;
+        await apiPut(`/api/advances/${editingRecord.id}`, payload);
+        id = editingRecord.id;
+      } else {
+        const out = await apiPost('/api/advances', payload);
+        id = out.data.id;
+      }
+      $('cashRecordDialog').close();
       await loadAdvances();
-    }catch(err){
-      showMsg("advMsg", err.message, false);
-    }
+      await selectAdvance(id);
+      showMsg('selMsg', editingRecord ? `Petty cash #${id} updated.` : `Petty cash #${id} created.`);
+    } catch (err) { showMsg($('cashRecordDialog').open ? 'advMsg' : 'selMsg', $('cashRecordDialog').open ? err.message : `Record saved, but the view could not refresh. ${err.message}`, false); }
+    finally { savingRecord = false; $('createAdvanceBtn').disabled = false; }
   }
 
   // -------------------------
@@ -615,9 +713,8 @@
 
   async function refreshAll(){
     await loadAdvances();
-    await loadTopupsForSelected();
-    await loadExpensesForSelected();
-    // summary is optional (don’t force if you don’t want)
+    await Promise.all([loadTopupsForSelected(), loadExpensesForSelected()]);
+    if (!$('cashSummaryPanel').hidden) await loadSummary();
   }
 
   // -------------------------
@@ -626,25 +723,52 @@
   async function init(){
     await loadMe();
 
-    if(me?.role === "ADMIN"){
-      await loadBanks();
-    }
+    await Promise.all([loadEmployees(), me?.role === 'ADMIN' ? loadBanks() : Promise.resolve()]);
 
-    await loadEmployees();
-
-    $("createAdvanceBtn")?.addEventListener("click", createAdvance);
-    $("addExpenseBtn")?.addEventListener("click", addExpense);
-    $("addTopupBtn")?.addEventListener("click", addTopup);
+    $('cashRecordForm')?.addEventListener('submit', event => { event.preventDefault(); createAdvance(); });
+    $('cashExpenseForm').addEventListener('submit', event => { event.preventDefault(); addExpense(); });
+    $('cashTopupForm')?.addEventListener('submit', event => { event.preventDefault(); addTopup(); });
+    $('newAdvanceBtn')?.addEventListener('click', () => openRecordForm());
+    $('openExpenseBtn').addEventListener('click', () => openExpenseForm());
+    $('openTopupBtn')?.addEventListener('click', () => {
+      $('cashTopupForm').reset(); $('topupDate').value = today(); showMsg('topupMsg', ''); openDialog('cashTopupDialog');
+    });
+    document.querySelectorAll('[data-close-dialog]').forEach(button => {
+      button.addEventListener('click', () => button.closest('dialog').close());
+    });
+    document.querySelectorAll('.cash-dialog').forEach(dialog => {
+      const busy = () => savingRecord || savingExpense || savingTopup;
+      dialog.addEventListener('cancel', event => { if (busy()) event.preventDefault(); });
+      dialog.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', event => {
+        if (busy()) { event.preventDefault(); event.stopImmediatePropagation(); }
+      }, true));
+    });
+    ['Records', 'Summary'].forEach(name => {
+      const tab = $(`cash${name}Tab`);
+      tab.addEventListener('click', () => { setCashView(name.toLowerCase()); if (name === 'Summary') loadSummary(); });
+      tab.addEventListener('keydown', event => {
+        if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+          event.preventDefault();
+          const target = event.key === 'Home' ? $('cashRecordsTab') : event.key === 'End' ? $('cashSummaryTab') : name === 'Records' ? $('cashSummaryTab') : $('cashRecordsTab');
+          target.click(); target.focus();
+        }
+      });
+    });
 
     $("closeAdvanceBtn")?.addEventListener("click", closeSelected);
     $("reopenAdvanceBtn")?.addEventListener("click", reopenSelected);
 
-    $("refreshAdvBtn")?.addEventListener("click", refreshAll);
+    $("refreshAdvBtn")?.addEventListener("click", async () => {
+      $('refreshAdvBtn').disabled = true;
+      try { await refreshAll(); showMsg('selMsg', 'Records refreshed.'); }
+      catch (err) { showMsg('selMsg', err.message, false); }
+      finally { $('refreshAdvBtn').disabled = false; }
+    });
     $("loadSummaryBtn")?.addEventListener("click", loadSummary);
     $("exportSummaryBtn")?.addEventListener("click", exportSummaryCsv);
 
     await refreshAll();
-    showMsg("expMsg", "Select an advance to view expenses.", true);
+    if ($('newAdvanceBtn')) $('newAdvanceBtn').disabled = false;
   }
 
   init().catch(err => {

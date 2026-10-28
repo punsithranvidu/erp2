@@ -5,296 +5,124 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Petty Cash</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-
-
-
-  <style>
-    .cash-page{ display:grid; grid-template-columns:420px 1fr; gap:16px; }
-    @media (max-width: 900px){ .cash-page{ grid-template-columns:1fr; } .table{ min-width: 900px; } }
-    .pill.neg{ background:#ffe7e7; border:1px solid #ffb5b5; color:#b30000; }
-    .pill.pos{ background:#eaffea; border:1px solid #b8f1b8; color:#0b6b0b; }
-    .muted2{ color:#76839a; font-size:13px; }
-  </style>
   <link rel="icon" href="{{ url_for('static', filename='img/ceylon-spice-haven-logo.webp') }}" type="image/webp" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/petty-cash.css') }}" />
   <script src="{{ url_for('static', filename='js/workspace.js') }}" defer></script>
 </head>
-
 <body class="app-body" data-app-role="{{ role }}">
-  {% include "partials/app_navigation.html" %}
+  {% include 'partials/app_navigation.html' %}
   <div class="topbar">
-    <div>
-      <h2>Petty Cash</h2>
-    </div>
-    <div class="row">
-      <a class="btn ghost" href="/dashboard">Overview</a>
-      <span class="app-header-date" data-workspace-date></span>
-    </div>
+    <div><h2>Petty Cash</h2><p class="sub">Manage allocations, expenses, and balances.</p></div>
+    <div class="row"><a class="btn ghost" href="/dashboard">Overview</a><span class="app-header-date" data-workspace-date></span></div>
   </div>
-
-  <div id="app-content" tabindex="-1" class="page cash-page">
-
-    <!-- LEFT PANEL -->
-    <div class="panel">
-      <h3>Petty Cash</h3>
-
-      {% if role == "ADMIN" %}
-      <div class="block">
-        <h4 class="miniTitle">Create a New Petty Cash Record (Admin)</h4>
-
-        <label>User (Admin/Employee)</label>
-        <select id="advEmployee"></select>
-
-        <label>Bank Account</label>
-        <select id="advBank"></select>
-
-        <div class="grid2">
-          <div>
-            <label>Currency</label>
-            <select id="advCurrency">
-              <option value="LKR">LKR</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="AUD">AUD</option>
-            </select>
-          </div>
-          <div>
-            <label>Amount Given</label>
-            <input id="advAmount" type="number" step="0.01" />
-          </div>
-        </div>
-
-        <label>Purpose</label>
-        <input id="advPurpose" />
-
-        <label>Given Date</label>
-        <input id="advGivenDate" type="date" />
-
-        <label>Proof Link</label>
-        <input id="advProofLink" />
-
-        <button id="createAdvanceBtn" class="btn" type="button">Create Petty Cash</button>
-        <p id="advMsg" class="msg"></p>
-      </div>
-
-      <div class="hr"></div>
-      {% endif %}
-
-      <div class="block">
-        <h4 class="miniTitle">Selected Petty Cash</h4>
-
-        <div class="hr"></div>
-
-        {% if role == "ADMIN" %}
-        <div class="grid2">
-          <button id="closeAdvanceBtn" type="button" class="btn danger">Close Petty Cash (Admin)</button>
-          <button id="reopenAdvanceBtn" type="button" class="btn ghost">Reopen (Unlock) (Admin)</button>
-        </div>
-        {% endif %}
-
-        <div style="margin-top:10px;">
-          <button id="refreshAdvBtn" type="button" class="btn ghost" style="width:100%;">Refresh</button>
-        </div>
-
-        <p id="selMsg" class="msg"></p>
-
-        <div class="hr"></div>
-
-        <h4 class="miniTitle">Add Expense Breakdown</h4>
-
-        <label>Category</label>
-        <input id="expCategory" />
-
-        <label>Description</label>
-        <input id="expDescription" />
-
-        <label>Paid By</label>
-        <select id="expPaidBy">
-          <option value="COMPANY_ADVANCE">COMPANY (from Petty Cash)</option>
-          <option value="EMPLOYEE_PERSONAL">EMPLOYEE PERSONAL (out of pocket)</option>
-        </select>
-
-        <div class="grid2">
-          <div>
-            <label>Amount</label>
-            <input id="expAmount" type="number" step="0.01" />
-          </div>
-          <div>
-            <label>Spent Date</label>
-            <input id="expDate" type="date" />
-          </div>
-        </div>
-
-        <label>Proof Link</label>
-        <input id="expProof" />
-
-        <button id="addExpenseBtn" class="btn" type="button">Add Expense</button>
-        <p id="expMsg" class="msg"></p>
-
-        <div class="hr"></div>
-
-        {% if role == "ADMIN" %}
-        <h4 class="miniTitle">Top-Up This Advance (Admin)</h4>
-
-        <div class="grid2">
-          <div>
-            <label>Top-Up Amount</label>
-            <input id="topupAmount" type="number" step="0.01" />
-          </div>
-          <div>
-            <label>Top-Up Date</label>
-            <input id="topupDate" type="date" />
-          </div>
-        </div>
-
-        <label>Top-Up Proof Link</label>
-        <input id="topupProof" />
-
-        <button id="addTopupBtn" class="btn ghost" type="button">Add Top-Up</button>
-        <p id="topupMsg" class="msg"></p>
-        {% endif %}
-      </div>
-
-      <div class="hr"></div>
-
-      <div class="block">
-        <h4 class="miniTitle">Summary & Export</h4>
-
-        <div class="hr"></div>
-
-        <label>Employee</label>
-        <select id="sumEmployee"></select>
-
-        <div class="grid2">
-          <div>
-            <label>Month (YYYY-MM)</label>
-            <input id="sumMonth" />
-          </div>
-          <div>
-            <label>Status</label>
-            <select id="sumStatus">
-              <option value="ALL">ALL</option>
-              <option value="OPEN">OPEN</option>
-              <option value="CLOSED">CLOSED</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="grid2">
-          <button id="loadSummaryBtn" type="button" class="btn ghost">Load Summary</button>
-          <button id="exportSummaryBtn" type="button" class="btn">Export CSV</button>
-        </div>
-
-        <p id="sumMsg" class="msg"></p>
-
-        <div class="tableWrap smallWrap" style="margin-top:10px;">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Currency</th>
-                <th>Total Given</th>
-                <th>Total Top-Ups</th>
-                <th>Total Spent</th>
-                <th>Total Balance</th>
-                <th>Petty Cash Records</th>
-              </tr>
-            </thead>
-            <tbody id="sumBody"></tbody>
-          </table>
+  <main id="app-content" tabindex="-1" class="page cash-page">
+    <section class="panel cash-records">
+      <div class="cash-page-heading">
+        <div><h3>Petty Cash Records &amp; Balances</h3><p class="sub">Select a record to view its expenses and top-ups.</p></div>
+        <div class="row">
+          <button id="refreshAdvBtn" type="button" class="btn ghost">Refresh</button>
+          {% if role == 'ADMIN' %}<button id="newAdvanceBtn" type="button" class="btn" disabled>New petty cash</button>{% endif %}
         </div>
       </div>
-
-    </div>
-
-    <!-- RIGHT PANEL -->
-    <div class="panel wide">
-      <div class="block">
-        <h3>Petty Cash Records & Balances</h3>
+      <div class="cash-tabs" role="tablist" aria-label="Petty cash views">
+        <button id="cashRecordsTab" class="cash-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="cashRecordsPanel" tabindex="0">Records</button>
+        <button id="cashSummaryTab" class="cash-tab" type="button" role="tab" aria-selected="false" aria-controls="cashSummaryPanel" tabindex="-1">Summary &amp; export</button>
       </div>
-
-      <div class="hr"></div>
-
-      <div class="block">
+      <p id="selMsg" class="msg" role="status" aria-live="polite"></p>
+      <div id="cashRecordsPanel" role="tabpanel" aria-labelledby="cashRecordsTab">
         <h4 class="miniTitle">Petty Cash Records</h4>
-        <div class="hr"></div>
-
-        <div class="tableWrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Employee</th>
-                <th>Bank</th>
-                <th>Currency</th>
-                <th>Given</th>
-                <th>TopUps</th>
-                <th>Spent</th>
-                <th>Balance</th>
-                <th>Status</th>
-                <th>Purpose</th>
-                <th>Given Date</th>
-                <th>Proof</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="advTableBody"></tbody>
-          </table>
+        <div class="tableWrap cash-table-wrap" tabindex="0" role="region" aria-label="Petty cash records; scroll horizontally for more columns">
+          <table class="table cash-records-table"><thead><tr>
+            <th>ID</th><th>Employee</th><th>Bank</th><th>Currency</th><th>Given</th><th>Top-ups</th><th>Spent</th><th>Balance</th><th>Status</th><th>Purpose</th><th>Given Date</th><th>Proof</th><th>Action</th>
+          </tr></thead><tbody id="advTableBody"></tbody></table>
         </div>
       </div>
-
-      <div class="hr"></div>
-
-      <div class="block">
-        <h4 class="miniTitle">Top-Ups for Selected Petty Cash</h4>
-        <div class="hr"></div>
-
-        <div class="tableWrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Amount</th>
-                <th>Date</th>
-                <th>Proof</th>
-                <th>Created By</th>
-                <th>Created At</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="topupTableBody"></tbody>
-          </table>
+      <div id="cashSummaryPanel" role="tabpanel" aria-labelledby="cashSummaryTab" hidden>
+        <h4 class="miniTitle">Summary &amp; Export</h4>
+        <div class="cash-summary-filters">
+          <div><label for="sumEmployee">Employee</label><select id="sumEmployee"></select></div>
+          <div><label for="sumMonth">Month</label><input id="sumMonth" type="month" /></div>
+          <div><label for="sumStatus">Status</label><select id="sumStatus"><option value="ALL">All records</option><option value="OPEN">Open</option><option value="CLOSED">Closed</option></select></div>
+          <div class="row"><button id="loadSummaryBtn" type="button" class="btn ghost">Load summary</button><button id="exportSummaryBtn" type="button" class="btn">Export CSV</button></div>
         </div>
-
-        <div class="hr"></div>
-
-        <h4 class="miniTitle">Expense Breakdown for Selected Petty Cash Record</h4>
-        <div class="hr"></div>
-
-        <div class="tableWrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Category</th>
-                <th>Description</th>
-                <th>Paid By</th>
-                <th>Amount</th>
-                <th>Spent Date</th>
-                <th>Proof</th>
-                <th>Created By</th>
-                <th>Created At</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="expTableBody"></tbody>
-          </table>
+        <p id="sumMsg" class="msg" role="status"></p>
+        <div class="tableWrap" tabindex="0" role="region" aria-label="Petty cash summary">
+          <table class="table"><thead><tr><th>Employee</th><th>Currency</th><th>Total Given</th><th>Total Top-ups</th><th>Total Spent</th><th>Total Balance</th><th>Petty Cash Records</th></tr></thead><tbody id="sumBody"></tbody></table>
         </div>
       </div>
-    </div>
-
-  </div>
-
-  <script src="{{ url_for('static', filename='js/cash_advances.js') }}"></script>
+    </section>
+    <section class="panel cash-selected" id="cashSelectedPanel" aria-labelledby="cashSelectedTitle" hidden>
+      <div class="cash-page-heading">
+        <div><p class="cash-eyebrow">SELECTED PETTY CASH</p><h3 id="cashSelectedTitle" tabindex="-1">Record details</h3><p id="cashSelectedPurpose" class="sub"></p></div>
+        <div class="row">
+          <button id="openExpenseBtn" type="button" class="btn" hidden>Add expense</button>
+          {% if role == 'ADMIN' %}
+          <button id="openTopupBtn" type="button" class="btn ghost" hidden>Add top-up</button>
+          <button id="closeAdvanceBtn" type="button" class="btn danger" disabled>Close record</button>
+          <button id="reopenAdvanceBtn" type="button" class="btn ghost" disabled hidden>Reopen record</button>
+          {% endif %}
+        </div>
+      </div>
+      <div id="cashSelectedTotals" class="cash-totals"></div>
+      <div class="cash-detail-heading"><h4>Expense breakdown</h4></div>
+      <div class="tableWrap" tabindex="0" role="region" aria-label="Expenses for the selected petty cash record">
+        <table class="table"><thead><tr><th>ID</th><th>Category</th><th>Description</th><th>Paid By</th><th>Amount</th><th>Spent Date</th><th>Proof</th><th>Created By</th><th>Created At</th><th>Action</th></tr></thead><tbody id="expTableBody"></tbody></table>
+      </div>
+      <details class="cash-topups"><summary>Top-ups for selected petty cash</summary>
+        <div class="tableWrap" tabindex="0" role="region" aria-label="Top-ups for the selected petty cash record">
+          <table class="table"><thead><tr><th>ID</th><th>Amount</th><th>Date</th><th>Proof</th><th>Reference</th><th>Created By</th><th>Created At</th><th>Action</th></tr></thead><tbody id="topupTableBody"></tbody></table>
+        </div>
+      </details>
+    </section>
+  </main>
+  {% if role == 'ADMIN' %}
+  <dialog id="cashRecordDialog" class="cash-dialog" aria-labelledby="cashRecordTitle">
+    <form id="cashRecordForm">
+      <div class="cash-dialog-heading"><div><h3 id="cashRecordTitle">New petty cash</h3><p class="sub" id="cashRecordHint">Enter the initial allocation details.</p></div><button type="button" class="cash-dialog-close" data-close-dialog aria-label="Close record form">&times;</button></div>
+      <div class="cash-form-grid">
+        <div><label for="advEmployee">Employee</label><select id="advEmployee" required></select></div>
+        <div><label for="advBank">Bank account</label><select id="advBank" required></select></div>
+        <div><label for="advCurrency">Currency</label><select id="advCurrency" required><option>LKR</option><option>USD</option><option>EUR</option><option>AUD</option></select></div>
+        <div><label for="advAmount">Amount given</label><input id="advAmount" type="number" step="0.01" min="0.01" required /></div>
+        <div class="cash-span-all"><label for="advPurpose">Purpose</label><input id="advPurpose" /></div>
+        <div><label for="advGivenDate">Given date</label><input id="advGivenDate" type="date" /></div>
+        <div><label for="advProofLink">Proof link <span class="muted">(optional)</span></label><input id="advProofLink" placeholder="https://…" /></div>
+      </div>
+      <p id="advMsg" class="msg" role="status" aria-live="polite"></p>
+      <div class="cash-dialog-actions"><button type="button" class="btn ghost" data-close-dialog>Cancel</button><button id="createAdvanceBtn" class="btn" type="submit">Create petty cash</button></div>
+    </form>
+  </dialog>
+  {% endif %}
+  <dialog id="cashExpenseDialog" class="cash-dialog" aria-labelledby="cashExpenseTitle">
+    <form id="cashExpenseForm">
+      <div class="cash-dialog-heading"><div><h3 id="cashExpenseTitle">Add expense</h3><p class="sub cash-dialog-record"></p></div><button type="button" class="cash-dialog-close" data-close-dialog aria-label="Close expense form">&times;</button></div>
+      <div class="cash-form-grid">
+        <div><label for="expCategory">Category</label><input id="expCategory" required /></div>
+        <div><label for="expPaidBy">Paid by</label><select id="expPaidBy"><option value="COMPANY_ADVANCE">Company petty cash</option><option value="EMPLOYEE_PERSONAL">Employee personal funds</option></select></div>
+        <div class="cash-span-all"><label for="expDescription">Description</label><input id="expDescription" /></div>
+        <div><label for="expAmount">Amount</label><input id="expAmount" type="number" min="0.01" step="0.01" required /></div>
+        <div><label for="expDate">Spent date</label><input id="expDate" type="date" /></div>
+        <div class="cash-span-all"><label for="expProof">Proof link <span class="muted">(optional)</span></label><input id="expProof" placeholder="https://…" /></div>
+      </div>
+      <p id="expMsg" class="msg" role="status" aria-live="polite"></p>
+      <div class="cash-dialog-actions"><button type="button" class="btn ghost" data-close-dialog>Cancel</button><button id="addExpenseBtn" class="btn" type="submit">Add expense</button></div>
+    </form>
+  </dialog>
+  {% if role == 'ADMIN' %}
+  <dialog id="cashTopupDialog" class="cash-dialog" aria-labelledby="cashTopupTitle">
+    <form id="cashTopupForm">
+      <div class="cash-dialog-heading"><div><h3 id="cashTopupTitle">Add top-up</h3><p class="sub cash-dialog-record"></p></div><button type="button" class="cash-dialog-close" data-close-dialog aria-label="Close top-up form">&times;</button></div>
+      <div class="cash-form-grid">
+        <div><label for="topupAmount">Top-up amount</label><input id="topupAmount" type="number" min="0.01" step="0.01" required /></div>
+        <div><label for="topupDate">Top-up date</label><input id="topupDate" type="date" /></div>
+        <div class="cash-span-all"><label for="topupProof">Proof link <span class="muted">(optional)</span></label><input id="topupProof" placeholder="https://…" /></div>
+      </div>
+      <p id="topupMsg" class="msg" role="status" aria-live="polite"></p>
+      <div class="cash-dialog-actions"><button type="button" class="btn ghost" data-close-dialog>Cancel</button><button id="addTopupBtn" class="btn" type="submit">Add top-up</button></div>
+    </form>
+  </dialog>
+  {% endif %}
+  <script src="{{ url_for('static', filename='js/cash_advances.js') }}" defer></script>
 </body>
 </html>

@@ -189,3 +189,23 @@ body.app-body { padding-left: var(--sidebar-width); background: var(--bg); color
 }
 @media (max-width: 480px) { .module-grid { grid-template-columns: minmax(0,1fr); } .app-body .dash-card { min-height: 83px; padding: 17px; } .app-body .grid2 { grid-template-columns: minmax(0,1fr); } .app-body .notes-filters, .app-body .wt-filters, .app-body .me-filters { grid-template-columns: minmax(0,1fr); } .app-body .topbar .row { margin-left: 0; } }
 @media print { body.app-body { padding: 0; } .app-sidebar, .app-mobile-bar, .app-nav-scrim, .app-skip, .workspace-search, .topbar .row { display: none !important; } .app-body .topbar { position: static; } .app-body .page { padding: 0; } }
+
+/* Desktop navigation can contract to a labelled icon rail without animation. */
+.app-sidebar-collapse { display: flex; align-items: center; gap: 10px; margin: 0 16px 13px; padding: 7px 10px; border: 1px solid #405572; border-radius: 4px; color: #c5cede; background: transparent; cursor: pointer; font-size: 11px; }
+.app-sidebar-collapse:hover { background: #2a4768; color: white; }
+.app-sidebar-collapse .ui-icon { width: 16px; height: 16px; }
+@media (min-width: 761px) {
+  body.app-sidebar-collapsed { --sidebar-width: 72px; }
+  .app-sidebar-collapsed .app-brand { justify-content: center; padding: 21px 0 16px; }
+  .app-sidebar-collapsed .app-brand > span, .app-sidebar-collapsed .app-account-copy, .app-sidebar-collapsed .app-sidebar-collapse > span { display: none; }
+  .app-sidebar-collapsed .app-sidebar-collapse { justify-content: center; margin: 0 17px 14px; padding: 8px; }
+  .app-sidebar-collapsed .app-nav { padding: 0 10px 15px; overflow-x: hidden; }
+  .app-sidebar-collapsed .app-nav-link { justify-content: center; padding: 10px; }
+  .app-sidebar-collapsed .app-nav-link > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+  .app-sidebar-collapsed .app-nav-label { font-size: 0; border-top: 1px solid #364a65; margin: 15px 6px 10px; height: 0; }
+  .app-sidebar-collapsed .app-account { flex-direction: column; gap: 9px; padding: 13px 8px; }
+  .app-sidebar-collapsed .app-nav-link::after { content: attr(data-nav-label); display: none; position: fixed; left: 65px; padding: 6px 10px; color: white; background: #172b46; border: 1px solid #48617f; border-radius: 4px; white-space: nowrap; font-size: 12px; z-index: 100; }
+  .app-sidebar-collapsed .app-nav-link:hover::after, .app-sidebar-collapsed .app-nav-link:focus-visible::after { display: block; }
+  .app-sidebar-collapsed .app-nav-error { font-size: 9px; padding: 3px; overflow-wrap: anywhere; }
+}
+@media (max-width: 760px) { .app-sidebar-collapse { display: none; } }

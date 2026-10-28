@@ -15,6 +15,22 @@
   const scrim = document.getElementById('appNavScrim');
   const sidebar = document.getElementById('appSidebar');
   const mobile = window.matchMedia('(max-width: 760px)');
+  const collapse = document.getElementById('appSidebarCollapse');
+  const sidebarPreference = `erp:sidebar:${document.querySelector('.app-account-copy strong')?.textContent.trim() || 'user'}`;
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(sidebarPreference) === 'collapsed'; } catch (_) {}
+  const applySidebar = () => {
+    body.classList.toggle('app-sidebar-collapsed', collapsed && !mobile.matches);
+    collapse.setAttribute('aria-expanded', String(!collapsed));
+    collapse.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+    collapse.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  };
+  collapse.addEventListener('click', () => {
+    collapsed = !collapsed;
+    try { localStorage.setItem(sidebarPreference, collapsed ? 'collapsed' : 'expanded'); } catch (_) {}
+    applySidebar();
+  });
+  applySidebar();
   const setNav = open => {
     body.classList.toggle('app-nav-open', open);
     toggle.setAttribute('aria-expanded', String(open));
@@ -25,7 +41,7 @@
   toggle.addEventListener('click', () => setNav(!body.classList.contains('app-nav-open')));
   close.addEventListener('click', () => setNav(false));
   scrim.addEventListener('click', () => setNav(false));
-  mobile.addEventListener('change', () => setNav(false));
+  mobile.addEventListener('change', () => { setNav(false); applySidebar(); });
   document.addEventListener('keydown', event => {
     if (!body.classList.contains('app-nav-open')) return;
     if (event.key === 'Escape') setNav(false);
