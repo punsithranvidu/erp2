@@ -2,6 +2,7 @@
 from pathlib import Path
 import sqlite3
 import unittest
+from unittest.mock import patch
 from flask import Flask, jsonify, session
 from routes.auth import auth_bp
 from routes.login_security import LoginResult, set_device_cookie
@@ -124,3 +125,16 @@ class SessionSecurityTests(unittest.TestCase):
         other.set_cookie('session', old)
         self.assertEqual(other.get('/api/data').status_code, 401)
         self.assertEqual(self.client.get('/api/data').status_code, 200)
+
+    def test_public_login_does_not_depend_on_a_working_session_database(self):
+        store = self.app.config['SESSION_STORE']
+        with patch.object(store, 'get', side_effect=RuntimeError('test outage')) as get:
+            self.assertEqual(self.client.get('/login').status_code, 200)
+        get.assert_not_called()
+
+    def test_idle_expiry_does_not_open_an_extra_connection_to_delete_the_row(self):
+        self.now += IDLE_SECONDS
+        store = self.app.config['SESSION_STORE']
+        with patch.object(store, 'revoke') as revoke:
+            self.assertEqual(self.client.get('/api/data').status_code, 401)
+        revoke.assert_not_called()

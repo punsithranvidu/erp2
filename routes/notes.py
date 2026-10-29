@@ -93,158 +93,159 @@ def normalize_audience(value):
 
 
 def ensure_notes_tables():
-    conn = db()
-    cur = conn.cursor()
+    with db() as conn:
+        cur = conn.cursor()
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS notes (
-            id BIGSERIAL PRIMARY KEY,
-            note_text TEXT NOT NULL,
-            expected_end_date TEXT,
-            status TEXT NOT NULL DEFAULT 'Active',
-            done_at TEXT,
-            cancelled_at TEXT,
-            created_by_user_id BIGINT,
-            created_by TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            edited_by TEXT,
-            edited_at TEXT,
-            audience TEXT NOT NULL DEFAULT 'EVERYONE',
-            is_deleted INTEGER NOT NULL DEFAULT 0,
-            deleted_by TEXT,
-            deleted_by_user_id BIGINT,
-            deleted_at TEXT
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS notes (
+                id BIGSERIAL PRIMARY KEY,
+                note_text TEXT NOT NULL,
+                expected_end_date TEXT,
+                status TEXT NOT NULL DEFAULT 'Active',
+                done_at TEXT,
+                cancelled_at TEXT,
+                created_by_user_id BIGINT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                edited_by TEXT,
+                edited_at TEXT,
+                audience TEXT NOT NULL DEFAULT 'EVERYONE',
+                is_deleted INTEGER NOT NULL DEFAULT 0,
+                deleted_by TEXT,
+                deleted_by_user_id BIGINT,
+                deleted_at TEXT
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS note_due_date_history (
-            id BIGSERIAL PRIMARY KEY,
-            note_id BIGINT NOT NULL,
-            old_expected_end_date TEXT,
-            new_expected_end_date TEXT,
-            changed_at TEXT NOT NULL,
-            changed_by TEXT NOT NULL,
-            changed_by_user_id BIGINT,
-            FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS note_due_date_history (
+                id BIGSERIAL PRIMARY KEY,
+                note_id BIGINT NOT NULL,
+                old_expected_end_date TEXT,
+                new_expected_end_date TEXT,
+                changed_at TEXT NOT NULL,
+                changed_by TEXT NOT NULL,
+                changed_by_user_id BIGINT,
+                FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS note_edit_history (
-            id BIGSERIAL PRIMARY KEY,
-            note_id BIGINT NOT NULL,
-            edit_type TEXT NOT NULL DEFAULT 'UPDATE',
-            edited_at TEXT NOT NULL,
-            edited_by TEXT NOT NULL,
-            edited_by_user_id BIGINT,
-            FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS note_edit_history (
+                id BIGSERIAL PRIMARY KEY,
+                note_id BIGINT NOT NULL,
+                edit_type TEXT NOT NULL DEFAULT 'UPDATE',
+                edited_at TEXT NOT NULL,
+                edited_by TEXT NOT NULL,
+                edited_by_user_id BIGINT,
+                FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS note_settings (
-            setting_key TEXT PRIMARY KEY,
-            setting_value TEXT,
-            edited_at TEXT,
-            edited_by TEXT
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS note_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT,
+                edited_at TEXT,
+                edited_by TEXT
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS note_notification_state (
-            user_id BIGINT PRIMARY KEY,
-            last_seen_at TEXT NOT NULL DEFAULT ''
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS note_notification_state (
+                user_id BIGINT PRIMARY KEY,
+                last_seen_at TEXT NOT NULL DEFAULT ''
+            )
+        """)
 
-    cols = get_table_columns(conn, "notes")
-    missing = {
-        "note_text": "ALTER TABLE notes ADD COLUMN note_text TEXT NOT NULL DEFAULT ''",
-        "expected_end_date": "ALTER TABLE notes ADD COLUMN expected_end_date TEXT",
-        "status": "ALTER TABLE notes ADD COLUMN status TEXT NOT NULL DEFAULT 'Active'",
-        "done_at": "ALTER TABLE notes ADD COLUMN done_at TEXT",
-        "cancelled_at": "ALTER TABLE notes ADD COLUMN cancelled_at TEXT",
-        "created_by_user_id": "ALTER TABLE notes ADD COLUMN created_by_user_id BIGINT",
-        "created_by": "ALTER TABLE notes ADD COLUMN created_by TEXT NOT NULL DEFAULT ''",
-        "created_at": "ALTER TABLE notes ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
-        "edited_by": "ALTER TABLE notes ADD COLUMN edited_by TEXT",
-        "edited_at": "ALTER TABLE notes ADD COLUMN edited_at TEXT",
-        "audience": "ALTER TABLE notes ADD COLUMN audience TEXT NOT NULL DEFAULT 'EVERYONE'",
-        "is_deleted": "ALTER TABLE notes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
-        "deleted_by": "ALTER TABLE notes ADD COLUMN deleted_by TEXT",
-        "deleted_by_user_id": "ALTER TABLE notes ADD COLUMN deleted_by_user_id BIGINT",
-        "deleted_at": "ALTER TABLE notes ADD COLUMN deleted_at TEXT",
-    }
-    for col, sql in missing.items():
-        if col not in cols:
-            cur.execute(sql)
+        cols = get_table_columns(conn, "notes")
+        missing = {
+            "note_text": "ALTER TABLE notes ADD COLUMN note_text TEXT NOT NULL DEFAULT ''",
+            "expected_end_date": "ALTER TABLE notes ADD COLUMN expected_end_date TEXT",
+            "status": "ALTER TABLE notes ADD COLUMN status TEXT NOT NULL DEFAULT 'Active'",
+            "done_at": "ALTER TABLE notes ADD COLUMN done_at TEXT",
+            "cancelled_at": "ALTER TABLE notes ADD COLUMN cancelled_at TEXT",
+            "created_by_user_id": "ALTER TABLE notes ADD COLUMN created_by_user_id BIGINT",
+            "created_by": "ALTER TABLE notes ADD COLUMN created_by TEXT NOT NULL DEFAULT ''",
+            "created_at": "ALTER TABLE notes ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
+            "edited_by": "ALTER TABLE notes ADD COLUMN edited_by TEXT",
+            "edited_at": "ALTER TABLE notes ADD COLUMN edited_at TEXT",
+            "audience": "ALTER TABLE notes ADD COLUMN audience TEXT NOT NULL DEFAULT 'EVERYONE'",
+            "is_deleted": "ALTER TABLE notes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+            "deleted_by": "ALTER TABLE notes ADD COLUMN deleted_by TEXT",
+            "deleted_by_user_id": "ALTER TABLE notes ADD COLUMN deleted_by_user_id BIGINT",
+            "deleted_at": "ALTER TABLE notes ADD COLUMN deleted_at TEXT",
+        }
+        for col, sql in missing.items():
+            if col not in cols:
+                cur.execute(sql)
 
-    hcols = get_table_columns(conn, "note_due_date_history")
-    history_missing = {
-        "note_id": "ALTER TABLE note_due_date_history ADD COLUMN note_id BIGINT",
-        "old_expected_end_date": "ALTER TABLE note_due_date_history ADD COLUMN old_expected_end_date TEXT",
-        "new_expected_end_date": "ALTER TABLE note_due_date_history ADD COLUMN new_expected_end_date TEXT",
-        "changed_at": "ALTER TABLE note_due_date_history ADD COLUMN changed_at TEXT NOT NULL DEFAULT ''",
-        "changed_by": "ALTER TABLE note_due_date_history ADD COLUMN changed_by TEXT NOT NULL DEFAULT ''",
-        "changed_by_user_id": "ALTER TABLE note_due_date_history ADD COLUMN changed_by_user_id BIGINT",
-    }
-    for col, sql in history_missing.items():
-        if col not in hcols:
-            cur.execute(sql)
+        hcols = get_table_columns(conn, "note_due_date_history")
+        history_missing = {
+            "note_id": "ALTER TABLE note_due_date_history ADD COLUMN note_id BIGINT",
+            "old_expected_end_date": "ALTER TABLE note_due_date_history ADD COLUMN old_expected_end_date TEXT",
+            "new_expected_end_date": "ALTER TABLE note_due_date_history ADD COLUMN new_expected_end_date TEXT",
+            "changed_at": "ALTER TABLE note_due_date_history ADD COLUMN changed_at TEXT NOT NULL DEFAULT ''",
+            "changed_by": "ALTER TABLE note_due_date_history ADD COLUMN changed_by TEXT NOT NULL DEFAULT ''",
+            "changed_by_user_id": "ALTER TABLE note_due_date_history ADD COLUMN changed_by_user_id BIGINT",
+        }
+        for col, sql in history_missing.items():
+            if col not in hcols:
+                cur.execute(sql)
 
-    ecols = get_table_columns(conn, "note_edit_history")
-    edit_missing = {
-        "note_id": "ALTER TABLE note_edit_history ADD COLUMN note_id BIGINT",
-        "edit_type": "ALTER TABLE note_edit_history ADD COLUMN edit_type TEXT NOT NULL DEFAULT 'UPDATE'",
-        "edited_at": "ALTER TABLE note_edit_history ADD COLUMN edited_at TEXT NOT NULL DEFAULT ''",
-        "edited_by": "ALTER TABLE note_edit_history ADD COLUMN edited_by TEXT NOT NULL DEFAULT ''",
-        "edited_by_user_id": "ALTER TABLE note_edit_history ADD COLUMN edited_by_user_id BIGINT",
-    }
-    for col, sql in edit_missing.items():
-        if col not in ecols:
-            cur.execute(sql)
+        ecols = get_table_columns(conn, "note_edit_history")
+        edit_missing = {
+            "note_id": "ALTER TABLE note_edit_history ADD COLUMN note_id BIGINT",
+            "edit_type": "ALTER TABLE note_edit_history ADD COLUMN edit_type TEXT NOT NULL DEFAULT 'UPDATE'",
+            "edited_at": "ALTER TABLE note_edit_history ADD COLUMN edited_at TEXT NOT NULL DEFAULT ''",
+            "edited_by": "ALTER TABLE note_edit_history ADD COLUMN edited_by TEXT NOT NULL DEFAULT ''",
+            "edited_by_user_id": "ALTER TABLE note_edit_history ADD COLUMN edited_by_user_id BIGINT",
+        }
+        for col, sql in edit_missing.items():
+            if col not in ecols:
+                cur.execute(sql)
 
-    scols = get_table_columns(conn, "note_settings")
-    settings_missing = {
-        "setting_key": "ALTER TABLE note_settings ADD COLUMN setting_key TEXT",
-        "setting_value": "ALTER TABLE note_settings ADD COLUMN setting_value TEXT",
-        "edited_at": "ALTER TABLE note_settings ADD COLUMN edited_at TEXT",
-        "edited_by": "ALTER TABLE note_settings ADD COLUMN edited_by TEXT",
-    }
-    for col, sql in settings_missing.items():
-        if col not in scols:
-            cur.execute(sql)
+        scols = get_table_columns(conn, "note_settings")
+        settings_missing = {
+            "setting_key": "ALTER TABLE note_settings ADD COLUMN setting_key TEXT",
+            "setting_value": "ALTER TABLE note_settings ADD COLUMN setting_value TEXT",
+            "edited_at": "ALTER TABLE note_settings ADD COLUMN edited_at TEXT",
+            "edited_by": "ALTER TABLE note_settings ADD COLUMN edited_by TEXT",
+        }
+        for col, sql in settings_missing.items():
+            if col not in scols:
+                cur.execute(sql)
 
-    ncols = get_table_columns(conn, "note_notification_state")
-    notification_missing = {
-        "user_id": "ALTER TABLE note_notification_state ADD COLUMN user_id BIGINT",
-        "last_seen_at": "ALTER TABLE note_notification_state ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''",
-    }
-    for col, sql in notification_missing.items():
-        if col not in ncols:
-            cur.execute(sql)
+        ncols = get_table_columns(conn, "note_notification_state")
+        notification_missing = {
+            "user_id": "ALTER TABLE note_notification_state ADD COLUMN user_id BIGINT",
+            "last_seen_at": "ALTER TABLE note_notification_state ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''",
+        }
+        for col, sql in notification_missing.items():
+            if col not in ncols:
+                cur.execute(sql)
 
-    cur.execute("""
-        UPDATE notes
-        SET audience='EVERYONE'
-        WHERE audience IS NULL OR TRIM(audience)=''
-    """)
+        cur.execute("""
+            UPDATE notes
+            SET audience='EVERYONE'
+            WHERE audience IS NULL OR TRIM(audience)=''
+        """)
 
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_deleted_status ON notes (is_deleted, status)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_created_by_user ON notes (created_by_user_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_expected_end_date ON notes (expected_end_date)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_audience ON notes (audience)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes (created_at)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_note_due_history_note_id ON note_due_date_history (note_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_note_edit_history_note_id ON note_edit_history (note_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_deleted_status ON notes (is_deleted, status)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_created_by_user ON notes (created_by_user_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_expected_end_date ON notes (expected_end_date)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_audience ON notes (audience)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes (created_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_note_due_history_note_id ON note_due_date_history (note_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_note_edit_history_note_id ON note_edit_history (note_id)")
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
 
-@notes_bp.before_app_request
+@notes_bp.before_request
 def notes_tables_ready():
+    if "user" not in session:
+        return
     if current_app.config.get("NOTES_TABLES_READY"):
         return
     ensure_notes_tables()

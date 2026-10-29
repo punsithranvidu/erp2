@@ -23,13 +23,13 @@
 <div class="finance-bank-filter"><label for="bankFilter">Bank account</label><select id="bankFilter"></select></div>
 <p id="financeNotice" class="msg" role="status"></p>
 <div id="financeRecordsView" role="tabpanel" aria-labelledby="financeRecordsTab">
-<div class="finance-filters"><div><label for="typeFilter">Direction</label><select id="typeFilter"><option value="ALL">All records</option><option value="INCOME">Income</option><option value="OUTCOME">Outgoing</option></select></div><div><label for="monthPick">Month</label><input id="monthPick" type="month" /></div><div class="row"><button class="btn ghost" id="viewMonthBtn" type="button">Apply</button><button class="btn ghost" id="refreshBtn" type="button">Refresh</button><button class="btn ghost" id="exportBtn" type="button">Export CSV</button></div></div>
+<div class="finance-filters"><div><label for="typeFilter">Direction</label><select id="typeFilter"><option value="ALL">All records</option><option value="INCOME">Income</option><option value="OUTCOME">Expenses</option></select></div><div><label for="monthPick">Month</label><input id="monthPick" type="month" /></div><div class="row"><button class="btn ghost" id="viewMonthBtn" type="button">Apply</button><button class="btn ghost" id="refreshBtn" type="button">Refresh</button><button class="btn ghost" id="exportBtn" type="button">Export CSV</button></div></div>
 <div class="tableWrap" tabindex="0" role="region" aria-label="Finance records; scroll horizontally for all columns">          <table class="table">
                 <thead>
                   <tr>
                     <th>ID</th>
                     <th>Bank</th>
-                    <th>Type</th><th>Client</th><th>Category</th><th>Description</th>
+                    <th>Type</th><th>Client</th><th>Category</th><th>Subcategory</th><th>Description</th>
                     <th>Amount</th><th>Payment</th><th>Status</th><th>Proof</th><th>Invoice</th>
                     <th>PO</th><th>Quotation</th><th>Paid Date</th>
                     <th>Created At</th><th>Created By</th>
@@ -49,19 +49,19 @@
 <p id="analysisMessage" class="msg" role="status" aria-live="polite"></p>
 <div id="analysisResults" hidden>
 <div id="analysisKpis" class="finance-kpis"></div>
-<div class="finance-charts"><section class="finance-chart"><div class="finance-chart-head"><h3>Money in vs money out</h3><p>Income and outgoing records by month</p></div><div id="financeFlowChart"></div></section><section class="finance-chart"><div class="finance-chart-head"><h3>Income over time</h3><p>Recorded monthly income</p></div><div id="financeIncomeChart"></div></section></div>
-<section class="finance-chart finance-expense-chart"><div class="finance-chart-head"><div><h3 id="expenseChartTitle">Outgoing by category</h3><p>Choose a category to see its subcategories.</p></div><button id="expenseBack" class="btn ghost mini" type="button" hidden>All categories</button></div><div id="financeExpenseChart"></div></section>
-<details class="finance-details"><summary>View chart data</summary><div class="tableWrap"><table><thead><tr><th>Month</th><th>Income</th><th>Outgoing</th></tr></thead><tbody id="analysisDataBody"></tbody></table></div></details>
+<div class="finance-charts"><section class="finance-chart"><div class="finance-chart-head"><h3>Income vs expenses</h3><p>Income and expense records by month</p></div><div id="financeFlowChart"></div></section><section class="finance-chart"><div class="finance-chart-head"><h3>Income over time</h3><p>Recorded monthly income</p></div><div id="financeIncomeChart"></div></section></div>
+<section class="finance-chart finance-expense-chart"><div class="finance-chart-head"><div><h3 id="expenseChartTitle">Expenses by category</h3><p>Choose a category to see its subcategories.</p></div><button id="expenseBack" class="btn ghost mini" type="button" hidden>All categories</button></div><div id="financeExpenseChart"></div></section>
+<details class="finance-details"><summary>View chart data</summary><div class="tableWrap"><table><thead><tr><th>Month</th><th>Income</th><th>Expenses</th></tr></thead><tbody id="analysisDataBody"></tbody></table></div></details>
 </div></div>
 </section></main>
 <dialog id="financeRecordDialog" class="finance-dialog" aria-labelledby="financeRecordTitle"><form id="financeForm" class="form">
 <div class="finance-dialog-head"><div><h3 id="financeRecordTitle">New finance record</h3><p class="sub">Start with the transaction details. References and links are optional.</p></div><button type="button" class="finance-close" data-finance-close aria-label="Close record form">&times;</button></div>
 <div class="finance-form-grid">
 <div><label for="bankSelect">Bank account</label><select id="bankSelect" required></select></div>
-<div><label for="type">Direction</label><select id="type" required><option value="INCOME">Income</option><option value="OUTCOME">Outgoing</option></select></div>
+<div><label for="type">Direction</label><select id="type" required><option value="INCOME">Income</option><option value="OUTCOME">Expenses</option></select></div>
 <div class="finance-span"><label for="clientName">Client / company</label><input id="clientName" required /></div>
 <div><label for="categoryGroup">Category</label><select id="categoryGroup" required></select></div>
-<div><label for="categoryChild">Subcategory</label><select id="categoryChild" required></select></div>
+<div><label for="categoryChild">Subcategory (optional)</label><select id="categoryChild"></select></div>
 <div class="finance-span" id="customCategoryFields" hidden><div class="finance-form-grid"><div><label for="customCategoryGroup">Custom category</label><input id="customCategoryGroup" maxlength="80" /></div><div><label for="customCategoryChild">Custom subcategory</label><input id="customCategoryChild" maxlength="100" /></div></div></div><input id="category" type="hidden" /><p id="legacyCategoryNote" class="sub finance-span" hidden></p><div><label for="currency">Currency</label><select id="currency" required><option value="LKR">LKR</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="AUD">AUD</option></select></div>
 <div><label for="amount">Amount</label><input id="amount" type="number" step="0.01" min="0.01" required /></div>
 <div><label for="paymentType">Payment method</label><select id="paymentType" required><option value="BANK_TRANSFER">Bank Transfer</option><option value="CHEQUE">Cheque</option><option value="CASH">Cash</option><option value="CARD">Card</option><option value="OTHER">Other</option></select></div>

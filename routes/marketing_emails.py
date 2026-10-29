@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import psycopg
 from flask import Blueprint, Response, current_app, jsonify, redirect, render_template, request, session, url_for
 
-from .db import connect, get_table_columns
+from .db import set_transaction_timeouts, connect, get_table_columns
 
 
 marketing_emails_bp = Blueprint("marketing_emails", __name__)
@@ -238,279 +238,282 @@ def send_round_for_status(status, requested_round=0):
 
 
 def ensure_marketing_email_tables():
-    conn = db()
+    with db() as conn:
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS marketing_email_leads (
-            id BIGSERIAL PRIMARY KEY,
-            company_name TEXT,
-            email TEXT NOT NULL,
-            email_normalized TEXT NOT NULL UNIQUE,
-            website TEXT,
-            category TEXT NOT NULL,
-            country TEXT NOT NULL,
-            note TEXT,
-            created_by TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            edited_by TEXT,
-            edited_at TEXT,
-            verification_status TEXT NOT NULL DEFAULT 'Not Yet Checked',
-            call_status TEXT NOT NULL DEFAULT 'Not Yet Called',
-            is_deleted INTEGER NOT NULL DEFAULT 0,
-            deleted_at TEXT,
-            deleted_by TEXT
-        )
-    """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS marketing_email_leads (
+                id BIGSERIAL PRIMARY KEY,
+                company_name TEXT,
+                email TEXT NOT NULL,
+                email_normalized TEXT NOT NULL UNIQUE,
+                website TEXT,
+                category TEXT NOT NULL,
+                country TEXT NOT NULL,
+                note TEXT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                edited_by TEXT,
+                edited_at TEXT,
+                verification_status TEXT NOT NULL DEFAULT 'Not Yet Checked',
+                call_status TEXT NOT NULL DEFAULT 'Not Yet Called',
+                is_deleted INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT,
+                deleted_by TEXT
+            )
+        """)
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS marketing_email_export_files (
-            id BIGSERIAL PRIMARY KEY,
-            file_name TEXT NOT NULL,
-            category TEXT,
-            country TEXT,
-            lead_count INTEGER NOT NULL DEFAULT 0,
-            confirmation_status TEXT NOT NULL DEFAULT 'Pending',
-            first_send_date TEXT,
-            second_send_date TEXT,
-            send_round INTEGER NOT NULL DEFAULT 0,
-            extra_send_dates TEXT,
-            notes TEXT,
-            selected_lead_ids TEXT,
-            created_by TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            edited_by TEXT,
-            edited_at TEXT,
-            is_deleted INTEGER NOT NULL DEFAULT 0,
-            deleted_at TEXT,
-            deleted_by TEXT
-        )
-    """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS marketing_email_export_files (
+                id BIGSERIAL PRIMARY KEY,
+                file_name TEXT NOT NULL,
+                category TEXT,
+                country TEXT,
+                lead_count INTEGER NOT NULL DEFAULT 0,
+                confirmation_status TEXT NOT NULL DEFAULT 'Pending',
+                first_send_date TEXT,
+                second_send_date TEXT,
+                send_round INTEGER NOT NULL DEFAULT 0,
+                extra_send_dates TEXT,
+                notes TEXT,
+                selected_lead_ids TEXT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                edited_by TEXT,
+                edited_at TEXT,
+                is_deleted INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT,
+                deleted_by TEXT
+            )
+        """)
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS marketing_email_download_permissions (
-            id BIGSERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL UNIQUE,
-            can_download INTEGER NOT NULL DEFAULT 0,
-            notes TEXT,
-            created_at TEXT NOT NULL,
-            created_by TEXT NOT NULL,
-            updated_at TEXT,
-            updated_by TEXT,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        )
-    """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS marketing_email_download_permissions (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL UNIQUE,
+                can_download INTEGER NOT NULL DEFAULT 0,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                updated_at TEXT,
+                updated_by TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+        """)
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS marketing_email_download_requests (
-            id BIGSERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL,
-            request_note TEXT,
-            status TEXT NOT NULL DEFAULT 'PENDING',
-            requested_at TEXT NOT NULL,
-            decided_at TEXT,
-            decided_by TEXT,
-            decision_note TEXT,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        )
-    """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS marketing_email_download_requests (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                request_note TEXT,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                requested_at TEXT NOT NULL,
+                decided_at TEXT,
+                decided_by TEXT,
+                decision_note TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+        """)
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS marketing_email_download_logs (
-            id BIGSERIAL PRIMARY KEY,
-            export_file_id BIGINT NOT NULL,
-            file_name TEXT NOT NULL,
-            downloaded_by_user_id BIGINT,
-            downloaded_by TEXT NOT NULL,
-            downloaded_at TEXT NOT NULL,
-            is_deleted INTEGER NOT NULL DEFAULT 0,
-            deleted_at TEXT,
-            deleted_by TEXT,
-            FOREIGN KEY(export_file_id) REFERENCES marketing_email_export_files(id)
-        )
-    """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS marketing_email_download_logs (
+                id BIGSERIAL PRIMARY KEY,
+                export_file_id BIGINT NOT NULL,
+                file_name TEXT NOT NULL,
+                downloaded_by_user_id BIGINT,
+                downloaded_by TEXT NOT NULL,
+                downloaded_at TEXT NOT NULL,
+                is_deleted INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT,
+                deleted_by TEXT,
+                FOREIGN KEY(export_file_id) REFERENCES marketing_email_export_files(id)
+            )
+        """)
 
-    conn.commit()
+        conn.commit()
+        set_transaction_timeouts(conn)
 
-    lead_cols = get_table_columns(conn, "marketing_email_leads")
-    lead_columns = {
-        "company_name": "TEXT",
-        "email": "TEXT",
-        "email_normalized": "TEXT",
-        "website": "TEXT",
-        "category": "TEXT",
-        "country": "TEXT",
-        "note": "TEXT",
-        "created_by": "TEXT",
-        "created_at": "TEXT",
-        "edited_by": "TEXT",
-        "edited_at": "TEXT",
-        "verification_status": "TEXT NOT NULL DEFAULT 'Not Yet Checked'",
-        "call_status": "TEXT NOT NULL DEFAULT 'Not Yet Called'",
-        "is_deleted": "INTEGER NOT NULL DEFAULT 0",
-        "deleted_at": "TEXT",
-        "deleted_by": "TEXT",
-    }
-    for col, sql_type in lead_columns.items():
-        if col not in lead_cols:
-            conn.execute(f"ALTER TABLE marketing_email_leads ADD COLUMN {col} {sql_type}")
+        lead_cols = get_table_columns(conn, "marketing_email_leads")
+        lead_columns = {
+            "company_name": "TEXT",
+            "email": "TEXT",
+            "email_normalized": "TEXT",
+            "website": "TEXT",
+            "category": "TEXT",
+            "country": "TEXT",
+            "note": "TEXT",
+            "created_by": "TEXT",
+            "created_at": "TEXT",
+            "edited_by": "TEXT",
+            "edited_at": "TEXT",
+            "verification_status": "TEXT NOT NULL DEFAULT 'Not Yet Checked'",
+            "call_status": "TEXT NOT NULL DEFAULT 'Not Yet Called'",
+            "is_deleted": "INTEGER NOT NULL DEFAULT 0",
+            "deleted_at": "TEXT",
+            "deleted_by": "TEXT",
+        }
+        for col, sql_type in lead_columns.items():
+            if col not in lead_cols:
+                conn.execute(f"ALTER TABLE marketing_email_leads ADD COLUMN {col} {sql_type}")
 
-    export_cols = get_table_columns(conn, "marketing_email_export_files")
-    export_columns = {
-        "file_name": "TEXT",
-        "category": "TEXT",
-        "country": "TEXT",
-        "lead_count": "INTEGER NOT NULL DEFAULT 0",
-        "confirmation_status": "TEXT NOT NULL DEFAULT 'Pending'",
-        "first_send_date": "TEXT",
-        "second_send_date": "TEXT",
-        "send_round": "INTEGER NOT NULL DEFAULT 0",
-        "extra_send_dates": "TEXT",
-        "notes": "TEXT",
-        "selected_lead_ids": "TEXT",
-        "created_by": "TEXT",
-        "created_at": "TEXT",
-        "edited_by": "TEXT",
-        "edited_at": "TEXT",
-        "is_deleted": "INTEGER NOT NULL DEFAULT 0",
-        "deleted_at": "TEXT",
-        "deleted_by": "TEXT",
-    }
-    for col, sql_type in export_columns.items():
-        if col not in export_cols:
-            conn.execute(f"ALTER TABLE marketing_email_export_files ADD COLUMN {col} {sql_type}")
+        export_cols = get_table_columns(conn, "marketing_email_export_files")
+        export_columns = {
+            "file_name": "TEXT",
+            "category": "TEXT",
+            "country": "TEXT",
+            "lead_count": "INTEGER NOT NULL DEFAULT 0",
+            "confirmation_status": "TEXT NOT NULL DEFAULT 'Pending'",
+            "first_send_date": "TEXT",
+            "second_send_date": "TEXT",
+            "send_round": "INTEGER NOT NULL DEFAULT 0",
+            "extra_send_dates": "TEXT",
+            "notes": "TEXT",
+            "selected_lead_ids": "TEXT",
+            "created_by": "TEXT",
+            "created_at": "TEXT",
+            "edited_by": "TEXT",
+            "edited_at": "TEXT",
+            "is_deleted": "INTEGER NOT NULL DEFAULT 0",
+            "deleted_at": "TEXT",
+            "deleted_by": "TEXT",
+        }
+        for col, sql_type in export_columns.items():
+            if col not in export_cols:
+                conn.execute(f"ALTER TABLE marketing_email_export_files ADD COLUMN {col} {sql_type}")
 
-    perm_columns = {
-        "user_id": "BIGINT",
-        "can_download": "INTEGER NOT NULL DEFAULT 0",
-        "notes": "TEXT",
-        "created_at": "TEXT",
-        "created_by": "TEXT",
-        "updated_at": "TEXT",
-        "updated_by": "TEXT",
-    }
-    perm_cols = get_table_columns(conn, "marketing_email_download_permissions")
-    for col, sql_type in perm_columns.items():
-        if col not in perm_cols:
-            conn.execute(f"ALTER TABLE marketing_email_download_permissions ADD COLUMN {col} {sql_type}")
+        perm_columns = {
+            "user_id": "BIGINT",
+            "can_download": "INTEGER NOT NULL DEFAULT 0",
+            "notes": "TEXT",
+            "created_at": "TEXT",
+            "created_by": "TEXT",
+            "updated_at": "TEXT",
+            "updated_by": "TEXT",
+        }
+        perm_cols = get_table_columns(conn, "marketing_email_download_permissions")
+        for col, sql_type in perm_columns.items():
+            if col not in perm_cols:
+                conn.execute(f"ALTER TABLE marketing_email_download_permissions ADD COLUMN {col} {sql_type}")
 
-    req_columns = {
-        "user_id": "BIGINT",
-        "request_note": "TEXT",
-        "status": "TEXT NOT NULL DEFAULT 'PENDING'",
-        "requested_at": "TEXT",
-        "decided_at": "TEXT",
-        "decided_by": "TEXT",
-        "decision_note": "TEXT",
-    }
-    req_cols = get_table_columns(conn, "marketing_email_download_requests")
-    for col, sql_type in req_columns.items():
-        if col not in req_cols:
-            conn.execute(f"ALTER TABLE marketing_email_download_requests ADD COLUMN {col} {sql_type}")
+        req_columns = {
+            "user_id": "BIGINT",
+            "request_note": "TEXT",
+            "status": "TEXT NOT NULL DEFAULT 'PENDING'",
+            "requested_at": "TEXT",
+            "decided_at": "TEXT",
+            "decided_by": "TEXT",
+            "decision_note": "TEXT",
+        }
+        req_cols = get_table_columns(conn, "marketing_email_download_requests")
+        for col, sql_type in req_columns.items():
+            if col not in req_cols:
+                conn.execute(f"ALTER TABLE marketing_email_download_requests ADD COLUMN {col} {sql_type}")
 
-    log_columns = {
-        "export_file_id": "BIGINT",
-        "file_name": "TEXT",
-        "downloaded_by_user_id": "BIGINT",
-        "downloaded_by": "TEXT",
-        "downloaded_at": "TEXT",
-        "is_deleted": "INTEGER NOT NULL DEFAULT 0",
-        "deleted_at": "TEXT",
-        "deleted_by": "TEXT",
-    }
-    log_cols = get_table_columns(conn, "marketing_email_download_logs")
-    for col, sql_type in log_columns.items():
-        if col not in log_cols:
-            conn.execute(f"ALTER TABLE marketing_email_download_logs ADD COLUMN {col} {sql_type}")
+        log_columns = {
+            "export_file_id": "BIGINT",
+            "file_name": "TEXT",
+            "downloaded_by_user_id": "BIGINT",
+            "downloaded_by": "TEXT",
+            "downloaded_at": "TEXT",
+            "is_deleted": "INTEGER NOT NULL DEFAULT 0",
+            "deleted_at": "TEXT",
+            "deleted_by": "TEXT",
+        }
+        log_cols = get_table_columns(conn, "marketing_email_download_logs")
+        for col, sql_type in log_columns.items():
+            if col not in log_cols:
+                conn.execute(f"ALTER TABLE marketing_email_download_logs ADD COLUMN {col} {sql_type}")
 
-    conn.execute("""
-        UPDATE marketing_email_leads
-        SET email_normalized=LOWER(TRIM(email))
-        WHERE email_normalized IS NULL OR TRIM(email_normalized)=''
-    """)
-    conn.execute("""
-        UPDATE marketing_email_leads
-        SET verification_status='Not Yet Checked'
-        WHERE verification_status IS NULL OR TRIM(verification_status)=''
-    """)
-    conn.execute("""
-        UPDATE marketing_email_leads
-        SET verification_status='Not Yet Checked'
-        WHERE verification_status IN ('Not Checked Yet', 'Duplicate', 'Confirmed Ready')
-    """)
-    conn.execute("""
-        UPDATE marketing_email_leads
-        SET call_status='Not Yet Called'
-        WHERE call_status IS NULL OR TRIM(call_status)=''
-    """)
-    conn.execute("""
-        UPDATE marketing_email_export_files
-        SET confirmation_status='Pending'
-        WHERE confirmation_status IS NULL OR TRIM(confirmation_status)=''
-    """)
-    conn.execute("""
-        UPDATE marketing_email_export_files
-        SET confirmation_status='Send First Email'
-        WHERE confirmation_status='Sent First Email'
-    """)
-    conn.execute("""
-        UPDATE marketing_email_export_files
-        SET confirmation_status='Send Second Email'
-        WHERE confirmation_status='Sent Second Email'
-    """)
-    conn.execute("""
-        UPDATE marketing_email_export_files
-        SET confirmation_status='Invalid Email List'
-        WHERE confirmation_status IN ('Blocked', 'Completed')
-    """)
-    conn.execute("""
-        UPDATE marketing_email_export_files
-        SET send_round = CASE
-            WHEN confirmation_status='Send First Email' THEN GREATEST(COALESCE(send_round, 0), 1)
-            WHEN confirmation_status='Send Second Email' THEN GREATEST(COALESCE(send_round, 0), 2)
-            ELSE COALESCE(send_round, 0)
-        END
-    """)
-    conn.execute("""
-        UPDATE marketing_email_download_logs
-        SET is_deleted=0
-        WHERE is_deleted IS NULL
-    """)
+        conn.execute("""
+            UPDATE marketing_email_leads
+            SET email_normalized=LOWER(TRIM(email))
+            WHERE email_normalized IS NULL OR TRIM(email_normalized)=''
+        """)
+        conn.execute("""
+            UPDATE marketing_email_leads
+            SET verification_status='Not Yet Checked'
+            WHERE verification_status IS NULL OR TRIM(verification_status)=''
+        """)
+        conn.execute("""
+            UPDATE marketing_email_leads
+            SET verification_status='Not Yet Checked'
+            WHERE verification_status IN ('Not Checked Yet', 'Duplicate', 'Confirmed Ready')
+        """)
+        conn.execute("""
+            UPDATE marketing_email_leads
+            SET call_status='Not Yet Called'
+            WHERE call_status IS NULL OR TRIM(call_status)=''
+        """)
+        conn.execute("""
+            UPDATE marketing_email_export_files
+            SET confirmation_status='Pending'
+            WHERE confirmation_status IS NULL OR TRIM(confirmation_status)=''
+        """)
+        conn.execute("""
+            UPDATE marketing_email_export_files
+            SET confirmation_status='Send First Email'
+            WHERE confirmation_status='Sent First Email'
+        """)
+        conn.execute("""
+            UPDATE marketing_email_export_files
+            SET confirmation_status='Send Second Email'
+            WHERE confirmation_status='Sent Second Email'
+        """)
+        conn.execute("""
+            UPDATE marketing_email_export_files
+            SET confirmation_status='Invalid Email List'
+            WHERE confirmation_status IN ('Blocked', 'Completed')
+        """)
+        conn.execute("""
+            UPDATE marketing_email_export_files
+            SET send_round = CASE
+                WHEN confirmation_status='Send First Email' THEN GREATEST(COALESCE(send_round, 0), 1)
+                WHEN confirmation_status='Send Second Email' THEN GREATEST(COALESCE(send_round, 0), 2)
+                ELSE COALESCE(send_round, 0)
+            END
+        """)
+        conn.execute("""
+            UPDATE marketing_email_download_logs
+            SET is_deleted=0
+            WHERE is_deleted IS NULL
+        """)
 
-    conn.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_marketing_email_leads_email_normalized
-        ON marketing_email_leads (email_normalized)
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_marketing_email_leads_created_by
-        ON marketing_email_leads (created_by)
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_marketing_email_leads_filters
-        ON marketing_email_leads (category, country, verification_status, call_status)
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_marketing_email_exports_created_by
-        ON marketing_email_export_files (created_by)
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_marketing_email_requests_user_status
-        ON marketing_email_download_requests (user_id, status)
-    """)
-    conn.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_marketing_email_download_permissions_user
-        ON marketing_email_download_permissions (user_id)
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_marketing_email_download_logs_export
-        ON marketing_email_download_logs (export_file_id)
-    """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_marketing_email_leads_email_normalized
+            ON marketing_email_leads (email_normalized)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_marketing_email_leads_created_by
+            ON marketing_email_leads (created_by)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_marketing_email_leads_filters
+            ON marketing_email_leads (category, country, verification_status, call_status)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_marketing_email_exports_created_by
+            ON marketing_email_export_files (created_by)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_marketing_email_requests_user_status
+            ON marketing_email_download_requests (user_id, status)
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_marketing_email_download_permissions_user
+            ON marketing_email_download_permissions (user_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_marketing_email_download_logs_export
+            ON marketing_email_download_logs (export_file_id)
+        """)
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
 
 
-@marketing_emails_bp.before_app_request
+@marketing_emails_bp.before_request
 def _ensure_once():
+    if "user" not in session:
+        return
     if not current_app.config.get("MARKETING_EMAILS_TABLES_READY"):
         ensure_marketing_email_tables()
         current_app.config["MARKETING_EMAILS_TABLES_READY"] = True

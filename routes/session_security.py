@@ -82,7 +82,7 @@ def configure_sessions(app, connect=None, store=None, clock=time.time):
 
     @app.before_request
     def enforce_session():
-        if request.path.startswith('/static/') or 'user' not in session:
+        if request.path.startswith('/static/') or request.path == '/login' or 'user' not in session:
             return None
         sid = session.get('login_session_id')
         try:
@@ -91,7 +91,8 @@ def configure_sessions(app, connect=None, store=None, clock=time.time):
             if (not record or record['username'] != session['user'] or
                 now - record['last_activity'] >= IDLE_SECONDS or
                 now - record['created_at'] >= MAX_SECONDS):
-                store.revoke(sid)
+                # Expired records cannot be revived by touch(); sign-in cleanup
+                # removes them without adding a second database call to this request.
                 return expired_response()
             # Only a foreground page navigation or explicit activity heartbeat
             # refreshes inactivity. GET API polls never keep a session alive.

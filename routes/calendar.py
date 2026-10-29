@@ -72,174 +72,174 @@ def column_exists(conn, table_name, column_name):
 
 
 def ensure_calendar_tables():
-    conn = db()
-    try:
-        execute(conn, """
-            CREATE TABLE IF NOT EXISTS employee_schedules (
-                id BIGSERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                weekday INTEGER NOT NULL,
-                is_working INTEGER NOT NULL DEFAULT 0,
-                start_time TEXT,
-                end_time TEXT,
-                allow_employee_edit INTEGER NOT NULL DEFAULT 1,
-                updated_at TEXT,
-                updated_by TEXT,
-                UNIQUE(user_id, weekday)
-            )
-        """)
+    with db() as conn:
+        try:
+            execute(conn, """
+                CREATE TABLE IF NOT EXISTS employee_schedules (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    weekday INTEGER NOT NULL,
+                    is_working INTEGER NOT NULL DEFAULT 0,
+                    start_time TEXT,
+                    end_time TEXT,
+                    allow_employee_edit INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT,
+                    updated_by TEXT,
+                    UNIQUE(user_id, weekday)
+                )
+            """)
 
-        execute(conn, """
-            CREATE TABLE IF NOT EXISTS employee_unavailability (
-                id BIGSERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                start_date TEXT NOT NULL,
-                end_date TEXT NOT NULL,
-                all_day INTEGER NOT NULL DEFAULT 1,
-                start_time TEXT,
-                end_time TEXT,
-                reason TEXT,
-                status TEXT NOT NULL DEFAULT 'PENDING',
-                requested_at TEXT NOT NULL,
-                requested_by TEXT NOT NULL,
-                admin_note TEXT,
-                decided_at TEXT,
-                decided_by TEXT,
-                cancel_requested_at TEXT,
-                cancelled_at TEXT,
-                cancelled_by TEXT,
-                show_in_active INTEGER NOT NULL DEFAULT 0
-            )
-        """)
+            execute(conn, """
+                CREATE TABLE IF NOT EXISTS employee_unavailability (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    start_date TEXT NOT NULL,
+                    end_date TEXT NOT NULL,
+                    all_day INTEGER NOT NULL DEFAULT 1,
+                    start_time TEXT,
+                    end_time TEXT,
+                    reason TEXT,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    requested_at TEXT NOT NULL,
+                    requested_by TEXT NOT NULL,
+                    admin_note TEXT,
+                    decided_at TEXT,
+                    decided_by TEXT,
+                    cancel_requested_at TEXT,
+                    cancelled_at TEXT,
+                    cancelled_by TEXT,
+                    show_in_active INTEGER NOT NULL DEFAULT 0
+                )
+            """)
 
-        execute(conn, """
-            CREATE TABLE IF NOT EXISTS calendar_events (
-                id BIGSERIAL PRIMARY KEY,
-                calendar_scope TEXT NOT NULL DEFAULT 'SHARED',
-                title TEXT NOT NULL,
-                event_date TEXT NOT NULL,
-                start_time TEXT,
-                end_time TEXT,
-                all_day INTEGER NOT NULL DEFAULT 1,
-                notes TEXT,
-                created_at TEXT NOT NULL,
-                created_by TEXT NOT NULL,
-                audience_type TEXT NOT NULL DEFAULT 'ONLY_ME',
-                audience_user_ids TEXT,
-                reminder_times TEXT,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                show_in_active INTEGER NOT NULL DEFAULT 0
-            )
-        """)
+            execute(conn, """
+                CREATE TABLE IF NOT EXISTS calendar_events (
+                    id BIGSERIAL PRIMARY KEY,
+                    calendar_scope TEXT NOT NULL DEFAULT 'SHARED',
+                    title TEXT NOT NULL,
+                    event_date TEXT NOT NULL,
+                    start_time TEXT,
+                    end_time TEXT,
+                    all_day INTEGER NOT NULL DEFAULT 1,
+                    notes TEXT,
+                    created_at TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    audience_type TEXT NOT NULL DEFAULT 'ONLY_ME',
+                    audience_user_ids TEXT,
+                    reminder_times TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    show_in_active INTEGER NOT NULL DEFAULT 0
+                )
+            """)
 
-        execute(conn, """
-            CREATE TABLE IF NOT EXISTS calendar_event_acks (
-                id BIGSERIAL PRIMARY KEY,
-                event_id BIGINT NOT NULL,
-                user_id BIGINT NOT NULL,
-                remind_at TEXT NOT NULL,
-                acked_at TEXT NOT NULL,
-                UNIQUE(event_id, user_id, remind_at)
-            )
-        """)
+            execute(conn, """
+                CREATE TABLE IF NOT EXISTS calendar_event_acks (
+                    id BIGSERIAL PRIMARY KEY,
+                    event_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    remind_at TEXT NOT NULL,
+                    acked_at TEXT NOT NULL,
+                    UNIQUE(event_id, user_id, remind_at)
+                )
+            """)
 
-        execute(conn, """
-            CREATE TABLE IF NOT EXISTS calendar_holidays (
-                id BIGSERIAL PRIMARY KEY,
-                holiday_date TEXT NOT NULL,
-                title TEXT NOT NULL,
-                holiday_type TEXT NOT NULL DEFAULT 'GOVERNMENT_HOLIDAY',
-                notes TEXT,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL,
-                created_by TEXT NOT NULL,
-                edited_at TEXT,
-                edited_by TEXT
-            )
-        """)
+            execute(conn, """
+                CREATE TABLE IF NOT EXISTS calendar_holidays (
+                    id BIGSERIAL PRIMARY KEY,
+                    holiday_date TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    holiday_type TEXT NOT NULL DEFAULT 'GOVERNMENT_HOLIDAY',
+                    notes TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    edited_at TEXT,
+                    edited_by TEXT
+                )
+            """)
 
-        execute(conn, """
-            CREATE TABLE IF NOT EXISTS calendar_audit_logs (
-                id BIGSERIAL PRIMARY KEY,
-                action_type TEXT NOT NULL,
-                entity_type TEXT NOT NULL,
-                entity_id BIGINT,
-                changed_by TEXT NOT NULL,
-                changed_at TEXT NOT NULL,
-                old_value TEXT,
-                new_value TEXT,
-                note TEXT
-            )
-        """)
+            execute(conn, """
+                CREATE TABLE IF NOT EXISTS calendar_audit_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    action_type TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    entity_id BIGINT,
+                    changed_by TEXT NOT NULL,
+                    changed_at TEXT NOT NULL,
+                    old_value TEXT,
+                    new_value TEXT,
+                    note TEXT
+                )
+            """)
 
-        execute(conn, """
-            CREATE INDEX IF NOT EXISTS idx_employee_schedules_user_weekday
-            ON employee_schedules (user_id, weekday)
-        """)
+            execute(conn, """
+                CREATE INDEX IF NOT EXISTS idx_employee_schedules_user_weekday
+                ON employee_schedules (user_id, weekday)
+            """)
 
-        execute(conn, """
-            CREATE INDEX IF NOT EXISTS idx_employee_unavailability_dates
-            ON employee_unavailability (start_date, end_date)
-        """)
+            execute(conn, """
+                CREATE INDEX IF NOT EXISTS idx_employee_unavailability_dates
+                ON employee_unavailability (start_date, end_date)
+            """)
 
-        execute(conn, """
-            CREATE INDEX IF NOT EXISTS idx_employee_unavailability_user
-            ON employee_unavailability (user_id)
-        """)
+            execute(conn, """
+                CREATE INDEX IF NOT EXISTS idx_employee_unavailability_user
+                ON employee_unavailability (user_id)
+            """)
 
-        execute(conn, """
-            CREATE INDEX IF NOT EXISTS idx_calendar_events_date_active
-            ON calendar_events (event_date, is_active)
-        """)
+            execute(conn, """
+                CREATE INDEX IF NOT EXISTS idx_calendar_events_date_active
+                ON calendar_events (event_date, is_active)
+            """)
 
-        execute(conn, """
-            CREATE INDEX IF NOT EXISTS idx_calendar_holidays_date_active
-            ON calendar_holidays (holiday_date, is_active)
-        """)
+            execute(conn, """
+                CREATE INDEX IF NOT EXISTS idx_calendar_holidays_date_active
+                ON calendar_holidays (holiday_date, is_active)
+            """)
 
-        execute(conn, """
-            CREATE INDEX IF NOT EXISTS idx_calendar_audit_logs_changed_at
-            ON calendar_audit_logs (changed_at DESC, id DESC)
-        """)
+            execute(conn, """
+                CREATE INDEX IF NOT EXISTS idx_calendar_audit_logs_changed_at
+                ON calendar_audit_logs (changed_at DESC, id DESC)
+            """)
 
-        if not column_exists(conn, "calendar_events", "audience_type"):
-            execute(conn, "ALTER TABLE calendar_events ADD COLUMN audience_type TEXT NOT NULL DEFAULT 'ONLY_ME'")
-        if not column_exists(conn, "calendar_events", "audience_user_ids"):
-            execute(conn, "ALTER TABLE calendar_events ADD COLUMN audience_user_ids TEXT")
-        if not column_exists(conn, "calendar_events", "reminder_times"):
-            execute(conn, "ALTER TABLE calendar_events ADD COLUMN reminder_times TEXT")
-        if not column_exists(conn, "calendar_events", "is_active"):
-            execute(conn, "ALTER TABLE calendar_events ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
-        if not column_exists(conn, "calendar_events", "show_in_active"):
-            execute(conn, "ALTER TABLE calendar_events ADD COLUMN show_in_active INTEGER NOT NULL DEFAULT 0")
+            if not column_exists(conn, "calendar_events", "audience_type"):
+                execute(conn, "ALTER TABLE calendar_events ADD COLUMN audience_type TEXT NOT NULL DEFAULT 'ONLY_ME'")
+            if not column_exists(conn, "calendar_events", "audience_user_ids"):
+                execute(conn, "ALTER TABLE calendar_events ADD COLUMN audience_user_ids TEXT")
+            if not column_exists(conn, "calendar_events", "reminder_times"):
+                execute(conn, "ALTER TABLE calendar_events ADD COLUMN reminder_times TEXT")
+            if not column_exists(conn, "calendar_events", "is_active"):
+                execute(conn, "ALTER TABLE calendar_events ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+            if not column_exists(conn, "calendar_events", "show_in_active"):
+                execute(conn, "ALTER TABLE calendar_events ADD COLUMN show_in_active INTEGER NOT NULL DEFAULT 0")
 
-        if not column_exists(conn, "employee_unavailability", "show_in_active"):
-            execute(conn, "ALTER TABLE employee_unavailability ADD COLUMN show_in_active INTEGER NOT NULL DEFAULT 0")
+            if not column_exists(conn, "employee_unavailability", "show_in_active"):
+                execute(conn, "ALTER TABLE employee_unavailability ADD COLUMN show_in_active INTEGER NOT NULL DEFAULT 0")
 
-        if not column_exists(conn, "calendar_holidays", "holiday_type"):
-            execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN holiday_type TEXT NOT NULL DEFAULT 'GOVERNMENT_HOLIDAY'")
-        if not column_exists(conn, "calendar_holidays", "notes"):
-            execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN notes TEXT")
-        if not column_exists(conn, "calendar_holidays", "is_active"):
-            execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
-        if not column_exists(conn, "calendar_holidays", "created_at"):
-            execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN created_at TEXT")
-        if not column_exists(conn, "calendar_holidays", "created_by"):
-            execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN created_by TEXT")
-        if not column_exists(conn, "calendar_holidays", "edited_at"):
-            execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN edited_at TEXT")
-        if not column_exists(conn, "calendar_holidays", "edited_by"):
-            execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN edited_by TEXT")
+            if not column_exists(conn, "calendar_holidays", "holiday_type"):
+                execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN holiday_type TEXT NOT NULL DEFAULT 'GOVERNMENT_HOLIDAY'")
+            if not column_exists(conn, "calendar_holidays", "notes"):
+                execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN notes TEXT")
+            if not column_exists(conn, "calendar_holidays", "is_active"):
+                execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+            if not column_exists(conn, "calendar_holidays", "created_at"):
+                execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN created_at TEXT")
+            if not column_exists(conn, "calendar_holidays", "created_by"):
+                execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN created_by TEXT")
+            if not column_exists(conn, "calendar_holidays", "edited_at"):
+                execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN edited_at TEXT")
+            if not column_exists(conn, "calendar_holidays", "edited_by"):
+                execute(conn, "ALTER TABLE calendar_holidays ADD COLUMN edited_by TEXT")
 
-        if not column_exists(conn, "calendar_audit_logs", "note"):
-            execute(conn, "ALTER TABLE calendar_audit_logs ADD COLUMN note TEXT")
+            if not column_exists(conn, "calendar_audit_logs", "note"):
+                execute(conn, "ALTER TABLE calendar_audit_logs ADD COLUMN note TEXT")
 
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 
 def get_me(conn):
@@ -509,8 +509,10 @@ def build_calendar_badge_items(conn, me):
     return list(deduped.values())
 
 
-@calendar_bp.before_app_request
+@calendar_bp.before_request
 def _ensure_tables_once():
+    if "user" not in session:
+        return
     if not current_app.config.get("CALENDAR_TABLES_READY"):
         ensure_calendar_tables()
         current_app.config["CALENDAR_TABLES_READY"] = True

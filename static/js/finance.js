@@ -232,7 +232,7 @@
      $("type").value=r.type;
      $("clientName").value=r.client_name;
      $("category").value=r.category;
-     window.financeView.populateCategory(r.category);
+     window.financeView.populateCategory(r.category + (r.subcategory ? " / " + r.subcategory : ""));
      $("description").value=rawText(r.description);
      $("currency").value=r.currency;
      $("amount").value=r.amount;
@@ -301,9 +301,9 @@
        tr.innerHTML=`
          <td>${r.id}</td>
          <td>${bankCell}</td>
-         <td><span class="badge ${r.type==="INCOME"?"good":"warn"}">${safeText(r.type)}</span></td>
+         <td><span class="badge ${r.type==="INCOME"?"good":"warn"}">${safeText(r.type === "OUTCOME" ? "Expenses" : r.type === "INCOME" ? "Income" : r.type)}</span></td>
          <td>${clientCell}</td>
-         <td>${safeText(r.category)}</td>
+         <td>${safeText(r.category)}${r.category_review ? `<br><small title="${safeText(r.category_review)}">Review allocation</small>` : ""}</td><td>${safeText(r.subcategory || "—")}</td>
          <td class="muted">${safeText(r.description)}</td>
          <td><b>${safeText(r.currency)} ${Number(r.amount).toFixed(2)}</b></td>
          <td>${safeText(r.payment_type)}</td>
@@ -364,7 +364,7 @@
        const tr=document.createElement("tr");
        tr.innerHTML=`
          <td>${safeText(r.key)}</td>
-         <td>${safeText(r.direction || '')}</td>
+         <td>${safeText(r.direction === 'OUTCOME' ? 'Expenses' : r.direction === 'INCOME' ? 'Income' : r.direction || '')}</td>
          <td>${safeText(r.currency)}</td>
          <td><b>${Number(r.total).toFixed(2)}</b></td>
          <td class="muted">${r.count}</td>
@@ -441,7 +441,7 @@
        type:$("type").value,
        client_name:$("clientName").value.trim(),
        category:window.financeView.categoryValue(),
-       description:$("description").value.trim(),
+       description:$("description").value,
        currency:$("currency").value,
        amount:$("amount").value,
        payment_type:$("paymentType").value,

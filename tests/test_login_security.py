@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import threading
 import unittest
+import unittest.mock
 
 from flask import Blueprint, Flask
 from routes.auth import auth_bp
@@ -137,6 +138,18 @@ class LoginSecurityTests(unittest.TestCase):
         with client.session_transaction() as session:
             self.assertEqual(session['user'], 'employee')
 
+    def test_lockout_countdown_survives_refresh_without_database_access(self):
+        app = self.app()
+        client = app.test_client()
+        client.get('/login')
+        for _ in range(4):
+            response = client.post('/login', data={'username':'x','password':'wrong'})
+        self.assertEqual(response.status_code, 429)
+        with unittest.mock.patch.object(self.store, 'locked', side_effect=AssertionError('GET must not query database')):
+            response = client.get('/login')
+        self.assertEqual(response.status_code, 429)
+        self.assertIn(b'lockout-timer', response.data)
+
     def test_unavailable_store_is_login_only_503(self):
         app = self.app()
         class BrokenStore:
@@ -144,8 +157,9 @@ class LoginSecurityTests(unittest.TestCase):
                 raise RuntimeError('test outage')
         app.config['LOGIN_PROTECTION'] = LoginProtection(BrokenStore(), lambda *a, **k: None)
         client = app.test_client()
+        self.assertEqual(client.get('/login').status_code, 200)
         with self.assertLogs(app.logger, level='ERROR'):
-            response = client.get('/login')
+            response = client.post('/login', data={'username':'employee','password':'correct'})
         self.assertEqual(response.status_code, 503)
         self.assertIn(b'Sign-in is temporarily unavailable', response.data)
         with client.get('/static/css/login.css') as static_response:

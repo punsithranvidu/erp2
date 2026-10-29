@@ -123,118 +123,119 @@ def parse_id_list(value):
 
 
 def ensure_individual_achievement_tables():
-    conn = db()
-    cur = conn.cursor()
+    with db() as conn:
+        cur = conn.cursor()
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS individual_achievements (
-            id BIGSERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL,
-            time_period TEXT NOT NULL,
-            achieved_work TEXT NOT NULL,
-            time_spent TEXT NOT NULL,
-            results_got TEXT NOT NULL,
-            visibility TEXT NOT NULL DEFAULT 'EVERYONE',
-            created_by TEXT NOT NULL,
-            created_by_user_id BIGINT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT,
-            updated_by TEXT,
-            updated_by_user_id BIGINT,
-            is_deleted INTEGER NOT NULL DEFAULT 0,
-            deleted_at TEXT,
-            deleted_by TEXT,
-            deleted_by_user_id BIGINT,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS individual_achievements (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                time_period TEXT NOT NULL,
+                achieved_work TEXT NOT NULL,
+                time_spent TEXT NOT NULL,
+                results_got TEXT NOT NULL,
+                visibility TEXT NOT NULL DEFAULT 'EVERYONE',
+                created_by TEXT NOT NULL,
+                created_by_user_id BIGINT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT,
+                updated_by TEXT,
+                updated_by_user_id BIGINT,
+                is_deleted INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT,
+                deleted_by TEXT,
+                deleted_by_user_id BIGINT,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+        """)
 
-    cols = get_table_columns(conn, "individual_achievements")
-    missing = {
-        "user_id": "ALTER TABLE individual_achievements ADD COLUMN user_id BIGINT",
-        "time_period": "ALTER TABLE individual_achievements ADD COLUMN time_period TEXT NOT NULL DEFAULT ''",
-        "achieved_work": "ALTER TABLE individual_achievements ADD COLUMN achieved_work TEXT NOT NULL DEFAULT ''",
-        "time_spent": "ALTER TABLE individual_achievements ADD COLUMN time_spent TEXT NOT NULL DEFAULT ''",
-        "results_got": "ALTER TABLE individual_achievements ADD COLUMN results_got TEXT NOT NULL DEFAULT ''",
-        "visibility": "ALTER TABLE individual_achievements ADD COLUMN visibility TEXT NOT NULL DEFAULT 'EVERYONE'",
-        "created_by": "ALTER TABLE individual_achievements ADD COLUMN created_by TEXT NOT NULL DEFAULT ''",
-        "created_by_user_id": "ALTER TABLE individual_achievements ADD COLUMN created_by_user_id BIGINT",
-        "created_at": "ALTER TABLE individual_achievements ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
-        "updated_at": "ALTER TABLE individual_achievements ADD COLUMN updated_at TEXT",
-        "updated_by": "ALTER TABLE individual_achievements ADD COLUMN updated_by TEXT",
-        "updated_by_user_id": "ALTER TABLE individual_achievements ADD COLUMN updated_by_user_id BIGINT",
-        "is_deleted": "ALTER TABLE individual_achievements ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
-        "deleted_at": "ALTER TABLE individual_achievements ADD COLUMN deleted_at TEXT",
-        "deleted_by": "ALTER TABLE individual_achievements ADD COLUMN deleted_by TEXT",
-        "deleted_by_user_id": "ALTER TABLE individual_achievements ADD COLUMN deleted_by_user_id BIGINT",
-    }
-    for col, sql in missing.items():
-        if col not in cols:
-            cur.execute(sql)
+        cols = get_table_columns(conn, "individual_achievements")
+        missing = {
+            "user_id": "ALTER TABLE individual_achievements ADD COLUMN user_id BIGINT",
+            "time_period": "ALTER TABLE individual_achievements ADD COLUMN time_period TEXT NOT NULL DEFAULT ''",
+            "achieved_work": "ALTER TABLE individual_achievements ADD COLUMN achieved_work TEXT NOT NULL DEFAULT ''",
+            "time_spent": "ALTER TABLE individual_achievements ADD COLUMN time_spent TEXT NOT NULL DEFAULT ''",
+            "results_got": "ALTER TABLE individual_achievements ADD COLUMN results_got TEXT NOT NULL DEFAULT ''",
+            "visibility": "ALTER TABLE individual_achievements ADD COLUMN visibility TEXT NOT NULL DEFAULT 'EVERYONE'",
+            "created_by": "ALTER TABLE individual_achievements ADD COLUMN created_by TEXT NOT NULL DEFAULT ''",
+            "created_by_user_id": "ALTER TABLE individual_achievements ADD COLUMN created_by_user_id BIGINT",
+            "created_at": "ALTER TABLE individual_achievements ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
+            "updated_at": "ALTER TABLE individual_achievements ADD COLUMN updated_at TEXT",
+            "updated_by": "ALTER TABLE individual_achievements ADD COLUMN updated_by TEXT",
+            "updated_by_user_id": "ALTER TABLE individual_achievements ADD COLUMN updated_by_user_id BIGINT",
+            "is_deleted": "ALTER TABLE individual_achievements ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+            "deleted_at": "ALTER TABLE individual_achievements ADD COLUMN deleted_at TEXT",
+            "deleted_by": "ALTER TABLE individual_achievements ADD COLUMN deleted_by TEXT",
+            "deleted_by_user_id": "ALTER TABLE individual_achievements ADD COLUMN deleted_by_user_id BIGINT",
+        }
+        for col, sql in missing.items():
+            if col not in cols:
+                cur.execute(sql)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS individual_achievement_contributors (
-            id BIGSERIAL PRIMARY KEY,
-            achievement_id BIGINT NOT NULL REFERENCES individual_achievements(id) ON DELETE CASCADE,
-            user_id BIGINT NOT NULL REFERENCES users(id),
-            added_by TEXT,
-            added_by_user_id BIGINT,
-            added_at TEXT NOT NULL,
-            UNIQUE (achievement_id, user_id)
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS individual_achievement_contributors (
+                id BIGSERIAL PRIMARY KEY,
+                achievement_id BIGINT NOT NULL REFERENCES individual_achievements(id) ON DELETE CASCADE,
+                user_id BIGINT NOT NULL REFERENCES users(id),
+                added_by TEXT,
+                added_by_user_id BIGINT,
+                added_at TEXT NOT NULL,
+                UNIQUE (achievement_id, user_id)
+            )
+        """)
 
-    contributor_cols = get_table_columns(conn, "individual_achievement_contributors")
-    contributor_missing = {
-        "achievement_id": "ALTER TABLE individual_achievement_contributors ADD COLUMN achievement_id BIGINT",
-        "user_id": "ALTER TABLE individual_achievement_contributors ADD COLUMN user_id BIGINT",
-        "added_by": "ALTER TABLE individual_achievement_contributors ADD COLUMN added_by TEXT",
-        "added_by_user_id": "ALTER TABLE individual_achievement_contributors ADD COLUMN added_by_user_id BIGINT",
-        "added_at": "ALTER TABLE individual_achievement_contributors ADD COLUMN added_at TEXT NOT NULL DEFAULT ''",
-    }
-    for col, sql in contributor_missing.items():
-        if col not in contributor_cols:
-            cur.execute(sql)
+        contributor_cols = get_table_columns(conn, "individual_achievement_contributors")
+        contributor_missing = {
+            "achievement_id": "ALTER TABLE individual_achievement_contributors ADD COLUMN achievement_id BIGINT",
+            "user_id": "ALTER TABLE individual_achievement_contributors ADD COLUMN user_id BIGINT",
+            "added_by": "ALTER TABLE individual_achievement_contributors ADD COLUMN added_by TEXT",
+            "added_by_user_id": "ALTER TABLE individual_achievement_contributors ADD COLUMN added_by_user_id BIGINT",
+            "added_at": "ALTER TABLE individual_achievement_contributors ADD COLUMN added_at TEXT NOT NULL DEFAULT ''",
+        }
+        for col, sql in contributor_missing.items():
+            if col not in contributor_cols:
+                cur.execute(sql)
 
-    cur.execute("""
-        UPDATE individual_achievements
-        SET visibility='EVERYONE'
-        WHERE visibility IS NULL
-           OR TRIM(visibility)=''
-           OR UPPER(TRIM(visibility)) NOT IN ('EVERYONE', 'ADMINS', 'ONLY_ME')
-    """)
+        cur.execute("""
+            UPDATE individual_achievements
+            SET visibility='EVERYONE'
+            WHERE visibility IS NULL
+               OR TRIM(visibility)=''
+               OR UPPER(TRIM(visibility)) NOT IN ('EVERYONE', 'ADMINS', 'ONLY_ME')
+        """)
 
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_individual_achievements_owner
-        ON individual_achievements (user_id)
-    """)
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_individual_achievements_visibility
-        ON individual_achievements (visibility)
-    """)
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_individual_achievements_deleted
-        ON individual_achievements (is_deleted)
-    """)
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_individual_achievements_created_at
-        ON individual_achievements (created_at)
-    """)
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_individual_achievement_contributors_achievement
-        ON individual_achievement_contributors (achievement_id)
-    """)
-    cur.execute("""
-        CREATE INDEX IF NOT EXISTS idx_individual_achievement_contributors_user
-        ON individual_achievement_contributors (user_id)
-    """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_individual_achievements_owner
+            ON individual_achievements (user_id)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_individual_achievements_visibility
+            ON individual_achievements (visibility)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_individual_achievements_deleted
+            ON individual_achievements (is_deleted)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_individual_achievements_created_at
+            ON individual_achievements (created_at)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_individual_achievement_contributors_achievement
+            ON individual_achievement_contributors (achievement_id)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_individual_achievement_contributors_user
+            ON individual_achievement_contributors (user_id)
+        """)
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
 
-@individual_achievement_bp.before_app_request
+@individual_achievement_bp.before_request
 def individual_achievement_tables_ready():
+    if "user" not in session:
+        return
     if current_app.config.get("INDIVIDUAL_ACHIEVEMENT_TABLES_READY"):
         return
     ensure_individual_achievement_tables()

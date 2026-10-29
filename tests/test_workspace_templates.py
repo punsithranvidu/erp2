@@ -31,7 +31,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
 
     def test_every_module_has_navigation_skip_target_and_unique_html_ids(self):
         for path in (ROOT / 'templates').glob('*.html'):
-            if path.name == 'login.html':
+            if path.name in ('login.html', 'service_unavailable.html'):
                 continue
             for role in ('ADMIN', 'EMP'):
                 with self.subTest(page=path.name, role=role):

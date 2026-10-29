@@ -46,10 +46,10 @@ class FinanceAnalysisTests(unittest.TestCase):
         original=row(category='Bottles Samples Colombo Director Change Doc Print')
         self.assertEqual(category_path(original)[0],'Needs classification')
         self.assertEqual(original['category'],'Bottles Samples Colombo Director Change Doc Print')
-        self.assertEqual(category_path(row(category='Jayabima / misrat 2 - Consignment Cetificat'))[0],'Compliance & taxes')
+        self.assertEqual(category_path(row(category='Jayabima / misrat 2 - Consignment Cetificat'))[0],'Export')
         self.assertEqual(category_path(row(category='Transport / Local deliveries')),('Transport','Local deliveries','structured'))
-        self.assertEqual(category_path(row(category='remittence'))[:2],('Bank fees','International transfer fees'))
-        self.assertEqual(category_path(row(type='INCOME',category='Deposit'))[0],'Funding & transfers')
+        self.assertEqual(category_path(row(category='remittence'))[:2],('Bank Charges','International transfer fees'))
+        self.assertEqual(category_path(row(type='INCOME',category='Deposit'))[0],'Capital')
 
     def test_subcategory_totals_reconcile_and_custom_choices_are_supported(self):
         report=build_analysis([row(category='Custom / Detail'),row(category='Transport / Local deliveries')],'LKR')
@@ -70,6 +70,7 @@ class FinanceAnalysisAPITests(unittest.TestCase):
         self.conn.row_factory=lambda cursor,row:dict(zip([c[0] for c in cursor.description],row))
         self.conn.executescript('''CREATE TABLE finance_records (bank_id INTEGER,type TEXT,category TEXT,description TEXT,currency TEXT,amount REAL,status TEXT,paid_date TEXT,created_at TEXT,deleted_at TEXT);
         INSERT INTO finance_records VALUES (1,'INCOME','Sales / Export sales','','LKR',200,'PENDING','2026-01-01','2026-01-01',NULL),(1,'OUTCOME','Transport / Local deliveries','','LKR',50,'PAID','2026-01-01','2026-01-01',NULL),(2,'OUTCOME','Bank Charges','','LKR',25,'PAID','2026-01-01','2026-01-01',NULL);''')
+        self.conn.executescript("ALTER TABLE finance_records ADD COLUMN subcategory TEXT DEFAULT ''; ALTER TABLE finance_records ADD COLUMN original_category TEXT; ALTER TABLE finance_records ADD COLUMN category_review TEXT DEFAULT '';")
         self.app=Flask(__name__)
         self.app.config.update(SECRET_KEY='test',TESTING=True,HAS_MODULE_ACCESS_FUNC=lambda module,edit=False:True)
         self.app.register_blueprint(finance_bp)
@@ -94,7 +95,7 @@ class FinanceAnalysisAPITests(unittest.TestCase):
 
     def test_saved_custom_categories_are_returned_without_rewriting_rows(self):
         data=self.client.get('/api/finance/categories').json
-        self.assertIn({'type':'OUTCOME','category':'Transport / Local deliveries'},data['existing'])
+        self.assertIn({'type':'OUTCOME','category':'Transport / Local deliveries','subcategory':''},data['existing'])
         self.assertIn('Transport',data['expense'])
 
     def test_all_direction_summary_keeps_incoming_and_outgoing_separate(self):

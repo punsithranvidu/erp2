@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Temporarily unavailable | Ceylon Spice Haven</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='css/login.css') }}" />
+<style>.status-content{padding:32px}.status-content h1{font-size:24px;justify-content:flex-start}.status-content p{line-height:1.65;color:#657084}.status-links{display:flex;gap:18px;align-items:center;margin-top:24px}.status-links a{color:#264e7a}</style>
+</head><body><main class="login-shell"><section class="login-card"><div class="status-content"><h1>Temporarily unavailable</h1><p>We could not reach the database. Please wait a moment and try again. This request has not been automatically retried.</p><div class="status-links"><a href="{{ request.path if request.method in ('GET','HEAD') else '/dashboard' }}">Try again</a><a href="{{ url_for('auth.login') }}">Go to login</a></div></div></section></main></body></html>

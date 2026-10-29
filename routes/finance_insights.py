@@ -1,109 +1,112 @@
-"""Category choices and currency-separated reporting over existing ledger rows."""
+"""Shared finance taxonomy and currency-separated reporting."""
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal, InvalidOperation
 import math
 
-EXPENSE_CATEGORIES = {
-    'Transport': ['Local deliveries', 'Shipment transport', 'Company travel'],
-    'Shipping & clearance': ['Freight', 'Customs clearance', 'Handling & forwarding'],
-    'Samples': ['Sample products', 'Sample packaging', 'Sample courier'],
-    'Bank fees': ['Local bank charges', 'International transfer fees', 'Account & statement fees'],
-    'Products & packaging': ['Product purchases', 'Bottles & jars', 'Labels & printing', 'Packing materials'],
-    'Company operations': ['Administration', 'Printing & stationery', 'Equipment & maintenance'],
-    'Compliance & taxes': ['Certifications', 'Company-secretary fees', 'Taxes & filings'],
-    'Transfers & advances': ['Petty cash allocations', 'Supplier advances', 'Personal loans'],
-    'Donations': ['Donations & contributions'],
+CATEGORIES = {
+    'Bank Charges': ['Local transaction fees', 'International transfer fees', 'Account & statement fees'],
+    'Samples': ['Buyer sample products', 'Buyer sample delivery'],
+    'Transport': ['Local transport', 'Shipment transport', 'Company travel'],
+    'Donations': ['Religious donations', 'Charitable donations'],
+    'Company Administration & Compliance': ['VAT', 'IRD filings', 'Company secretary & director changes', 'Printing & stationery', 'Equipment & maintenance'],
+    'Petty Cash': ['Allocations', 'Top-ups', 'Reimbursements'],
+    'Import': ['Imported goods', 'Import freight', 'Customs & clearance'],
+    'Export': ['Export sales', 'Export freight', 'Certificates & documentation'],
+    'Production': ['Raw materials', 'Manufacturing', 'Packaging materials', 'Labels & design', 'Supplier advances'],
+    'Capital': ['Owner contributions', 'Capital withdrawals'],
+    'Loans': ['Loans given', 'Loans received', 'Loan repayments'],
 }
-INCOME_CATEGORIES = {
-    'Sales': ['Export sales', 'Local sales', 'Sample sales'],
-    'Funding & transfers': ['Owner capital', 'Loans received', 'Account transfers'],
-    'Other receipts': ['Refunds', 'Other income'],
-}
+# A transaction direction does not change the business classification.
+EXPENSE_CATEGORIES = CATEGORIES
+INCOME_CATEGORIES = CATEGORIES
 
-# Explicit aliases only. Ambiguous combined descriptions remain visible for review.
 ALIASES = {
-    'local transport': ('Transport', 'Local deliveries'),
+    'local transport': ('Transport', 'Local transport'),
     'hala transport': ('Transport', 'Shipment transport'),
-    'export shipping charges fcl': ('Shipping & clearance', 'Freight'),
-    'export shipping charges fcl | export shipping charges fcl': ('Shipping & clearance', 'Freight'),
-    'jars import clearance payment 1': ('Shipping & clearance', 'Customs clearance'),
-    'packing materials': ('Products & packaging', 'Packing materials'),
-    'card board box payment': ('Products & packaging', 'Packing materials'),
-    'heat seal and ziplock cost': ('Products & packaging', 'Packing materials'),
-    'labels': ('Products & packaging', 'Labels & printing'),
-    'label': ('Products & packaging', 'Labels & printing'),
-    'label charges': ('Compliance & taxes', 'Certifications'),
-    'pytho cetificate': ('Compliance & taxes', 'Certifications'),
-    'hala consignment certificate fee': ('Compliance & taxes', 'Certifications'),
-    'jayabima / misrat 2 - consignment cetificat': ('Compliance & taxes', 'Certifications'),
-    'vat': ('Compliance & taxes', 'Taxes & filings'),
-    'nill return submit to ird': ('Compliance & taxes', 'Taxes & filings'),
-    'secretary': ('Compliance & taxes', 'Company-secretary fees'),
-    'directer change': ('Compliance & taxes', 'Company-secretary fees'),
-    'formations': ('Compliance & taxes', 'Company-secretary fees'),
-    'hardware material cost': ('Company operations', 'Equipment & maintenance'),
-    'printing': ('Company operations', 'Printing & stationery'),
-    'spice': ('Products & packaging', 'Product purchases'),
-    'jayabima spice mnanufaturing final cost': ('Products & packaging', 'Product purchases'),
-    'heat seal advace estimate no 7943': ('Transfers & advances', 'Supplier advances'),
-    'heat seal balance payment invoice no 7943': ('Products & packaging', 'Packing materials'),
-    'anual retune peti cash': ('Transfers & advances', 'Petty cash allocations'),
-    'peti cash small transport': ('Transfers & advances', 'Petty cash allocations'),
-    'peti cash': ('Transfers & advances', 'Petty cash allocations'),
-    'personal work': ('Transfers & advances', 'Personal loans'),
-    'personal work (loan)': ('Transfers & advances', 'Personal loans'),
-    'advance payment': ('Transfers & advances', 'Supplier advances'),
-    'spice samples': ('Samples', 'Sample products'),
-    'king coconut samples': ('Samples', 'Sample products'),
-    'samples': ('Samples', 'Sample products'),
-    'donation': ('Donations', 'Donations & contributions'),
-    'swameen wahanse': ('Donations', 'Donations & contributions'),
+    'export shipping charges fcl': ('Export', 'Export freight'),
+    'export shipping charges fcl | export shipping charges fcl': ('Export', 'Export freight'),
+    'jars import clearance payment 1': ('Import', 'Customs & clearance'),
+    'packing materials': ('Production', 'Labels & design'),
+    'card board box payment': ('Production', 'Packaging materials'),
+    'heat seal and ziplock cost': ('Production', 'Packaging materials'),
+    'labels': ('Production', 'Labels & design'),
+    'label': ('Production', 'Labels & design'),
+    'label sample desing mask city': ('Production', 'Labels & design'),
+    'label sample design mask city': ('Production', 'Labels & design'),
+    'label charges': ('Production', 'Labels & design'),
+    'pytho cetificate': ('Export', 'Certificates & documentation'),
+    'hala consignment certificate fee': ('Export', 'Certificates & documentation'),
+    'jayabima / misrat 2 - consignment cetificat': ('Export', 'Certificates & documentation'),
+    'vat': ('Company Administration & Compliance', 'VAT'),
+    'nill return submit to ird': ('Company Administration & Compliance', 'IRD filings'),
+    'secretary': ('Company Administration & Compliance', 'Company secretary & director changes'),
+    'directer change': ('Company Administration & Compliance', 'Company secretary & director changes'),
+    'formations': ('Company Administration & Compliance', 'Company secretary & director changes'),
+    'hardware material cost': ('Company Administration & Compliance', 'Equipment & maintenance'),
+    'printing': ('Company Administration & Compliance', 'Printing & stationery'),
+    'spice': ('Production', 'Raw materials'),
+    'jayabima spice mnanufaturing final cost': ('Production', 'Manufacturing'),
+    'jayabima spcie pvt ltd': ('Production', 'Manufacturing'),
+    'heat seal advace estimate no 7943': ('Production', 'Supplier advances'),
+    'heat seal balance payment invoice no 7943': ('Production', 'Packaging materials'),
+    'anual retune peti cash': ('Petty Cash', ''),
+    'peti cash small transport': ('Petty Cash', ''),
+    'peti cash': ('Petty Cash', ''),
+    'personal work': ('Loans', 'Loans given'),
+    'personal work (loan)': ('Loans', 'Loans given'),
+    'advance payment': ('Production', 'Supplier advances'),
+    'donation': ('Donations', ''),
+    'swameen wahanse': ('Donations', 'Religious donations'),
+    'swameen wahanse book': ('Donations', 'Religious donations'),
+    'ramanayake impression': ('Production', 'Labels & design'),
+    'deposit': ('Capital', 'Owner contributions'),
+    'spice/ export and import': ('Export', 'Export sales'),
+    'misrat': ('Export', 'Export sales'),
+    'misrat 2nd payment - export': ('Export', 'Export sales'),
 }
 
 
 def category_path(row):
     raw = (row.get('category') or '').strip()
     key = ' '.join(raw.lower().split())
-    if row.get('type') == 'OUTCOME' and key in ALIASES:
+    if 'subcategory' in row or row.get('original_category') is not None:
+        return raw, row.get('subcategory') or '', 'unclassified' if raw == 'Needs classification' else 'structured'
+    if key in ('spice samples', 'king coconut samples', 'samples'):
+        description = (row.get('description') or '').lower()
+        if any(word in description for word in ('packaging', 'labell')):
+            return 'Production', 'Labels & design' if 'labell' in description else 'Packaging materials', 'suggested'
+        delivery = any(word in description for word in ('shipment', 'sending', 'freight'))
+        return 'Samples', 'Buyer sample delivery' if delivery else '', 'suggested'
+    if key in ALIASES:
         return *ALIASES[key], 'suggested'
+    if key in ('bank charges', 'bank - (unknown)', 'remittence') or key.startswith('monthly bank transaction fees'):
+        description = (row.get('description') or '').lower()
+        child = ''
+        if key == 'remittence' or 'remittance' in description or 'remittence' in description:
+            child = 'International transfer fees'
+        elif any(word in description for word in ('statement', 'user fee', 'check book', 'cheque book')):
+            child = 'Account & statement fees'
+        elif key.startswith('monthly') or 'monthly bank transaction' in description:
+            child = 'Local transaction fees'
+        return 'Bank Charges', child, 'suggested'
+    if key == 'import':
+        description = (row.get('description') or '').lower()
+        child = 'Customs & clearance' if 'broker' in description else 'Import freight' if 'shipping' in description else 'Imported goods' if 'glass jar' in description else ''
+        return 'Import', child, 'suggested'
+    if raw in CATEGORIES:
+        return raw, '', 'structured'
     if ' / ' in raw:
         group, child = raw.split(' / ', 1)
-        if group.strip() and child.strip():
-            return group.strip(), child.strip(), 'structured'
-    key = ' '.join(raw.lower().split())
-    if row.get('type') == 'INCOME':
-        aliases = {'deposit': ('Funding & transfers', 'Owner capital'),
-                   'spice samples': ('Sales', 'Sample sales'), 'samples': ('Sales', 'Sample sales')}
-        if key in aliases:
-            return *aliases[key], 'suggested'
-    else:
-        if key in ('bank charges', 'bank - (unknown)', 'remittence') or key.startswith('monthly bank transaction fees'):
-            description = (row.get('description') or '').lower()
-            if key == 'remittence' or 'remittance' in description or 'remittence' in description:
-                child = 'International transfer fees'
-            elif any(word in description for word in ('statement', 'user fee', 'check book', 'cheque book')):
-                child = 'Account & statement fees'
-            else:
-                child = 'Local bank charges'
-            return 'Bank fees', child, 'suggested'
-        description = (row.get('description') or '').lower()
-        if key == 'import' and description.strip() == 'glass jar import':
-            return 'Products & packaging', 'Bottles & jars', 'suggested'
-        if key == 'import' and 'jar shipping cost' in description:
-            return 'Shipping & clearance', 'Freight', 'suggested'
-        if key == 'ramanayake impression' and description.strip() == 'labels':
-            return 'Products & packaging', 'Labels & printing', 'suggested'
-        if key == 'jayabima spcie pvt ltd' and 'spice' in description:
-            return 'Products & packaging', 'Product purchases', 'suggested'
-    return 'Needs classification', raw or 'Unspecified', 'unclassified'
+        return group.strip(), child.strip(), 'structured'
+    return 'Needs classification', '', 'unclassified'
 
 
 def build_analysis(rows, currency, start=None, end=None, basis='all'):
     monthly = defaultdict(lambda: {'income': Decimal(0), 'outgoing': Decimal(0), 'count': 0})
     categories = defaultdict(lambda: {'amount': Decimal(0), 'count': 0, 'children': defaultdict(Decimal)})
     incoming = outgoing = Decimal(0)
-    count = pending = fallback_dates = omitted = suggested = unclassified = 0
+    count = pending = fallback_dates = omitted = suggested = unclassified = review = 0
     for row in rows:
         if row.get('deleted_at') or row.get('currency') != currency or row.get('type') not in ('INCOME', 'OUTCOME'):
             continue
@@ -123,6 +126,7 @@ def build_analysis(rows, currency, start=None, end=None, basis='all'):
         if (start and recorded < start) or (end and recorded > end):
             continue
         count += 1
+        review += bool(row.get('category_review'))
         pending += not settled
         fallback_dates += used_created
         point = monthly[recorded.isoformat()[:7]]
@@ -138,7 +142,7 @@ def build_analysis(rows, currency, start=None, end=None, basis='all'):
             unclassified += source == 'unclassified'
             categories[group]['amount'] += amount
             categories[group]['count'] += 1
-            categories[group]['children'][child] += amount
+            categories[group]['children'][child or 'No subcategory'] += amount
     # Fill gaps for a truthful time axis; bound the period to 1200 months.
     keys = sorted(monthly)
     if keys:
@@ -153,7 +157,7 @@ def build_analysis(rows, currency, start=None, end=None, basis='all'):
         'currency': currency, 'basis': basis, 'count': count,
         'income': float(incoming), 'outgoing': float(outgoing), 'net_movement': float(incoming - outgoing),
         'unsettled_count': pending, 'created_date_count': fallback_dates, 'omitted_count': omitted,
-        'suggested_count': suggested, 'unclassified_count': unclassified,
+        'review_count': review, 'suggested_count': suggested, 'unclassified_count': unclassified,
         'monthly': [{'period': key, 'income': float(value['income']), 'outgoing': float(value['outgoing']), 'count': value['count']} for key, value in sorted(monthly.items())],
         'categories': [{'name': key, 'amount': float(value['amount']), 'count': value['count'],
                         'children': [{'name': name, 'amount': float(amount)} for name, amount in sorted(value['children'].items(), key=lambda item: item[1], reverse=True)]}

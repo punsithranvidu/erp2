@@ -52,3 +52,8 @@
 .finance-page .table thead th { top: 0; }
 .finance-page .table td:last-child, .finance-page .table th:last-child { position: sticky; right: 0; background: #fff; box-shadow: -1px 0 #e0e6ed; z-index: 1; }
 .finance-page .table thead th:last-child { background: #f3f6f9; z-index: 3; }
+
+.finance-kpi-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.finance-amount-toggle { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: #75859a; cursor: pointer; }
+.finance-amount-toggle:hover { background: #f1f5f9; color: #264e7a; }
+.finance-amount-toggle:focus-visible { outline: 2px solid #315f91; outline-offset: 2px; }

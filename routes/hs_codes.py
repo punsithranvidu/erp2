@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, session, current_app
 from functools import wraps
 from datetime import datetime
-from .db import connect, get_table_columns
+from .db import set_transaction_timeouts, connect, get_table_columns
 
 hs_codes_bp = Blueprint("hs_codes", __name__)
 
@@ -36,48 +36,51 @@ def require_module(module: str, need_edit: bool = False):
 
 
 def ensure_hs_code_tables():
-    conn = db()
+    with db() as conn:
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS hs_codes (
-            id BIGSERIAL PRIMARY KEY,
-            product_name TEXT NOT NULL,
-            hs_code TEXT NOT NULL,
-            proof_link TEXT,
-            notes TEXT,
-            created_at TEXT NOT NULL,
-            created_by TEXT NOT NULL,
-            updated_at TEXT,
-            updated_by TEXT,
-            is_deleted INTEGER NOT NULL DEFAULT 0
-        )
-    """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS hs_codes (
+                id BIGSERIAL PRIMARY KEY,
+                product_name TEXT NOT NULL,
+                hs_code TEXT NOT NULL,
+                proof_link TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                updated_at TEXT,
+                updated_by TEXT,
+                is_deleted INTEGER NOT NULL DEFAULT 0
+            )
+        """)
 
-    conn.commit()
+        conn.commit()
+        set_transaction_timeouts(conn)
 
-    cols = get_table_columns(conn, "hs_codes")
+        cols = get_table_columns(conn, "hs_codes")
 
-    if "proof_link" not in cols:
-        conn.execute("ALTER TABLE hs_codes ADD COLUMN proof_link TEXT")
-    if "notes" not in cols:
-        conn.execute("ALTER TABLE hs_codes ADD COLUMN notes TEXT")
-    if "created_at" not in cols:
-        conn.execute("ALTER TABLE hs_codes ADD COLUMN created_at TEXT")
-    if "created_by" not in cols:
-        conn.execute("ALTER TABLE hs_codes ADD COLUMN created_by TEXT")
-    if "updated_at" not in cols:
-        conn.execute("ALTER TABLE hs_codes ADD COLUMN updated_at TEXT")
-    if "updated_by" not in cols:
-        conn.execute("ALTER TABLE hs_codes ADD COLUMN updated_by TEXT")
-    if "is_deleted" not in cols:
-        conn.execute("ALTER TABLE hs_codes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0")
+        if "proof_link" not in cols:
+            conn.execute("ALTER TABLE hs_codes ADD COLUMN proof_link TEXT")
+        if "notes" not in cols:
+            conn.execute("ALTER TABLE hs_codes ADD COLUMN notes TEXT")
+        if "created_at" not in cols:
+            conn.execute("ALTER TABLE hs_codes ADD COLUMN created_at TEXT")
+        if "created_by" not in cols:
+            conn.execute("ALTER TABLE hs_codes ADD COLUMN created_by TEXT")
+        if "updated_at" not in cols:
+            conn.execute("ALTER TABLE hs_codes ADD COLUMN updated_at TEXT")
+        if "updated_by" not in cols:
+            conn.execute("ALTER TABLE hs_codes ADD COLUMN updated_by TEXT")
+        if "is_deleted" not in cols:
+            conn.execute("ALTER TABLE hs_codes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0")
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
 
 
-@hs_codes_bp.before_app_request
+@hs_codes_bp.before_request
 def _ensure_once():
+    if "user" not in session:
+        return
     if not current_app.config.get("HS_CODES_TABLES_READY"):
         ensure_hs_code_tables()
         current_app.config["HS_CODES_TABLES_READY"] = True

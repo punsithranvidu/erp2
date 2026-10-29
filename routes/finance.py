@@ -382,6 +382,11 @@ def api_finance_create():
         if not data.get(k):
             return jsonify({"ok": False, "error": f"Missing field: {k}"}), 400
 
+    category = str(data['category']).strip()
+    main, separator, child = category.partition(' / ')
+    data['category'], data['subcategory'] = main, child if separator else ''
+    if not main or len(main) > 80 or len(data['subcategory']) > 100:
+        return jsonify(ok=False, error='Invalid category or subcategory'), 400
     conn = None
     try:
         conn = db()
@@ -391,9 +396,9 @@ def api_finance_create():
                 type, client_name, category, description, currency, amount,
                 payment_type, status, proof_of_payment, invoice_ref, po_number, quotation_number,
                 paid_date, folder_link, proof_link, invoice_link, po_link, quotation_link,
-                created_at, created_by,
+                created_at, created_by, subcategory,
                 deleted_at, deleted_by
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NULL,NULL)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NULL,NULL)
         """, (
             int(data["bank_id"]),
             data["type"],
@@ -416,6 +421,7 @@ def api_finance_create():
             normalize_url(data.get("quotation_link", "")),
             now_iso(),
             session["user"],
+            data["subcategory"],
         ))
         conn.commit()
         conn.close()
@@ -435,9 +441,15 @@ def api_finance_create():
 @require_module("FINANCE", need_edit=True)
 def api_finance_update(rid):
     data = request.json or {}
+    if 'category' in data:
+        main, separator, child = str(data['category']).strip().partition(' / ')
+        if not main or len(main) > 80 or len(child) > 100:
+            return jsonify(ok=False, error='Invalid category or subcategory'), 400
+        data['category'], data['subcategory'] = main, child if separator else ''
+
     allowed = [
         "bank_id",
-        "type", "client_name", "category", "description", "currency", "amount",
+        "type", "client_name", "category", "subcategory", "description", "currency", "amount",
         "payment_type", "status", "proof_of_payment", "invoice_ref", "po_number",
         "quotation_number", "paid_date", "folder_link", "proof_link",
         "invoice_link", "po_link", "quotation_link"
@@ -453,6 +465,10 @@ def api_finance_update(rid):
                 v = normalize_url(v)
             sets.append(f"{k}=%s")
             vals.append(v)
+
+    if 'category' in data:
+        sets.append("category_review=CASE WHEN category=%s AND subcategory=%s THEN category_review ELSE '' END")
+        vals.extend((data['category'], data['subcategory']))
 
     if not sets:
         return jsonify({"ok": False, "error": "No fields to update"}), 400
@@ -707,6 +723,8 @@ def api_finance_export_csv():
             fr.type,
             fr.client_name,
             fr.category,
+            fr.subcategory,
+            fr.category_review,
             fr.description,
             fr.currency,
             fr.amount,
@@ -740,7 +758,7 @@ def api_finance_export_csv():
     cw = csv.writer(si)
 
     cw.writerow([
-        "ID", "Bank", "Type", "Client", "Category", "Description", "Currency", "Amount",
+        "ID", "Bank", "Type", "Client", "Category", "Subcategory", "Classification Review", "Description", "Currency", "Amount",
         "Payment Type", "Status", "Proof Of Payment", "Invoice Ref", "PO Number", "Quotation Number",
         "Paid Date", "Created At", "Created By", "Edited At", "Edited By",
         "Client Folder Link", "Proof Link", "Invoice Link","PO Link", "Quotation Link"
@@ -754,6 +772,8 @@ def api_finance_export_csv():
             r.get("type"),
             r.get("client_name"),
             r.get("category"),
+            r.get("subcategory"),
+            r.get("category_review"),
             r.get("description"),
             r.get("currency"),
             r.get("amount"),
@@ -936,10 +956,10 @@ def api_balance_upsert():
 def api_finance_categories():
     from .finance_insights import INCOME_CATEGORIES, EXPENSE_CATEGORIES, category_path
     with db() as conn:
-        existing = conn.execute("SELECT DISTINCT type, category FROM finance_records WHERE deleted_at IS NULL ORDER BY category").fetchall()
+        existing = conn.execute("SELECT DISTINCT type, category, subcategory FROM finance_records WHERE deleted_at IS NULL ORDER BY category").fetchall()
         currencies = conn.execute("SELECT DISTINCT currency FROM finance_records WHERE deleted_at IS NULL ORDER BY currency").fetchall()
     return jsonify(income=INCOME_CATEGORIES, expense=EXPENSE_CATEGORIES,
-                   existing=[dict(row) for row in existing], structured=[dict(row) for row in existing if category_path(row)[2] == 'structured'], currencies=[row['currency'] for row in currencies])
+                   existing=[dict(row) for row in existing], structured=[dict(type=row["type"], category=row["category"] + (" / " + row["subcategory"] if row["subcategory"] else "")) for row in existing], currencies=[row['currency'] for row in currencies])
 
 
 @finance_bp.route('/api/finance/analysis', methods=['GET'])
@@ -969,5 +989,5 @@ def api_finance_analysis():
         where += ' AND bank_id=%s'
         params.append(bank)
     with db() as conn:
-        rows = conn.execute(f"SELECT type,category,description,currency,amount,status,paid_date,created_at FROM finance_records WHERE {where}", params).fetchall()
+        rows = conn.execute(f"SELECT type,category,subcategory,original_category,category_review,description,currency,amount,status,paid_date,created_at FROM finance_records WHERE {where}", params).fetchall()
     return jsonify(ok=True, data=build_analysis(rows, currency, start, end, basis))

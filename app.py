@@ -8,7 +8,7 @@ from datetime import datetime
 from functools import wraps
 
 from werkzeug.security import generate_password_hash, check_password_hash
-from routes.db import connect, get_table_columns
+from routes.db import connect, get_table_columns, register_database_error_handlers
 
 # Blueprints
 from routes.login_security import (LoginProtection, PostgresLoginStore,
@@ -124,6 +124,7 @@ def db():
 
 
 configure_sessions(app, db)
+register_database_error_handlers(app)
 
 
 def now_iso():
@@ -932,6 +933,8 @@ app.config["LOGIN_PROTECTION"] = LoginProtection(PostgresLoginStore(db), audit_l
 app.config["MODULES"] = MODULES
 
 init_db()
+from routes.finance_category_migration import migrate_categories
+migrate_categories(db)
 purge_deleted_older_than_30_days()
 
 # register blueprints

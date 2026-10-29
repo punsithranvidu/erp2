@@ -1,3 +1,6 @@
+import math
+import time
+
 from flask import Blueprint, render_template, request, redirect, url_for, session
 
 auth_bp = Blueprint("auth", __name__)
@@ -14,6 +17,21 @@ def login():
 
     key = browser_key()
     protection = current_app.config["LOGIN_PROTECTION"]
+    if request.method in ('GET', 'HEAD'):
+        # Rendering the public sign-in page must never wait for the database.
+        # This signed hint preserves the countdown after a failed POST; the
+        # database remains authoritative for all password verification/lockouts.
+        remaining = 0
+        if session.get('login_block_device') == key:
+            remaining = max(0, math.ceil(session.get('login_blocked_until', 0) - time.time()))
+        message = 'Too many failed attempts on this browser.' if remaining else (
+            'Your session has ended. Please log in again.' if request.args.get('reason') == 'expired' else None)
+        response = make_response(render_template('login.html', error=message, retry_after=remaining), 429 if remaining else 200)
+        response.headers['Cache-Control'] = 'no-store'
+        if remaining:
+            response.headers['Retry-After'] = str(remaining)
+        return response
+
     try:
         if request.method == "POST" and getattr(g, "login_device_missing", False):
             # No password verification without a valid signed browser cookie.
@@ -46,6 +64,13 @@ def login():
                 current_app.logger.exception('Unable to create sign-in session')
                 return render_template('login.html', error='Sign-in is temporarily unavailable. Please try again shortly.'), 503
         return redirect(url_for("pages.dashboard"))
+
+    if result.retry_after:
+        session['login_blocked_until'] = time.time() + result.retry_after
+        session['login_block_device'] = key
+    else:
+        session.pop('login_blocked_until', None)
+        session.pop('login_block_device', None)
 
     response = make_response(render_template(
         "login.html", error=result.error, retry_after=result.retry_after,

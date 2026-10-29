@@ -124,55 +124,57 @@ def rebuild_attendance_table(conn):
 
 
 def ensure_attendance_tables():
-    conn = db()
+    with db() as conn:
 
-    if not table_exists(conn, "attendance_entries"):
-        conn.execute("""
-            CREATE TABLE attendance_entries (
-                id BIGSERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                attendance_date TEXT NOT NULL,
-                marked_status TEXT NOT NULL DEFAULT 'UNMARKED',
-                employee_note TEXT,
-                admin_confirmed INTEGER NOT NULL DEFAULT 0,
-                employee_saved_at TEXT,
-                employee_saved_by TEXT,
-                admin_action_at TEXT,
-                admin_action_by TEXT,
-                UNIQUE(user_id, attendance_date)
-            )
-        """)
+        if not table_exists(conn, "attendance_entries"):
+            conn.execute("""
+                CREATE TABLE attendance_entries (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    attendance_date TEXT NOT NULL,
+                    marked_status TEXT NOT NULL DEFAULT 'UNMARKED',
+                    employee_note TEXT,
+                    admin_confirmed INTEGER NOT NULL DEFAULT 0,
+                    employee_saved_at TEXT,
+                    employee_saved_by TEXT,
+                    admin_action_at TEXT,
+                    admin_action_by TEXT,
+                    UNIQUE(user_id, attendance_date)
+                )
+            """)
+            conn.commit()
+            conn.close()
+            return
+
+        cols = get_table_columns(conn, "attendance_entries")
+
+        required = {
+            "id",
+            "user_id",
+            "attendance_date",
+            "marked_status",
+            "employee_note",
+            "admin_confirmed",
+            "employee_saved_at",
+            "employee_saved_by",
+            "admin_action_at",
+            "admin_action_by",
+        }
+
+        if not required.issubset(cols) or not has_unique_user_date(conn):
+            rebuild_attendance_table(conn)
+            conn.commit()
+            conn.close()
+            return
+
         conn.commit()
         conn.close()
-        return
-
-    cols = get_table_columns(conn, "attendance_entries")
-
-    required = {
-        "id",
-        "user_id",
-        "attendance_date",
-        "marked_status",
-        "employee_note",
-        "admin_confirmed",
-        "employee_saved_at",
-        "employee_saved_by",
-        "admin_action_at",
-        "admin_action_by",
-    }
-
-    if not required.issubset(cols) or not has_unique_user_date(conn):
-        rebuild_attendance_table(conn)
-        conn.commit()
-        conn.close()
-        return
-
-    conn.commit()
-    conn.close()
 
 
-@attendance_bp.before_app_request
+@attendance_bp.before_request
 def _ensure_once():
+    if "user" not in session:
+        return
     if not current_app.config.get("ATTENDANCE_TABLES_READY"):
         ensure_attendance_tables()
         current_app.config["ATTENDANCE_TABLES_READY"] = True

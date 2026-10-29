@@ -164,7 +164,7 @@
           tr.innerHTML = `
             <td>${r.id}</td>
             <td>${bankName}</td>
-            <td>${safeText(r.type)}</td>
+            <td>${safeText(r.type === "OUTCOME" ? "Expenses" : r.type === "INCOME" ? "Income" : r.type)}</td>
             <td>${safeText(r.client_name)}</td>
             <td>${safeText(r.category)}</td>
             <td>${safeText(r.currency)}</td>

@@ -103,223 +103,224 @@ def normalize_confirmation(value):
 
 
 def ensure_weekly_task_tables():
-    conn = db()
-    cur = conn.cursor()
+    with db() as conn:
+        cur = conn.cursor()
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS weekly_tasks (
-            id BIGSERIAL PRIMARY KEY,
-            owner_user_id BIGINT NOT NULL,
-            task_text TEXT NOT NULL,
-            task_year INTEGER NOT NULL,
-            task_month INTEGER NOT NULL,
-            week_number INTEGER NOT NULL,
-            target_year INTEGER NOT NULL,
-            target_month INTEGER NOT NULL,
-            target_week INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'Pending',
-            confirmation_status TEXT NOT NULL DEFAULT 'PENDING',
-            carry_forward_count INTEGER NOT NULL DEFAULT 0,
-            source_task_id BIGINT,
-            created_by_user_id BIGINT,
-            created_by TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_by TEXT,
-            updated_at TEXT,
-            confirmed_by TEXT,
-            confirmed_at TEXT,
-            started_by TEXT,
-            started_at TEXT,
-            done_by TEXT,
-            done_at TEXT,
-            cancelled_by TEXT,
-            cancelled_at TEXT,
-            moved_by TEXT,
-            moved_at TEXT,
-            deleted_at TEXT,
-            deleted_by TEXT,
-            deleted_by_user_id BIGINT
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_tasks (
+                id BIGSERIAL PRIMARY KEY,
+                owner_user_id BIGINT NOT NULL,
+                task_text TEXT NOT NULL,
+                task_year INTEGER NOT NULL,
+                task_month INTEGER NOT NULL,
+                week_number INTEGER NOT NULL,
+                target_year INTEGER NOT NULL,
+                target_month INTEGER NOT NULL,
+                target_week INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Pending',
+                confirmation_status TEXT NOT NULL DEFAULT 'PENDING',
+                carry_forward_count INTEGER NOT NULL DEFAULT 0,
+                source_task_id BIGINT,
+                created_by_user_id BIGINT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_by TEXT,
+                updated_at TEXT,
+                confirmed_by TEXT,
+                confirmed_at TEXT,
+                started_by TEXT,
+                started_at TEXT,
+                done_by TEXT,
+                done_at TEXT,
+                cancelled_by TEXT,
+                cancelled_at TEXT,
+                moved_by TEXT,
+                moved_at TEXT,
+                deleted_at TEXT,
+                deleted_by TEXT,
+                deleted_by_user_id BIGINT
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS weekly_task_edit_requests (
-            id BIGSERIAL PRIMARY KEY,
-            task_id BIGINT NOT NULL,
-            requested_text TEXT NOT NULL,
-            request_status TEXT NOT NULL DEFAULT 'PENDING',
-            requested_by_user_id BIGINT,
-            requested_by TEXT NOT NULL,
-            requested_at TEXT NOT NULL,
-            reviewed_by TEXT,
-            reviewed_at TEXT,
-            review_note TEXT,
-            FOREIGN KEY(task_id) REFERENCES weekly_tasks(id) ON DELETE CASCADE
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_task_edit_requests (
+                id BIGSERIAL PRIMARY KEY,
+                task_id BIGINT NOT NULL,
+                requested_text TEXT NOT NULL,
+                request_status TEXT NOT NULL DEFAULT 'PENDING',
+                requested_by_user_id BIGINT,
+                requested_by TEXT NOT NULL,
+                requested_at TEXT NOT NULL,
+                reviewed_by TEXT,
+                reviewed_at TEXT,
+                review_note TEXT,
+                FOREIGN KEY(task_id) REFERENCES weekly_tasks(id) ON DELETE CASCADE
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS weekly_task_history (
-            id BIGSERIAL PRIMARY KEY,
-            task_id BIGINT NOT NULL,
-            action_type TEXT NOT NULL,
-            old_task_text TEXT,
-            new_task_text TEXT,
-            old_status TEXT,
-            new_status TEXT,
-            old_year INTEGER,
-            old_month INTEGER,
-            old_week INTEGER,
-            new_year INTEGER,
-            new_month INTEGER,
-            new_week INTEGER,
-            acted_by TEXT NOT NULL,
-            acted_by_user_id BIGINT,
-            acted_at TEXT NOT NULL,
-            note TEXT
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_task_history (
+                id BIGSERIAL PRIMARY KEY,
+                task_id BIGINT NOT NULL,
+                action_type TEXT NOT NULL,
+                old_task_text TEXT,
+                new_task_text TEXT,
+                old_status TEXT,
+                new_status TEXT,
+                old_year INTEGER,
+                old_month INTEGER,
+                old_week INTEGER,
+                new_year INTEGER,
+                new_month INTEGER,
+                new_week INTEGER,
+                acted_by TEXT NOT NULL,
+                acted_by_user_id BIGINT,
+                acted_at TEXT NOT NULL,
+                note TEXT
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS weekly_task_week_locks (
-            id BIGSERIAL PRIMARY KEY,
-            owner_user_id BIGINT NOT NULL,
-            task_year INTEGER NOT NULL,
-            task_month INTEGER NOT NULL,
-            week_number INTEGER NOT NULL,
-            is_frozen INTEGER NOT NULL DEFAULT 1,
-            manual_unfrozen INTEGER NOT NULL DEFAULT 0,
-            frozen_at TEXT,
-            frozen_by TEXT,
-            unfrozen_at TEXT,
-            unfrozen_by TEXT,
-            UNIQUE(owner_user_id, task_year, task_month, week_number)
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_task_week_locks (
+                id BIGSERIAL PRIMARY KEY,
+                owner_user_id BIGINT NOT NULL,
+                task_year INTEGER NOT NULL,
+                task_month INTEGER NOT NULL,
+                week_number INTEGER NOT NULL,
+                is_frozen INTEGER NOT NULL DEFAULT 1,
+                manual_unfrozen INTEGER NOT NULL DEFAULT 0,
+                frozen_at TEXT,
+                frozen_by TEXT,
+                unfrozen_at TEXT,
+                unfrozen_by TEXT,
+                UNIQUE(owner_user_id, task_year, task_month, week_number)
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS weekly_task_notification_state (
-            user_id BIGINT PRIMARY KEY,
-            last_seen_at TEXT NOT NULL DEFAULT ''
-        )
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_task_notification_state (
+                user_id BIGINT PRIMARY KEY,
+                last_seen_at TEXT NOT NULL DEFAULT ''
+            )
+        """)
 
-    task_cols = get_table_columns(conn, "weekly_tasks")
-    task_missing = {
-        "owner_user_id": "ALTER TABLE weekly_tasks ADD COLUMN owner_user_id BIGINT",
-        "task_text": "ALTER TABLE weekly_tasks ADD COLUMN task_text TEXT NOT NULL DEFAULT ''",
-        "task_year": "ALTER TABLE weekly_tasks ADD COLUMN task_year INTEGER NOT NULL DEFAULT 0",
-        "task_month": "ALTER TABLE weekly_tasks ADD COLUMN task_month INTEGER NOT NULL DEFAULT 0",
-        "week_number": "ALTER TABLE weekly_tasks ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1",
-        "target_year": "ALTER TABLE weekly_tasks ADD COLUMN target_year INTEGER NOT NULL DEFAULT 0",
-        "target_month": "ALTER TABLE weekly_tasks ADD COLUMN target_month INTEGER NOT NULL DEFAULT 0",
-        "target_week": "ALTER TABLE weekly_tasks ADD COLUMN target_week INTEGER NOT NULL DEFAULT 1",
-        "status": "ALTER TABLE weekly_tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'Pending'",
-        "confirmation_status": "ALTER TABLE weekly_tasks ADD COLUMN confirmation_status TEXT NOT NULL DEFAULT 'PENDING'",
-        "carry_forward_count": "ALTER TABLE weekly_tasks ADD COLUMN carry_forward_count INTEGER NOT NULL DEFAULT 0",
-        "source_task_id": "ALTER TABLE weekly_tasks ADD COLUMN source_task_id BIGINT",
-        "created_by_user_id": "ALTER TABLE weekly_tasks ADD COLUMN created_by_user_id BIGINT",
-        "created_by": "ALTER TABLE weekly_tasks ADD COLUMN created_by TEXT NOT NULL DEFAULT ''",
-        "created_at": "ALTER TABLE weekly_tasks ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
-        "updated_by": "ALTER TABLE weekly_tasks ADD COLUMN updated_by TEXT",
-        "updated_at": "ALTER TABLE weekly_tasks ADD COLUMN updated_at TEXT",
-        "confirmed_by": "ALTER TABLE weekly_tasks ADD COLUMN confirmed_by TEXT",
-        "confirmed_at": "ALTER TABLE weekly_tasks ADD COLUMN confirmed_at TEXT",
-        "started_by": "ALTER TABLE weekly_tasks ADD COLUMN started_by TEXT",
-        "started_at": "ALTER TABLE weekly_tasks ADD COLUMN started_at TEXT",
-        "done_by": "ALTER TABLE weekly_tasks ADD COLUMN done_by TEXT",
-        "done_at": "ALTER TABLE weekly_tasks ADD COLUMN done_at TEXT",
-        "cancelled_by": "ALTER TABLE weekly_tasks ADD COLUMN cancelled_by TEXT",
-        "cancelled_at": "ALTER TABLE weekly_tasks ADD COLUMN cancelled_at TEXT",
-        "moved_by": "ALTER TABLE weekly_tasks ADD COLUMN moved_by TEXT",
-        "moved_at": "ALTER TABLE weekly_tasks ADD COLUMN moved_at TEXT",
-        "deleted_at": "ALTER TABLE weekly_tasks ADD COLUMN deleted_at TEXT",
-        "deleted_by": "ALTER TABLE weekly_tasks ADD COLUMN deleted_by TEXT",
-        "deleted_by_user_id": "ALTER TABLE weekly_tasks ADD COLUMN deleted_by_user_id BIGINT",
-    }
-    for col, sql in task_missing.items():
-        if col not in task_cols:
-            cur.execute(sql)
+        task_cols = get_table_columns(conn, "weekly_tasks")
+        task_missing = {
+            "owner_user_id": "ALTER TABLE weekly_tasks ADD COLUMN owner_user_id BIGINT",
+            "task_text": "ALTER TABLE weekly_tasks ADD COLUMN task_text TEXT NOT NULL DEFAULT ''",
+            "task_year": "ALTER TABLE weekly_tasks ADD COLUMN task_year INTEGER NOT NULL DEFAULT 0",
+            "task_month": "ALTER TABLE weekly_tasks ADD COLUMN task_month INTEGER NOT NULL DEFAULT 0",
+            "week_number": "ALTER TABLE weekly_tasks ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1",
+            "target_year": "ALTER TABLE weekly_tasks ADD COLUMN target_year INTEGER NOT NULL DEFAULT 0",
+            "target_month": "ALTER TABLE weekly_tasks ADD COLUMN target_month INTEGER NOT NULL DEFAULT 0",
+            "target_week": "ALTER TABLE weekly_tasks ADD COLUMN target_week INTEGER NOT NULL DEFAULT 1",
+            "status": "ALTER TABLE weekly_tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'Pending'",
+            "confirmation_status": "ALTER TABLE weekly_tasks ADD COLUMN confirmation_status TEXT NOT NULL DEFAULT 'PENDING'",
+            "carry_forward_count": "ALTER TABLE weekly_tasks ADD COLUMN carry_forward_count INTEGER NOT NULL DEFAULT 0",
+            "source_task_id": "ALTER TABLE weekly_tasks ADD COLUMN source_task_id BIGINT",
+            "created_by_user_id": "ALTER TABLE weekly_tasks ADD COLUMN created_by_user_id BIGINT",
+            "created_by": "ALTER TABLE weekly_tasks ADD COLUMN created_by TEXT NOT NULL DEFAULT ''",
+            "created_at": "ALTER TABLE weekly_tasks ADD COLUMN created_at TEXT NOT NULL DEFAULT ''",
+            "updated_by": "ALTER TABLE weekly_tasks ADD COLUMN updated_by TEXT",
+            "updated_at": "ALTER TABLE weekly_tasks ADD COLUMN updated_at TEXT",
+            "confirmed_by": "ALTER TABLE weekly_tasks ADD COLUMN confirmed_by TEXT",
+            "confirmed_at": "ALTER TABLE weekly_tasks ADD COLUMN confirmed_at TEXT",
+            "started_by": "ALTER TABLE weekly_tasks ADD COLUMN started_by TEXT",
+            "started_at": "ALTER TABLE weekly_tasks ADD COLUMN started_at TEXT",
+            "done_by": "ALTER TABLE weekly_tasks ADD COLUMN done_by TEXT",
+            "done_at": "ALTER TABLE weekly_tasks ADD COLUMN done_at TEXT",
+            "cancelled_by": "ALTER TABLE weekly_tasks ADD COLUMN cancelled_by TEXT",
+            "cancelled_at": "ALTER TABLE weekly_tasks ADD COLUMN cancelled_at TEXT",
+            "moved_by": "ALTER TABLE weekly_tasks ADD COLUMN moved_by TEXT",
+            "moved_at": "ALTER TABLE weekly_tasks ADD COLUMN moved_at TEXT",
+            "deleted_at": "ALTER TABLE weekly_tasks ADD COLUMN deleted_at TEXT",
+            "deleted_by": "ALTER TABLE weekly_tasks ADD COLUMN deleted_by TEXT",
+            "deleted_by_user_id": "ALTER TABLE weekly_tasks ADD COLUMN deleted_by_user_id BIGINT",
+        }
+        for col, sql in task_missing.items():
+            if col not in task_cols:
+                cur.execute(sql)
 
-    req_cols = get_table_columns(conn, "weekly_task_edit_requests")
-    req_missing = {
-        "task_id": "ALTER TABLE weekly_task_edit_requests ADD COLUMN task_id BIGINT",
-        "requested_text": "ALTER TABLE weekly_task_edit_requests ADD COLUMN requested_text TEXT NOT NULL DEFAULT ''",
-        "request_status": "ALTER TABLE weekly_task_edit_requests ADD COLUMN request_status TEXT NOT NULL DEFAULT 'PENDING'",
-        "requested_by_user_id": "ALTER TABLE weekly_task_edit_requests ADD COLUMN requested_by_user_id BIGINT",
-        "requested_by": "ALTER TABLE weekly_task_edit_requests ADD COLUMN requested_by TEXT NOT NULL DEFAULT ''",
-        "requested_at": "ALTER TABLE weekly_task_edit_requests ADD COLUMN requested_at TEXT NOT NULL DEFAULT ''",
-        "reviewed_by": "ALTER TABLE weekly_task_edit_requests ADD COLUMN reviewed_by TEXT",
-        "reviewed_at": "ALTER TABLE weekly_task_edit_requests ADD COLUMN reviewed_at TEXT",
-        "review_note": "ALTER TABLE weekly_task_edit_requests ADD COLUMN review_note TEXT",
-    }
-    for col, sql in req_missing.items():
-        if col not in req_cols:
-            cur.execute(sql)
+        req_cols = get_table_columns(conn, "weekly_task_edit_requests")
+        req_missing = {
+            "task_id": "ALTER TABLE weekly_task_edit_requests ADD COLUMN task_id BIGINT",
+            "requested_text": "ALTER TABLE weekly_task_edit_requests ADD COLUMN requested_text TEXT NOT NULL DEFAULT ''",
+            "request_status": "ALTER TABLE weekly_task_edit_requests ADD COLUMN request_status TEXT NOT NULL DEFAULT 'PENDING'",
+            "requested_by_user_id": "ALTER TABLE weekly_task_edit_requests ADD COLUMN requested_by_user_id BIGINT",
+            "requested_by": "ALTER TABLE weekly_task_edit_requests ADD COLUMN requested_by TEXT NOT NULL DEFAULT ''",
+            "requested_at": "ALTER TABLE weekly_task_edit_requests ADD COLUMN requested_at TEXT NOT NULL DEFAULT ''",
+            "reviewed_by": "ALTER TABLE weekly_task_edit_requests ADD COLUMN reviewed_by TEXT",
+            "reviewed_at": "ALTER TABLE weekly_task_edit_requests ADD COLUMN reviewed_at TEXT",
+            "review_note": "ALTER TABLE weekly_task_edit_requests ADD COLUMN review_note TEXT",
+        }
+        for col, sql in req_missing.items():
+            if col not in req_cols:
+                cur.execute(sql)
 
-    hist_cols = get_table_columns(conn, "weekly_task_history")
-    hist_missing = {
-        "task_id": "ALTER TABLE weekly_task_history ADD COLUMN task_id BIGINT",
-        "action_type": "ALTER TABLE weekly_task_history ADD COLUMN action_type TEXT NOT NULL DEFAULT 'UPDATE'",
-        "old_task_text": "ALTER TABLE weekly_task_history ADD COLUMN old_task_text TEXT",
-        "new_task_text": "ALTER TABLE weekly_task_history ADD COLUMN new_task_text TEXT",
-        "old_status": "ALTER TABLE weekly_task_history ADD COLUMN old_status TEXT",
-        "new_status": "ALTER TABLE weekly_task_history ADD COLUMN new_status TEXT",
-        "old_year": "ALTER TABLE weekly_task_history ADD COLUMN old_year INTEGER",
-        "old_month": "ALTER TABLE weekly_task_history ADD COLUMN old_month INTEGER",
-        "old_week": "ALTER TABLE weekly_task_history ADD COLUMN old_week INTEGER",
-        "new_year": "ALTER TABLE weekly_task_history ADD COLUMN new_year INTEGER",
-        "new_month": "ALTER TABLE weekly_task_history ADD COLUMN new_month INTEGER",
-        "new_week": "ALTER TABLE weekly_task_history ADD COLUMN new_week INTEGER",
-        "acted_by": "ALTER TABLE weekly_task_history ADD COLUMN acted_by TEXT NOT NULL DEFAULT ''",
-        "acted_by_user_id": "ALTER TABLE weekly_task_history ADD COLUMN acted_by_user_id BIGINT",
-        "acted_at": "ALTER TABLE weekly_task_history ADD COLUMN acted_at TEXT NOT NULL DEFAULT ''",
-        "note": "ALTER TABLE weekly_task_history ADD COLUMN note TEXT",
-    }
-    for col, sql in hist_missing.items():
-        if col not in hist_cols:
-            cur.execute(sql)
+        hist_cols = get_table_columns(conn, "weekly_task_history")
+        hist_missing = {
+            "task_id": "ALTER TABLE weekly_task_history ADD COLUMN task_id BIGINT",
+            "action_type": "ALTER TABLE weekly_task_history ADD COLUMN action_type TEXT NOT NULL DEFAULT 'UPDATE'",
+            "old_task_text": "ALTER TABLE weekly_task_history ADD COLUMN old_task_text TEXT",
+            "new_task_text": "ALTER TABLE weekly_task_history ADD COLUMN new_task_text TEXT",
+            "old_status": "ALTER TABLE weekly_task_history ADD COLUMN old_status TEXT",
+            "new_status": "ALTER TABLE weekly_task_history ADD COLUMN new_status TEXT",
+            "old_year": "ALTER TABLE weekly_task_history ADD COLUMN old_year INTEGER",
+            "old_month": "ALTER TABLE weekly_task_history ADD COLUMN old_month INTEGER",
+            "old_week": "ALTER TABLE weekly_task_history ADD COLUMN old_week INTEGER",
+            "new_year": "ALTER TABLE weekly_task_history ADD COLUMN new_year INTEGER",
+            "new_month": "ALTER TABLE weekly_task_history ADD COLUMN new_month INTEGER",
+            "new_week": "ALTER TABLE weekly_task_history ADD COLUMN new_week INTEGER",
+            "acted_by": "ALTER TABLE weekly_task_history ADD COLUMN acted_by TEXT NOT NULL DEFAULT ''",
+            "acted_by_user_id": "ALTER TABLE weekly_task_history ADD COLUMN acted_by_user_id BIGINT",
+            "acted_at": "ALTER TABLE weekly_task_history ADD COLUMN acted_at TEXT NOT NULL DEFAULT ''",
+            "note": "ALTER TABLE weekly_task_history ADD COLUMN note TEXT",
+        }
+        for col, sql in hist_missing.items():
+            if col not in hist_cols:
+                cur.execute(sql)
 
-    lock_cols = get_table_columns(conn, "weekly_task_week_locks")
-    lock_missing = {
-        "owner_user_id": "ALTER TABLE weekly_task_week_locks ADD COLUMN owner_user_id BIGINT",
-        "task_year": "ALTER TABLE weekly_task_week_locks ADD COLUMN task_year INTEGER NOT NULL DEFAULT 0",
-        "task_month": "ALTER TABLE weekly_task_week_locks ADD COLUMN task_month INTEGER NOT NULL DEFAULT 0",
-        "week_number": "ALTER TABLE weekly_task_week_locks ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1",
-        "is_frozen": "ALTER TABLE weekly_task_week_locks ADD COLUMN is_frozen INTEGER NOT NULL DEFAULT 1",
-        "manual_unfrozen": "ALTER TABLE weekly_task_week_locks ADD COLUMN manual_unfrozen INTEGER NOT NULL DEFAULT 0",
-        "frozen_at": "ALTER TABLE weekly_task_week_locks ADD COLUMN frozen_at TEXT",
-        "frozen_by": "ALTER TABLE weekly_task_week_locks ADD COLUMN frozen_by TEXT",
-        "unfrozen_at": "ALTER TABLE weekly_task_week_locks ADD COLUMN unfrozen_at TEXT",
-        "unfrozen_by": "ALTER TABLE weekly_task_week_locks ADD COLUMN unfrozen_by TEXT",
-    }
-    for col, sql in lock_missing.items():
-        if col not in lock_cols:
-            cur.execute(sql)
+        lock_cols = get_table_columns(conn, "weekly_task_week_locks")
+        lock_missing = {
+            "owner_user_id": "ALTER TABLE weekly_task_week_locks ADD COLUMN owner_user_id BIGINT",
+            "task_year": "ALTER TABLE weekly_task_week_locks ADD COLUMN task_year INTEGER NOT NULL DEFAULT 0",
+            "task_month": "ALTER TABLE weekly_task_week_locks ADD COLUMN task_month INTEGER NOT NULL DEFAULT 0",
+            "week_number": "ALTER TABLE weekly_task_week_locks ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1",
+            "is_frozen": "ALTER TABLE weekly_task_week_locks ADD COLUMN is_frozen INTEGER NOT NULL DEFAULT 1",
+            "manual_unfrozen": "ALTER TABLE weekly_task_week_locks ADD COLUMN manual_unfrozen INTEGER NOT NULL DEFAULT 0",
+            "frozen_at": "ALTER TABLE weekly_task_week_locks ADD COLUMN frozen_at TEXT",
+            "frozen_by": "ALTER TABLE weekly_task_week_locks ADD COLUMN frozen_by TEXT",
+            "unfrozen_at": "ALTER TABLE weekly_task_week_locks ADD COLUMN unfrozen_at TEXT",
+            "unfrozen_by": "ALTER TABLE weekly_task_week_locks ADD COLUMN unfrozen_by TEXT",
+        }
+        for col, sql in lock_missing.items():
+            if col not in lock_cols:
+                cur.execute(sql)
 
-    notification_cols = get_table_columns(conn, "weekly_task_notification_state")
-    notification_missing = {
-        "user_id": "ALTER TABLE weekly_task_notification_state ADD COLUMN user_id BIGINT",
-        "last_seen_at": "ALTER TABLE weekly_task_notification_state ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''",
-    }
-    for col, sql in notification_missing.items():
-        if col not in notification_cols:
-            cur.execute(sql)
+        notification_cols = get_table_columns(conn, "weekly_task_notification_state")
+        notification_missing = {
+            "user_id": "ALTER TABLE weekly_task_notification_state ADD COLUMN user_id BIGINT",
+            "last_seen_at": "ALTER TABLE weekly_task_notification_state ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''",
+        }
+        for col, sql in notification_missing.items():
+            if col not in notification_cols:
+                cur.execute(sql)
 
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_owner_period ON weekly_tasks (owner_user_id, task_year, task_month, week_number)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_deleted ON weekly_tasks (deleted_at)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_status ON weekly_tasks (status, confirmation_status)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_created_at ON weekly_tasks (created_at)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_edit_requests_task_status ON weekly_task_edit_requests (task_id, request_status)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_history_task ON weekly_task_history (task_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_week_locks_period ON weekly_task_week_locks (owner_user_id, task_year, task_month, week_number)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_owner_period ON weekly_tasks (owner_user_id, task_year, task_month, week_number)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_deleted ON weekly_tasks (deleted_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_status ON weekly_tasks (status, confirmation_status)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_tasks_created_at ON weekly_tasks (created_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_edit_requests_task_status ON weekly_task_edit_requests (task_id, request_status)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_history_task ON weekly_task_history (task_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_weekly_task_week_locks_period ON weekly_task_week_locks (owner_user_id, task_year, task_month, week_number)")
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
 
-@weekly_tasks_bp.before_app_request
+@weekly_tasks_bp.before_request
 def weekly_task_tables_ready():
+    if "user" not in session:
+        return
     if current_app.config.get("WEEKLY_TASK_TABLES_READY"):
         return
     ensure_weekly_task_tables()
