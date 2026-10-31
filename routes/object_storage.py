@@ -260,16 +260,35 @@ def add_reference(conn, source, table, row_id, column, original, parent=None):
 @storage_bp.post('/api/storage/inventory')
 @admin_only
 def inventory():
-    found=0
+    fields=[(table,column) for table,(_,columns) in REFERENCES.items() for column in columns]
+    payload=request.get_json(silent=True) or {}
+    try:
+        cursor=payload.get('cursor') or {}
+        field=int(cursor.get('field',0));after=int(cursor.get('after',0))
+        if not 0<=field<=len(fields) or after<0:raise ValueError()
+    except (ValueError,TypeError,AttributeError):
+        return jsonify(ok=False,error='Invalid scan position. Reload and try again.'),400
+    if field==len(fields):return jsonify(ok=True,done=True,references=0,cursor=None)
+    table,column=fields[field];found=0;rows=[]
     with db() as conn:
-        for table,(_,columns) in REFERENCES.items():
-            existing={r['column_name'] for r in conn.execute('SELECT column_name FROM information_schema.columns WHERE table_schema=\'public\' AND table_name=%s',(table,)).fetchall()}
-            for column in set(columns)&existing:
-                rows=conn.execute(sql.SQL('SELECT id,{} AS value FROM {} WHERE {} IS NOT NULL').format(sql.Identifier(column),sql.Identifier(table),sql.Identifier(column))).fetchall()
-                for row in rows:
-                    source=drive_id(row['value'],raw=column in ('drive_id','attachment_drive_id'))
-                    if source:add_reference(conn,source,table,row['id'],column,row['value']);found+=1
-    return jsonify(ok=True,references=found,message='ERP references inventoried. Originals are unchanged.')
+        exists=conn.execute("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=%s AND column_name=%s",(table,column)).fetchone()
+        if exists:
+            rows=conn.execute(sql.SQL('SELECT id,{} AS value FROM {} WHERE id>%s AND {} IS NOT NULL ORDER BY id LIMIT 25').format(sql.Identifier(column),sql.Identifier(table),sql.Identifier(column)),(after,)).fetchall()
+        references=[];files={}
+        for row in rows:
+            source=drive_id(row['value'],raw=column in ('drive_id','attachment_drive_id'))
+            if not source:continue
+            identity=hashlib.sha256(source.encode()).hexdigest()[:32]
+            files[source]=(identity,source,session['user'])
+            references.append((identity,table,row['id'],column,row['value']))
+        if files:
+            values=list(files.values())
+            conn.execute(sql.SQL('INSERT INTO storage_files(id,source_id,created_by) VALUES {} ON CONFLICT(source_id) DO NOTHING').format(sql.SQL(',').join(sql.SQL('(%s,%s,%s)') for _ in values)),tuple(value for row in values for value in row))
+            conn.execute(sql.SQL('INSERT INTO storage_references(file_id,table_name,row_id,column_name,original_value) VALUES {} ON CONFLICT DO NOTHING').format(sql.SQL(',').join(sql.SQL('(%s,%s,%s,%s,%s)') for _ in references)),tuple(value for row in references for value in row))
+            found=len(references)
+    next_cursor={'field':field,'after':rows[-1]['id']} if len(rows)==25 else {'field':field+1,'after':0}
+    done=next_cursor['field']==len(fields)
+    return jsonify(ok=True,done=done,references=found,cursor=None if done else next_cursor,message='ERP references inventoried. Originals are unchanged.' if done else 'Scanning ERP references…')
 
 
 @storage_bp.post('/api/storage/copy-next')

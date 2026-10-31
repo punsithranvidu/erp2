@@ -54,6 +54,30 @@ class StorageIntegrationTests(unittest.TestCase):
         self.client=self.app.test_client();self.client.environ_base['HTTP_X_ERP_STORAGE']='1';self.client.get('/login')
         self.assertEqual(self.client.post('/login',data={'username':'AuditAdmin','password':'Isolated-test-only-8912'}).status_code,302)
     def tearDown(self):self.patch.stop();self.mock.stop()
+    def test_inventory_is_bounded_resumable_and_preserves_originals(self):
+        from routes.db import connect
+        with connect(DSN) as conn:
+            for index in range(31):
+                conn.execute("INSERT INTO doc_items(name,drive_id,mime_type,created_by,item_type,created_at) VALUES(%s,%s,%s,%s,'DOCUMENT',now())",('Inventory test '+str(index),'inventory_source_'+str(index),'text/plain','AuditAdmin'))
+            original=conn.execute("SELECT id,drive_id FROM doc_items WHERE name LIKE 'Inventory test %' ORDER BY id").fetchall()
+        first=self.client.post('/api/storage/inventory',json={})
+        self.assertEqual(first.status_code,200,first.json)
+        self.assertFalse(first.json['done']);self.assertLessEqual(first.json['references'],25)
+        replay=self.client.post('/api/storage/inventory',json={})
+        self.assertEqual(replay.json['cursor'],first.json['cursor'])
+        cursor=first.json['cursor']
+        for _ in range(50):
+            result=self.client.post('/api/storage/inventory',json={'cursor':cursor})
+            self.assertEqual(result.status_code,200,result.json)
+            if result.json['done']:break
+            cursor=result.json['cursor']
+        else:self.fail('Inventory did not finish')
+        with connect(DSN) as conn:
+            self.assertEqual(conn.execute("SELECT id,drive_id FROM doc_items WHERE name LIKE 'Inventory test %' ORDER BY id").fetchall(),original)
+            for row in original:
+                self.assertEqual(conn.execute("SELECT count(*) AS n FROM storage_references WHERE table_name='doc_items' AND row_id=%s",(row['id'],)).fetchone()['n'],1)
+        self.assertEqual(self.client.post('/api/storage/inventory',json={'cursor':{'field':-1}}).status_code,400)
+
     def test_connection_private_upload_download_and_access_revocation(self):
         from routes.db import connect
         check=self.client.post('/api/storage/check');self.assertEqual(check.status_code,200,check.json)
