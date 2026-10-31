@@ -66,6 +66,9 @@ def configure_sessions(app, connect=None, store=None, clock=time.time):
         session.permanent = False
 
     def end():
+        audit = current_app.config.get('ACTIVITY_AUTH_FUNC')
+        if callable(audit) and 'user' in session:
+            audit('Logged out')
         store.revoke(session.get('login_session_id'))
         session.clear()
 

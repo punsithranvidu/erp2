@@ -515,6 +515,8 @@ def _ensure_tables_once():
         return
     if not current_app.config.get("CALENDAR_TABLES_READY"):
         ensure_calendar_tables()
+        from .activity_log import ensure_module_audit
+        ensure_module_audit(db)
         current_app.config["CALENDAR_TABLES_READY"] = True
 
 

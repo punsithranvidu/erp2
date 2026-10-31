@@ -47,6 +47,7 @@ class LoginSecurityTests(unittest.TestCase):
         for duration in (900, 1800, 3600, 3600):
             for left in (3, 2, 1):
                 result = self.fail()
+                self.assertTrue(result.verified_attempt)
                 self.assertEqual(result.attempts_left, left)
                 self.assertIn(f'{left} attempt', result.error)
             result = self.fail()
@@ -55,6 +56,7 @@ class LoginSecurityTests(unittest.TestCase):
             self.now += 1
             blocked = self.protection.check('browser-a', self.auth, 'employee', 'correct')
             self.assertIsNone(blocked.user)
+            self.assertFalse(blocked.verified_attempt)
             self.assertEqual(self.calls, calls)
             self.assertEqual(blocked.retry_after, duration - 1)
             self.now += duration - 1

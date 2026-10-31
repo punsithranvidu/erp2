@@ -31,6 +31,9 @@
       {% endfor %}
     </div>
     {% endfor %}
+    {% if role == 'ADMIN' %}
+    <a class="app-nav-link{% if current_path == '/activity-log' %} is-current{% endif %}" href="/activity-log" aria-label="Activity Log" data-nav-label="Activity Log" {% if current_path == '/activity-log' %}aria-current="page"{% endif %}>{{ icon('notes') }}<span>Activity Log</span></a>
+    {% endif %}
     <p id="appNavError" class="app-nav-error" hidden>Module navigation is unavailable. Use Overview to try again.</p>
   </nav>
   <div class="app-account">

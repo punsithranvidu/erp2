@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Activity Log</title><link rel="icon" href="{{ url_for('static',filename='img/ceylon-spice-haven-logo.webp') }}" />
+<link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}" /><link rel="stylesheet" href="{{ url_for('static',filename='css/workspace.css') }}" /><link rel="stylesheet" href="{{ url_for('static',filename='css/activity-log.css') }}" />
+<script src="{{ url_for('static',filename='js/session.js') }}" defer></script><script src="{{ url_for('static',filename='js/workspace.js') }}" defer></script><script src="{{ url_for('static',filename='js/activity-log.js') }}" defer></script>
+</head><body class="app-body" data-app-role="{{ role }}">{% include 'partials/app_navigation.html' %}
+<div class="topbar"><div><h2>Activity Log</h2><p class="sub">Administrator access · dates and times in Sri Lanka</p></div><div class="row"><a href="/dashboard" class="btn ghost">Overview</a><span data-workspace-date class="app-header-date"></span></div></div>
+<main id="app-content" tabindex="-1" class="page activity-page"><section class="panel">
+<div class="activity-heading"><div><h3>Activity across your ERP</h3><p class="sub">Review committed changes, sign-ins and permissions. Entries cannot be edited or deleted here.</p></div><span class="activity-retention">90-day history</span></div>
+<form id="activityFilters" class="activity-filters">
+<div><label for="activityUser">User</label><select id="activityUser" name="user"><option value="">All users</option></select></div>
+<div><label for="activityModule">Module</label><select id="activityModule" name="module"><option value="">All modules</option></select></div>
+<div><label for="activityAction">Action</label><select id="activityAction" name="action"><option value="">All actions</option></select></div>
+<div><label for="activityMonth">Month (optional)</label><input id="activityMonth" type="month" /></div>
+<div><label for="activityFrom">From date</label><input id="activityFrom" name="from" type="date" /></div><div><label for="activityTo">To date</label><input id="activityTo" name="to" type="date" /></div>
+<div><label for="activityRecord">Record ID</label><input id="activityRecord" name="record" maxlength="200" placeholder="e.g. 92" /></div><button class="btn" type="submit">Apply filters</button><button id="activityReset" class="btn ghost" type="button">Reset</button></form>
+<p id="activityMessage" role="status" aria-live="polite" class="msg"></p>
+<div class="tableWrap"><table class="table activity-table"><thead><tr><th>Date &amp; time</th><th>User</th><th>Module</th><th>Action</th><th>Record</th><th>Details</th></tr></thead><tbody id="activityRows"></tbody></table></div>
+<div class="activity-footer"><p class="sub" id="activityCount"></p><button id="activityMore" type="button" class="btn ghost" hidden>Load older entries</button></div>
+<details class="activity-info"><summary>Coverage, retention &amp; storage</summary><p>This history starts when the update is deployed. It cannot reconstruct earlier changes. Database changes are recorded together with the change, including bulk operations. Changes made directly in Google Drive or outside the ERP are not tracked here.</p><p>Edits store changed fields only. Created and deleted records keep a text snapshot, without passwords or authentication secrets. Files are not copied into this log. Related rows from one operation share a reference in their details.</p><p>Entries older than 90 days are automatically removed in batches while the ERP is in use. There is no permanent archive or Undo in this version. A database owner can bypass database protections; ERP administrators cannot.</p><p id="activityStorage"></p><p id="activityCoverage"></p></details>
+</section></main>
+<dialog id="activityDetail" aria-labelledby="activityDetailTitle"><div class="activity-dialog-head"><h3 id="activityDetailTitle">Activity details</h3><button id="activityClose" type="button" class="btn ghost" aria-label="Close activity details">Close</button></div><div id="activityDetailBody"></div></dialog>
+</body></html>

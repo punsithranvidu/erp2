@@ -516,6 +516,8 @@ def _ensure_once():
         return
     if not current_app.config.get("MARKETING_EMAILS_TABLES_READY"):
         ensure_marketing_email_tables()
+        from .activity_log import ensure_module_audit
+        ensure_module_audit(db)
         current_app.config["MARKETING_EMAILS_TABLES_READY"] = True
 
 

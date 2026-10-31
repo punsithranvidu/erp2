@@ -14,6 +14,7 @@ from routes.db import connect, get_table_columns, register_database_error_handle
 from routes.login_security import (LoginProtection, PostgresLoginStore,
                                    init_login_security, set_device_cookie, audit_signals)
 from routes.session_security import configure_sessions, init_session_table
+from routes.activity_log import activity_bp, configure_activity_log, init_activity_log
 from routes.auth import auth_bp
 from routes.pages import pages_bp
 from routes.document_storage import document_storage_bp
@@ -125,6 +126,7 @@ def db():
 
 configure_sessions(app, db)
 register_database_error_handlers(app)
+configure_activity_log(app, db)
 
 
 def now_iso():
@@ -935,9 +937,12 @@ app.config["MODULES"] = MODULES
 init_db()
 from routes.finance_category_migration import migrate_categories
 migrate_categories(db)
+init_activity_log(db)
+app.config["ACTIVITY_LOG_READY"] = True
 purge_deleted_older_than_30_days()
 
 # register blueprints
+app.register_blueprint(activity_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(pages_bp)
 app.register_blueprint(document_storage_bp)

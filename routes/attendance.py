@@ -177,6 +177,8 @@ def _ensure_once():
         return
     if not current_app.config.get("ATTENDANCE_TABLES_READY"):
         ensure_attendance_tables()
+        from .activity_log import ensure_module_audit
+        ensure_module_audit(db)
         current_app.config["ATTENDANCE_TABLES_READY"] = True
 
 

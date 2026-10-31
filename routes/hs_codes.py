@@ -83,6 +83,8 @@ def _ensure_once():
         return
     if not current_app.config.get("HS_CODES_TABLES_READY"):
         ensure_hs_code_tables()
+        from .activity_log import ensure_module_audit
+        ensure_module_audit(db)
         current_app.config["HS_CODES_TABLES_READY"] = True
 
 

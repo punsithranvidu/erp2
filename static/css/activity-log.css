@@ -1,0 +1,28 @@
+.app-body .activity-page { grid-template-columns: minmax(0,1fr); }
+.activity-heading,.activity-footer,.activity-dialog-head { display:flex; align-items:center; justify-content:space-between; gap:18px; }
+.activity-heading h3 { margin:0 0 8px; }
+.activity-retention { white-space:nowrap; color:#536a85; background:#eef3f8; padding:7px 10px; border-radius:4px; font-size:12px; }
+.activity-filters { display:flex; flex-wrap:wrap; gap:14px; align-items:end; margin:25px 0 18px; }
+.activity-filters label { display:block; margin-bottom:6px; }
+.activity-filters input,.activity-filters select { display:block; width:100%; }
+.activity-filters>div { flex:1 1 140px; min-width:120px; }
+.activity-table { width:100%; min-width:780px; }
+.activity-footer { margin-top:16px; }
+.activity-info { border-top:1px solid #e0e7ef; margin-top:22px; padding-top:18px; color:#66788d; font-size:12px; line-height:1.7; }
+.activity-info summary { cursor:pointer; color:#375575; font-weight:600; }
+#activityDetail { width:min(960px,calc(100% - 32px)); max-height:calc(100dvh - 40px); padding:25px; border:1px solid #d5dfea; border-radius:8px; color:#273d59; background:white; }
+#activityDetail::backdrop { background:#14253d77; }
+.activity-dialog-head { border-bottom:1px solid #e0e7ef; padding-bottom:15px; margin-bottom:18px; }
+.activity-dialog-head h3 { margin:0; }
+.activity-meta { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 20px; font-size:12px; margin-bottom:20px; }
+.activity-meta div { overflow-wrap:anywhere; }
+.activity-meta strong { display:block; margin-bottom:4px; }
+.activity-diff { width:100%; min-width:550px; table-layout:fixed; }
+.activity-diff th:first-child { width:23%; }
+.activity-diff td { vertical-align:top; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.6; }
+.activity-diff td:nth-child(2) { background:#fcf8f7; }
+.activity-diff td:nth-child(3) { background:#f5f9fc; }
+@media(max-width:600px) { .activity-heading { align-items:start; flex-direction:column; } .activity-meta { grid-template-columns:minmax(0,1fr); } #activityDetail { padding:18px; } }
+.app-body .activity-table { min-width:780px; }
+.app-body .activity-diff { min-width:550px; }
+.app-body .activity-diff :is(th,td) { text-align:left; white-space:pre-wrap; overflow-wrap:anywhere; }

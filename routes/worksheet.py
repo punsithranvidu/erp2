@@ -93,6 +93,8 @@ def _ensure_once():
         return
     if not current_app.config.get("WORKSHEET_TABLES_READY"):
         ensure_worksheet_tables()
+        from .activity_log import ensure_module_audit
+        ensure_module_audit(db)
         current_app.config["WORKSHEET_TABLES_READY"] = True
 
 

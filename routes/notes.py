@@ -249,6 +249,8 @@ def notes_tables_ready():
     if current_app.config.get("NOTES_TABLES_READY"):
         return
     ensure_notes_tables()
+    from .activity_log import ensure_module_audit
+    ensure_module_audit(db)
     current_app.config["NOTES_TABLES_READY"] = True
 
 

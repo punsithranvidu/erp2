@@ -239,6 +239,8 @@ def individual_achievement_tables_ready():
     if current_app.config.get("INDIVIDUAL_ACHIEVEMENT_TABLES_READY"):
         return
     ensure_individual_achievement_tables()
+    from .activity_log import ensure_module_audit
+    ensure_module_audit(db)
     current_app.config["INDIVIDUAL_ACHIEVEMENT_TABLES_READY"] = True
 
 

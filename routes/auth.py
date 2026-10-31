@@ -63,7 +63,23 @@ def login():
                 session.clear()
                 current_app.logger.exception('Unable to create sign-in session')
                 return render_template('login.html', error='Sign-in is temporarily unavailable. Please try again shortly.'), 503
+        audit = current_app.config.get('ACTIVITY_AUTH_FUNC')
+        if callable(audit):
+            try:
+                audit('Logged in')
+            except Exception:
+                session.clear()
+                current_app.logger.exception('Unable to record sign-in')
+                return render_template('login.html', error='Sign-in is temporarily unavailable. Please try again shortly.'), 503
         return redirect(url_for("pages.dashboard"))
+
+    audit = current_app.config.get('ACTIVITY_AUTH_FUNC')
+    if callable(audit) and getattr(result, 'verified_attempt', True):
+        try:
+            audit('Login failed', request.form.get('username', ''))
+        except Exception:
+            current_app.logger.exception('Unable to record failed sign-in')
+            return render_template('login.html', error='Sign-in is temporarily unavailable. Please try again shortly.'), 503
 
     if result.retry_after:
         session['login_blocked_until'] = time.time() + result.retry_after

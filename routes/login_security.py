@@ -75,6 +75,7 @@ class LoginResult:
     error: str = None
     retry_after: int = 0
     attempts_left: int = ATTEMPT_LIMIT
+    verified_attempt: bool = False
 
 
 class LoginProtection:
@@ -99,7 +100,7 @@ class LoginProtection:
             state["updated_at"] = now
             if not error:
                 state.update(failures=0, level=0, blocked_until=0)
-                return LoginResult(user=user)
+                return LoginResult(user=user, verified_attempt=True)
             state["failures"] += 1
             left = ATTEMPT_LIMIT - state["failures"]
             self.audit("failed_login", device=key[:16], attempts_left=left)
@@ -109,10 +110,10 @@ class LoginProtection:
                              blocked_until=now + duration)
                 self.audit("login_browser_blocked", device=key[:16], seconds=duration)
                 return LoginResult(error="Too many failed attempts on this browser.",
-                                   retry_after=duration, attempts_left=0)
+                                   retry_after=duration, attempts_left=0, verified_attempt=True)
             suffix = "attempt" if left == 1 else "attempts"
             return LoginResult(error=f"Invalid username or password. {left} {suffix} left.",
-                               attempts_left=left)
+                               attempts_left=left, verified_attempt=True)
 
 
 def serializer():

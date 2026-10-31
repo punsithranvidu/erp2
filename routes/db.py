@@ -1,5 +1,6 @@
 import psycopg
 from psycopg.rows import dict_row
+from .activity_log import ActivityCursor
 
 
 def connect(dsn: str):
@@ -8,6 +9,7 @@ def connect(dsn: str):
     conn = psycopg.connect(
         dsn,
         row_factory=dict_row,
+        cursor_factory=ActivityCursor,
         prepare_threshold=None,
         connect_timeout=5,
         keepalives=1,

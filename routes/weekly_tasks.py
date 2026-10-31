@@ -324,6 +324,8 @@ def weekly_task_tables_ready():
     if current_app.config.get("WEEKLY_TASK_TABLES_READY"):
         return
     ensure_weekly_task_tables()
+    from .activity_log import ensure_module_audit
+    ensure_module_audit(db)
     current_app.config["WEEKLY_TASK_TABLES_READY"] = True
 
 
