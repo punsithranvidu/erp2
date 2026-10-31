@@ -283,7 +283,7 @@ function renderItems(rows){
     const canOpenFolder = isFolder && VIEW_MODE !== "TRASH";
 
     const linkHtml = r.web_view_link
-      ? `<a class="pill link" href="${r.web_view_link}" target="_blank" rel="noopener">Open</a>`
+      ? `<a class="pill link" href="${r._storage_links?.web_view_link || r.web_view_link}" target="_blank" rel="noopener">Open</a>`
       : `<span class="pill muted">No link</span>`;
 
     let actionHtml = `
@@ -336,7 +336,7 @@ function renderItems(rows){
     if(copyBtn){
       copyBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        await navigator.clipboard.writeText(r.web_view_link);
+        await navigator.clipboard.writeText(new URL(r._storage_links?.web_view_link || r.web_view_link,location.origin).href);
         showMsg("listMsg", "Link copied.", true);
       });
     }
@@ -373,7 +373,7 @@ async function selectItem(id){
     $("editName").value = EDITING_ITEM.name || "";
     $("editNotes").value = EDITING_ITEM.notes || "";
     $("editDriveLink").value = EDITING_ITEM.web_view_link || "";
-    $("openLinkBtn").href = EDITING_ITEM.web_view_link || "#";
+    $("openLinkBtn").href = EDITING_ITEM._storage_links?.web_view_link || EDITING_ITEM.web_view_link || "#";
 
     renderEditPermUsers(out.data.permissions || []);
     setTrashButtons(!!EDITING_ITEM.deleted_at);

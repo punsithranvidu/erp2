@@ -10,6 +10,7 @@ from datetime import datetime
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 from .db import connect
+from . import object_storage as objects
 
 from google.oauth2.credentials import Credentials
 from google_auth_httplib2 import AuthorizedHttp
@@ -272,6 +273,7 @@ def get_root_drive_folder_id():
 
 
 def drive_create_folder(name: str, parent_drive_id: str):
+    if objects.enabled():return objects.virtual_folder(name)
     service = get_oauth_drive_service()
     meta = {
         "name": name,
@@ -286,6 +288,7 @@ def drive_create_folder(name: str, parent_drive_id: str):
 
 
 def drive_upload_file(file_storage, parent_drive_id: str, display_name: str = ""):
+    if objects.enabled():return objects.upload(file_storage,display_name or None)
     service = get_oauth_drive_service()
     filename = (display_name or file_storage.filename or "document").strip()
     meta = {
@@ -306,7 +309,10 @@ def drive_upload_file(file_storage, parent_drive_id: str, display_name: str = ""
     ).execute()
 
 
-def drive_rename_item(drive_id: str, new_name: str):
+def drive_rename_item(drive_id: str, new_name: str, conn=None):
+    if objects.enabled() or (drive_id or "").startswith("r2:"):
+        if conn is not None:objects.rename_reference(conn,drive_id,new_name)
+        return {"id":drive_id}
     service = get_oauth_drive_service()
     return service.files().update(
         fileId=drive_id,
@@ -317,6 +323,8 @@ def drive_rename_item(drive_id: str, new_name: str):
 
 
 def drive_delete_item_safe(drive_id: str):
+    if objects.keep_drive_original(drive_id):
+        return {"ok":True,"deleted_in_drive":False,"warning":"File retained; ERP trash controls access."}
     if not drive_id:
         return {"ok": True, "deleted_in_drive": False, "warning": ""}
 
@@ -340,7 +348,7 @@ def drive_delete_item_safe(drive_id: str):
 
 def get_parent_drive_id(conn, parent_id):
     if parent_id in (None, "", "ROOT", "null"):
-        return get_root_drive_folder_id()
+        return "r2:root" if objects.enabled() else get_root_drive_folder_id()
 
     row = conn.execute(
         """
@@ -359,6 +367,8 @@ def get_parent_drive_id(conn, parent_id):
         raise ValueError("Parent must be a folder")
     if not row["drive_id"]:
         raise ValueError("Parent folder has no Drive ID")
+    if not objects.enabled() and row["drive_id"].startswith("r2:"):
+        raise ValueError("This folder was created in R2. Choose a Drive-backed folder for Drive uploads.")
     return row["drive_id"]
 
 
@@ -682,6 +692,7 @@ def sync_drive_shares(conn, item_id, drive_id):
 
 
 def sync_drive_shares_safe(conn, item_id, drive_id):
+    if objects.enabled() or (drive_id or "").startswith("r2:"):return
     try:
         sync_drive_shares(conn, item_id, drive_id)
     except Exception as e:
@@ -957,6 +968,7 @@ def sync_drive_scope(conn, current_user, parent_row=None, sync_ts=None):
 
 
 def sync_drive_folder_children_safe(conn, parent_row, current_user):
+    if objects.enabled() or (parent_row.get("drive_id") or "").startswith("r2:"):return
     try:
         return sync_drive_scope(conn, current_user, parent_row=parent_row, sync_ts=now_iso())
     except Exception as e:
@@ -1553,7 +1565,7 @@ def api_docs_item_update(item_id):
             conn.close()
             return jsonify({"ok": False, "error": "Another item with this name already exists here"}), 400
 
-        updated_drive = drive_rename_item(item["drive_id"], new_name)
+        updated_drive = drive_rename_item(item["drive_id"], new_name, conn=conn)
         web_view_link = updated_drive.get("webViewLink") or item["web_view_link"]
 
     conn.execute(
@@ -1714,6 +1726,7 @@ def api_docs_delete_forever(item_id):
     conn.execute("DELETE FROM doc_items WHERE id=%s", (item_id,))
     conn.commit()
     conn.close()
+    objects.cleanup_unreferenced_new_file(item["drive_id"])
     return jsonify({"ok": True})
 
 
@@ -1740,10 +1753,11 @@ def api_docs_bulk_trash_action():
 
     conn = db()
     updated = 0
+    removed_files = []
 
     if action == "restore":
         for item_id in valid_ids:
-            row = conn.execute("SELECT id FROM doc_items WHERE id=%s AND deleted_at IS NOT NULL", (item_id,)).fetchone()
+            row = conn.execute("SELECT id,drive_id FROM doc_items WHERE id=%s AND deleted_at IS NOT NULL", (item_id,)).fetchone()
             if row:
                 conn.execute(
                     """
@@ -1757,8 +1771,9 @@ def api_docs_bulk_trash_action():
 
     elif action == "delete_forever":
         for item_id in valid_ids:
-            row = conn.execute("SELECT id FROM doc_items WHERE id=%s AND deleted_at IS NOT NULL", (item_id,)).fetchone()
+            row = conn.execute("SELECT id,drive_id FROM doc_items WHERE id=%s AND deleted_at IS NOT NULL", (item_id,)).fetchone()
             if row:
+                removed_files.append(row["drive_id"])
                 conn.execute("DELETE FROM doc_item_permissions WHERE item_id=%s", (item_id,))
                 conn.execute("DELETE FROM doc_items WHERE id=%s", (item_id,))
                 updated += 1
@@ -1768,6 +1783,7 @@ def api_docs_bulk_trash_action():
 
     conn.commit()
     conn.close()
+    for reference in removed_files:objects.cleanup_unreferenced_new_file(reference)
     return jsonify({"ok": True, "data": {"updated": updated}})
 
 
@@ -1775,6 +1791,7 @@ def api_docs_bulk_trash_action():
 @login_required
 @require_module("DOCUMENT_STORAGE", need_edit=True)
 def api_document_storage_sync_drive():
+    if objects.enabled():return jsonify(ok=False,error="Drive sync is disabled while R2 is active. Use Storage setup to copy remaining Drive references."),409
     if not is_admin():
         return jsonify({"ok": False, "error": "Admin only"}), 403
 

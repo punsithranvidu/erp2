@@ -8,6 +8,7 @@ import shutil
 from werkzeug.utils import secure_filename
 
 from .db import connect, placeholders
+from . import object_storage as objects
 
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -340,6 +341,10 @@ def ensure_conversation_drive_folder(service, conn, conversation_id: int):
 
 
 def upload_message_attachment_to_drive(conn, file_storage, conversation_id: int):
+    if objects.enabled():
+        if not file_storage or not file_storage.filename:return None
+        item=objects.upload(file_storage)
+        return dict(attachment_drive_id=item['id'],attachment_name=item['name'],attachment_mime=item['mimeType'])
     if not file_storage or not getattr(file_storage, "filename", ""):
         return None
 
@@ -374,6 +379,8 @@ def upload_message_attachment_to_drive(conn, file_storage, conversation_id: int)
 
 
 def download_drive_file(drive_file_id: str):
+    if drive_file_id.startswith("r2:"):
+        raise ValueError("Use the permission-checked R2 file endpoint")
     service = get_oauth_drive_service()
 
     meta = service.files().get(
@@ -399,6 +406,7 @@ def download_drive_file(drive_file_id: str):
 
 
 def delete_drive_file_safe(drive_file_id: str):
+    if objects.keep_drive_original(drive_file_id):return
     if not drive_file_id:
         return
 
@@ -1221,6 +1229,16 @@ def api_messages_attachment_download(message_id):
         return jsonify({"ok": False, "error": "Not allowed"}), 403
 
     drive_file_id = row["attachment_drive_id"]
+    if drive_file_id.startswith('r2:'):
+        conn.close()
+        from flask import redirect
+        return redirect(url_for('object_storage.open_file',file_id=drive_file_id[3:]))
+    if objects.enabled():
+        copied=conn.execute("SELECT id FROM storage_files WHERE source_id=%s AND status='verified'",(drive_file_id,)).fetchone()
+        if copied:
+            conn.close()
+            from flask import redirect
+            return redirect(url_for('object_storage.open_file',file_id=copied['id']))
     download_name = row["attachment_name"] or "attachment"
     download_mime = row["attachment_mime"] or "application/octet-stream"
     conn.close()
@@ -1285,6 +1303,7 @@ def api_messages_delete(message_id):
 
     conn.commit()
     conn.close()
+    objects.cleanup_unreferenced_new_file(row["attachment_drive_id"])
     return jsonify({"ok": True})
 
 
@@ -1398,6 +1417,7 @@ def api_messages_permanent_delete_conversation(conversation_id):
     conn.execute("DELETE FROM message_conversations WHERE id=%s", (conversation_id,))
     conn.commit()
     conn.close()
+    for item in rows:objects.cleanup_unreferenced_new_file(item["attachment_drive_id"])
 
     return jsonify({"ok": True})
 

@@ -27,7 +27,7 @@ class WorkspaceTemplateTests(unittest.TestCase):
 
     def render(self, name, role='ADMIN', user='Example'):
         with self.app.test_request_context('/dashboard'):
-            return render_template(name, user=user, role=role, year=2026, month=10)
+            return render_template(name, user=user, role=role, year=2026, month=10, file={'name':'Test folder'}, children=[])
 
     def test_every_module_has_navigation_skip_target_and_unique_html_ids(self):
         for path in (ROOT / 'templates').glob('*.html'):

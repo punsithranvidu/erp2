@@ -27,13 +27,13 @@
     <div class="app-nav-group" {% if role != 'ADMIN' %}hidden{% endif %}>
       <p class="app-nav-label">{{ heading }}</p>
       {% for path, label, permission in links %}
+    {% if role == 'ADMIN' and path == 'finance-trash' %}
+    <a class="app-nav-link{% if current_path == '/activity-log' %} is-current{% endif %}" href="/activity-log" aria-label="Activity Log" data-nav-label="Activity Log" {% if current_path == '/activity-log' %}aria-current="page"{% endif %}>{{ icon('notes') }}<span>Activity Log</span></a>
+    {% endif %}
       <a class="app-nav-link{% if current_path == '/' ~ path %} is-current{% endif %}" aria-label="{{ label }}" data-nav-label="{{ label }}" data-nav-module="{{ permission }}" href="/{{ path }}" {% if role != 'ADMIN' %}hidden{% endif %} {% if current_path == '/' ~ path %}aria-current="page"{% endif %}>{{ icon(path) }}<span>{{ label }}</span></a>
       {% endfor %}
     </div>
     {% endfor %}
-    {% if role == 'ADMIN' %}
-    <a class="app-nav-link{% if current_path == '/activity-log' %} is-current{% endif %}" href="/activity-log" aria-label="Activity Log" data-nav-label="Activity Log" {% if current_path == '/activity-log' %}aria-current="page"{% endif %}>{{ icon('notes') }}<span>Activity Log</span></a>
-    {% endif %}
     <p id="appNavError" class="app-nav-error" hidden>Module navigation is unavailable. Use Overview to try again.</p>
   </nav>
   <div class="app-account">

@@ -19,6 +19,7 @@
       <h2>Document Storage</h2>
     </div>
     <div class="row">
+      {% if role == 'ADMIN' %}<a class="btn ghost" href="/storage-setup">Storage setup / R2 migration</a>{% endif %}
       <a class="btn ghost" href="/google-drive/connect">Connect / Refresh Google Drive</a>
       <a class="btn ghost" href="/dashboard">Overview</a>
       <span class="app-header-date" data-workspace-date></span>

@@ -125,6 +125,7 @@
   }
 
   function normalizeUrl(u){
+    if(String(u || "").startsWith("/api/storage/files/"))return u;
     const s = (u || "").trim();
     if(!s) return "";
     const low = s.toLowerCase();
@@ -301,7 +302,7 @@
       tr.dataset.cashRow = String(r.id);
 
       const proofBtn = r.proof_link
-        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${safeText(normalizeUrl(r.proof_link))}">Open</a>`
+        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${safeText(normalizeUrl(r._storage_links?.proof_link || r.proof_link))}">Open</a>`
         : `<span class="muted">—</span>`;
 
       const bal = Number(r.balance || 0);
@@ -409,7 +410,7 @@
       const tr = document.createElement("tr");
 
       const proofBtn = r.proof_link
-        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${safeText(normalizeUrl(r.proof_link))}">Open</a>`
+        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${safeText(normalizeUrl(r._storage_links?.proof_link || r.proof_link))}">Open</a>`
         : `<span class="muted">—</span>`;
 
       const paidBy = (r.paid_by || "COMPANY_ADVANCE").toUpperCase();
@@ -506,7 +507,7 @@
       const tr = document.createElement("tr");
 
       const proofBtn = t.proof_link
-        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${safeText(normalizeUrl(t.proof_link))}">Open</a>`
+        ? `<a class="btn mini ghost" target="_blank" rel="noopener" href="${safeText(normalizeUrl(t._storage_links?.proof_link || t.proof_link))}">Open</a>`
         : `<span class="muted">—</span>`;
 
       const ref = (t.ref_type && t.ref_id)

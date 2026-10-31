@@ -14,6 +14,7 @@ activity_bp = Blueprint('activity_log', __name__)
 RETENTION_DAYS = 90
 # Derived notification/history tables and authentication secrets are deliberately excluded.
 TABLE_MODULES = {
+    'storage_files': 'Storage', 'storage_references': 'Storage',
     'users': 'Employee Access', 'user_permissions': 'Employee Access',
     'bank_accounts': 'Finance', 'finance_records': 'Finance', 'month_balances': 'Finance',
     'cash_advances': 'Petty Cash', 'cash_advance_expenses': 'Petty Cash', 'cash_advance_topups': 'Petty Cash',

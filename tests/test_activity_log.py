@@ -56,7 +56,7 @@ class ActivityAPITests(unittest.TestCase):
             context=request_context()
             self.assertEqual(context[1],'Verified user');self.assertEqual(context[4],'203.0.113.1')
     def test_primary_tables_across_all_modules_are_covered(self):
-        self.assertEqual(len(set(TABLE_MODULES.values())),14)
+        self.assertEqual(len(set(TABLE_MODULES.values())),15)
         for table in ('finance_records','cash_advances','users','user_permissions','notes','weekly_tasks','worksheet_entries','attendance_entries','hs_codes','doc_items','doc_item_permissions','message_messages','document_numbers','individual_achievements','calendar_events','marketing_email_leads'):
             self.assertIn(table,TABLE_MODULES)
         for table in ('google_oauth_tokens','login_device_limits','user_login_sessions'):

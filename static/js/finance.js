@@ -19,6 +19,7 @@
    function safeText(v){ return rawText(v).replace(/[&<>"']/g, char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
 
    function normalizeUrl(url){
+    if(String(url || "").startsWith("/api/storage/files/"))return url;
      const u=(url||"").trim();
      if(!u) return "";
      if(/^https?:\/\//i.test(u)) return u;
@@ -290,7 +291,7 @@
        const canEdit = ME?.role === 'ADMIN' || (Number(ME?.permissions?.FINANCE?.can_edit) === 1 && r.created_by === ME.user);
        const canDelete = canEdit;
 
-       const clientLink = normalizeUrl(r.folder_link);
+       const clientLink = normalizeUrl(r._storage_links?.folder_link || r.folder_link);
        const clientCell = clientLink
          ? `<a class="linkText" href="${safeText(clientLink)}" target="_blank" rel="noopener">${safeText(r.client_name)}</a>`
          : safeText(r.client_name);
@@ -308,10 +309,10 @@
          <td><b>${safeText(r.currency)} ${Number(r.amount).toFixed(2)}</b></td>
          <td>${safeText(r.payment_type)}</td>
          <td><span class="pill">${safeText(r.status)}</span></td>
-         <td>${openLink(r.proof_of_payment, r.proof_link)}</td>
-         <td>${openLink("OPEN", r.invoice_link)}</td>
-         <td>${openLink(rawText(r.po_number || "OPEN"), r.po_link)}</td>
-         <td>${openLink(rawText(r.quotation_number || "OPEN"), r.quotation_link)}</td>
+         <td>${openLink(r.proof_of_payment, (r._storage_links?.proof_link || r.proof_link))}</td>
+         <td>${openLink("OPEN", (r._storage_links?.invoice_link || r.invoice_link))}</td>
+         <td>${openLink(rawText(r.po_number || "OPEN"), (r._storage_links?.po_link || r.po_link))}</td>
+         <td>${openLink(rawText(r.quotation_number || "OPEN"), (r._storage_links?.quotation_link || r.quotation_link))}</td>
          <td class="mono">${safeText(r.paid_date)}</td>
          <td class="mono">${safeText(r.created_at)}</td>
          <td>${safeText(r.created_by)}</td>

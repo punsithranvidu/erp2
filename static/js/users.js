@@ -56,6 +56,7 @@ async function api(url, opts={}){
 }
 
 function normalizeUrl(url){
+    if(String(url || "").startsWith("/api/storage/files/"))return url;
   const u = (url || "").trim();
   if(!u) return "";
   if(/^https?:\/\//i.test(u)) return u;
@@ -65,7 +66,7 @@ function normalizeUrl(url){
 
 function rowFileCell(row){
   const name = row.file_name || "";
-  const link = normalizeUrl(row.file_link || "");
+  const link = normalizeUrl(row._storage_links?.file_link || row.file_link || "");
 
   if(!name) return "";
 
